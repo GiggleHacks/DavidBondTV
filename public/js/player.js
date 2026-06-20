@@ -5,12 +5,18 @@ import { createSettingsMenu } from './settings-menu.js';
 import { loadStoryboard } from './storyboard.js';
 import { attachKeyboard } from './keyboard.js';
 import { nextRate } from './playback.js';
+import { initTheme } from './theme.js';
+import { initShare } from './share.js';
+import { initComments } from './comments.js';
 
 const $ = (id) => document.getElementById(id);
 const MASTER = '/media/hls/master.m3u8';
 const FPS = 30000 / 1001; // source frame rate (~29.97)
 
 async function init() {
+  // Apply the saved theme before anything paints (avoids a flash of the default).
+  initTheme();
+
   const video = $('video');
   const container = $('player');
 
@@ -78,6 +84,10 @@ async function init() {
       else container.requestFullscreen();
     },
   });
+
+  // Social features
+  initShare($('share-btn'));
+  initComments();
 
   // Start focused so keyboard works immediately
   container.focus();

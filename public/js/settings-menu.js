@@ -1,11 +1,12 @@
-import { buildQualityOptions } from './quality.js';
+import { buildQualityOptions, qualityLabel } from './quality.js';
 import { PLAYBACK_RATES, nextRate, rateLabel } from './playback.js';
+import { THEMES, getTheme, applyTheme } from './theme.js';
 
 export function createSettingsMenu({ menuEl, video, hlsController }) {
   let levels = [];
   let currentLevel = -1;     // -1 = auto
   let autoHeight = null;     // resolution auto currently plays
-  let panel = 'main';        // 'main' | 'quality' | 'speed'
+  let panel = 'main';        // 'main' | 'quality' | 'speed' | 'theme'
 
   function open() { menuEl.hidden = false; panel = 'main'; render(); }
   function close() { menuEl.hidden = true; }
@@ -28,15 +29,21 @@ export function createSettingsMenu({ menuEl, video, hlsController }) {
   }
 
   function currentQualityLabel() {
-    if (currentLevel === -1) return `Auto${autoHeight ? ` (${autoHeight}p)` : ''}`;
+    if (currentLevel === -1) return `Auto${autoHeight ? ` (${qualityLabel(autoHeight)})` : ''}`;
     const l = levels[currentLevel];
-    return l ? `${l.height}p` : 'Auto';
+    return l ? qualityLabel(l.height) : 'Auto';
+  }
+
+  function currentThemeName() {
+    const t = THEMES.find((x) => x.id === getTheme());
+    return t ? t.name : 'Default';
   }
 
   function renderMain() {
     menuEl.replaceChildren(
       row('Playback speed', `${rateLabel(video.playbackRate)} ›`, () => { panel = 'speed'; render(); }),
       row('Quality', `${currentQualityLabel()} ›`, () => { panel = 'quality'; render(); }),
+      row('Theme', `${currentThemeName()} ›`, () => { panel = 'theme'; render(); }),
     );
   }
 
@@ -69,9 +76,24 @@ export function createSettingsMenu({ menuEl, video, hlsController }) {
     menuEl.replaceChildren(...rows);
   }
 
+  function renderTheme() {
+    const active = getTheme();
+    const rows = [row('‹ Theme', '', () => { panel = 'main'; render(); }, 'back')];
+    for (const t of THEMES) {
+      const check = t.id === active ? '✓ ' : '';
+      const label = `${check}<span class="swatch" style="background:${t.swatch}"></span> ${t.name}`;
+      rows.push(row(label, '', () => {
+        applyTheme(t.id);
+        render();
+      }));
+    }
+    menuEl.replaceChildren(...rows);
+  }
+
   function render() {
     if (panel === 'quality') renderQuality();
     else if (panel === 'speed') renderSpeed();
+    else if (panel === 'theme') renderTheme();
     else renderMain();
   }
 

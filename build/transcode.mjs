@@ -8,12 +8,12 @@ const ROOT = path.join(__dirname, '..');
 const SOURCE = path.join(ROOT, 'bikinis.mp4');
 const HLS_DIR = path.join(ROOT, 'media', 'hls');
 
+// "Very Low" (144p) is intentionally crunchy: low resolution, high CRF, reduced
+// frame rate and tiny bitrate so it looks noticeably worse and sips bandwidth.
 const RENDITIONS = [
-  { name: '360p',  width: 640,  height: 360,  maxrate: '856k',   bufsize: '1200k',  abitrate: '96k',  bandwidth: 900000 },
-  { name: '480p',  width: 854,  height: 480,  maxrate: '1498k',  bufsize: '2100k',  abitrate: '128k', bandwidth: 1600000 },
-  { name: '720p',  width: 1280, height: 720,  maxrate: '2996k',  bufsize: '4200k',  abitrate: '128k', bandwidth: 3000000 },
-  { name: '1080p', width: 1920, height: 1080, maxrate: '5350k',  bufsize: '7500k',  abitrate: '192k', bandwidth: 5350000 },
-  { name: '1440p', width: 2560, height: 1440, maxrate: '10700k', bufsize: '15000k', abitrate: '192k', bandwidth: 10700000 },
+  { name: '144p', width: 256,  height: 144, crf: '36', maxrate: '120k',  bufsize: '240k',  abitrate: '48k',  ac: 1, fps: 15, bandwidth: 170000 },
+  { name: '480p', width: 854,  height: 480, crf: '21', maxrate: '1498k', bufsize: '2100k', abitrate: '128k', ac: 2,          bandwidth: 1600000 },
+  { name: '720p', width: 1280, height: 720, crf: '21', maxrate: '2996k', bufsize: '4200k', abitrate: '128k', ac: 2,          bandwidth: 3000000 },
 ];
 
 function requireFfmpeg() {
@@ -33,10 +33,11 @@ function transcode(r) {
   const args = [
     '-y', '-i', SOURCE,
     '-vf', vf,
+    ...(r.fps ? ['-r', String(r.fps)] : []),
     '-c:v', 'libx264', '-profile:v', 'main', '-preset', 'veryfast',
-    '-crf', '20', '-maxrate', r.maxrate, '-bufsize', r.bufsize,
+    '-crf', r.crf, '-maxrate', r.maxrate, '-bufsize', r.bufsize,
     '-g', '60', '-keyint_min', '60', '-sc_threshold', '0',
-    '-c:a', 'aac', '-b:a', r.abitrate, '-ac', '2',
+    '-c:a', 'aac', '-b:a', r.abitrate, '-ac', String(r.ac || 2),
     '-hls_time', '4', '-hls_playlist_type', 'vod',
     '-hls_segment_filename', path.join(outDir, 'seg_%03d.ts'),
     path.join(outDir, 'playlist.m3u8'),
@@ -66,6 +67,8 @@ if (!fs.existsSync(SOURCE)) {
   console.error(`ERROR: source not found: ${SOURCE}`);
   process.exit(1);
 }
+// Start from a clean slate so removed renditions (360p/1080p/1440p) don't linger.
+fs.rmSync(HLS_DIR, { recursive: true, force: true });
 fs.mkdirSync(HLS_DIR, { recursive: true });
 for (const r of RENDITIONS) transcode(r);
 writeMasterPlaylist();

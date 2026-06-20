@@ -1,10 +1,17 @@
+// Human-friendly label for a rendition height. 144p is our deliberately-crunchy
+// "Very Low" tier; everything else is just "<height>p".
+export function qualityLabel(height) {
+  if (height <= 144) return 'Very Low';
+  return `${height}p`;
+}
+
 export function buildQualityOptions(levels, currentLevel, currentAutoHeight) {
   const options = levels
     .map((l, index) => ({ index, height: l.height }))
     .sort((a, b) => b.height - a.height)
     .map(({ index, height }) => ({
       index,
-      label: `${height}p`,
+      label: qualityLabel(height),
       hd: height >= 720,
       active: currentLevel === index,
     }));
@@ -14,7 +21,7 @@ export function buildQualityOptions(levels, currentLevel, currentAutoHeight) {
     label: 'Auto',
     hd: false,
     active: currentLevel === -1,
-    sublabel: currentAutoHeight ? `${currentAutoHeight}p` : '',
+    sublabel: currentAutoHeight ? qualityLabel(currentAutoHeight) : '',
   });
 
   return options;
