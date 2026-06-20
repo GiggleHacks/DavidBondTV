@@ -132,3 +132,4 @@ body {
 .menu-row.back { font-weight: 600; border-bottom: 1px solid rgba(255,255,255,.12); }
 .menu-row .check { width: 16px; color: #3ea6ff; }
 .badge { font-size: 10px; font-weight: 700; color: #000; background: #fff; border-radius: 3px; padding: 0 3px; }
+.badge-sub { color: #aaa; }
