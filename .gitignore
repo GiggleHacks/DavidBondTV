@@ -1,4 +1,8 @@
 node_modules/
 media/
 .superpowers/
+.claude/
 *.log
+
+# Large source video — keep on disk, never commit
+bikinis.mp4
