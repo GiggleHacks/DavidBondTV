@@ -70,6 +70,7 @@ export function createControls({ video, container, els, onToggleSettings }) {
   document.addEventListener('fullscreenchange', renderFullscreen);
 
   // Initial paint
+  els.settingsBtn.innerHTML = ICONS.settings;
   renderPlay();
   renderVolume();
   renderTime();
