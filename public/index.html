@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YouTube Player Clone</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="/vendor/hls.min.js"></script>
+</head>
+<body>
+  <main class="stage">
+    <div class="player" id="player" tabindex="0">
+      <video id="video" playsinline poster="/media/poster.jpg"></video>
+
+      <div class="spinner" id="spinner" hidden></div>
+
+      <div class="error-overlay" id="error" hidden>
+        <p id="error-msg">Something went wrong.</p>
+        <button class="retry-btn" id="retry-btn">Retry</button>
+      </div>
+
+      <button class="big-play" id="big-play" aria-label="Play"></button>
+
+      <div class="gradient"></div>
+
+      <div class="controls" id="controls">
+        <div class="progress" id="progress">
+          <div class="progress-thumb" id="thumb" hidden>
+            <div class="thumb-img" id="thumb-img"></div>
+            <span class="thumb-time" id="thumb-time">0:00</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-buffered" id="buffered"></div>
+            <div class="progress-played" id="played"></div>
+            <div class="progress-scrubber" id="scrubber"></div>
+          </div>
+        </div>
+
+        <div class="control-row">
+          <button class="ctrl-btn" id="play-btn" aria-label="Play (k)"></button>
+          <div class="volume" id="volume">
+            <button class="ctrl-btn" id="mute-btn" aria-label="Mute (m)"></button>
+            <div class="volume-slider" id="vol-slider">
+              <div class="vol-fill" id="vol-fill"></div>
+              <div class="vol-knob" id="vol-knob"></div>
+            </div>
+          </div>
+          <span class="time" id="time">0:00 / 0:00</span>
+          <span class="spacer"></span>
+          <button class="ctrl-btn" id="settings-btn" aria-label="Settings"></button>
+          <button class="ctrl-btn" id="fullscreen-btn" aria-label="Fullscreen (f)"></button>
+        </div>
+
+        <div class="settings-menu" id="settings-menu" hidden></div>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="/js/player.js"></script>
+</body>
+</html>
