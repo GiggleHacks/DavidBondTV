@@ -8,12 +8,9 @@ const ROOT = path.join(__dirname, '..');
 const SOURCE = path.join(ROOT, 'bikinis.mp4');
 const HLS_DIR = path.join(ROOT, 'media', 'hls');
 
-// "Very Low" (144p) is intentionally crunchy: low resolution, high CRF, reduced
-// frame rate and tiny bitrate so it looks noticeably worse and sips bandwidth.
 const RENDITIONS = [
-  { name: '144p', width: 256,  height: 144, crf: '36', maxrate: '120k',  bufsize: '240k',  abitrate: '48k',  ac: 1, fps: 15, bandwidth: 170000 },
-  { name: '480p', width: 854,  height: 480, crf: '21', maxrate: '1498k', bufsize: '2100k', abitrate: '128k', ac: 2,          bandwidth: 1600000 },
-  { name: '720p', width: 1280, height: 720, crf: '21', maxrate: '2996k', bufsize: '4200k', abitrate: '128k', ac: 2,          bandwidth: 3000000 },
+  { name: '480p', width: 854,  height: 480, crf: '21', maxrate: '1498k', bufsize: '2100k', abitrate: '128k', ac: 2, bandwidth: 1600000 },
+  { name: '720p', width: 1280, height: 720, crf: '21', maxrate: '2996k', bufsize: '4200k', abitrate: '128k', ac: 2, bandwidth: 3000000 },
 ];
 
 function requireFfmpeg() {

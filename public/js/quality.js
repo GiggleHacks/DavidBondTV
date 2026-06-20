@@ -1,7 +1,5 @@
-// Human-friendly label for a rendition height. 144p is our deliberately-crunchy
-// "Very Low" tier; everything else is just "<height>p".
+// Human-friendly label for a rendition height (e.g. 720 -> "720p").
 export function qualityLabel(height) {
-  if (height <= 144) return 'Very Low';
   return `${height}p`;
 }
 
