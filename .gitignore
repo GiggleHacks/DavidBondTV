@@ -6,3 +6,6 @@ media/
 
 # Large source video — keep on disk, never commit
 bikinis.mp4
+
+# Runtime data (comments JSON store)
+data/
