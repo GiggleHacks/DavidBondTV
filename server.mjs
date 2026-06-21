@@ -8,6 +8,11 @@ import { contentType, parseRange } from './lib/http-util.js';
 import { createChallenge, verifyChallenge } from './lib/challenge.js';
 import { createRateLimiter } from './lib/rate-limit.js';
 import { validateComment, addComment, listComments } from './lib/comments-store.js';
+import { login, requireAdmin, adminConfigured } from './lib/admin-auth.js';
+import {
+  enqueue, getJob, listJobs, newUploadTarget, acceptableUpload, bootSweep, deleteVideo,
+} from './lib/ingest.mjs';
+import { hasFfmpeg } from './lib/media.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 8080;
@@ -16,12 +21,18 @@ const MEDIA_DIR = path.join(__dirname, 'media');
 
 // --- API setup ---
 const SECRET = crypto.randomBytes(32).toString('hex');
+// Admin token signing key. Set ADMIN_SECRET to keep tokens valid across restarts;
+// otherwise a fresh random key logs admins out on each restart (fine for one admin).
+const ADMIN_SECRET = process.env.ADMIN_SECRET || crypto.randomBytes(32).toString('hex');
 const limiter = createRateLimiter(60_000);
+const loginLimiter = createRateLimiter(1_000); // throttle login hammering, allow retries
+const UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB cap
 const COMMENTS_FILE = path.join(__dirname, 'data', 'comments.json');
 
 function resolveFile(urlPath) {
   let pathname = decodeURIComponent(urlPath.split('?')[0]);
   if (pathname === '/') pathname = '/index.html';
+  if (pathname === '/admin') pathname = '/admin.html';
 
   const isMedia = pathname.startsWith('/media/');
   const root = isMedia ? MEDIA_DIR : PUBLIC_DIR;
@@ -151,7 +162,123 @@ async function handleApi(req, res) {
     return true;
   }
 
+  // POST /api/admin/login  { password } → { ok, token }
+  if (req.method === 'POST' && url.pathname === '/api/admin/login') {
+    try {
+      if (!adminConfigured()) {
+        sendJson(res, 503, { error: 'Admin uploads are not configured on this server.' });
+        return true;
+      }
+      if (!loginLimiter.hit(clientIp(req)).allowed) {
+        sendJson(res, 429, { error: 'Too many attempts. Try again shortly.' });
+        return true;
+      }
+      const raw = await readBody(req, 4096);
+      let body;
+      try { body = JSON.parse(raw); } catch { body = null; }
+      const result = login(ADMIN_SECRET, body && body.password);
+      if (!result.ok) {
+        sendJson(res, 401, { error: 'Incorrect password.' });
+        return true;
+      }
+      sendJson(res, 200, { ok: true, token: result.token });
+    } catch {
+      sendJson(res, 500, { error: 'Server error' });
+    }
+    return true;
+  }
+
+  // GET /api/admin/status[?job=<id>]  → ffmpeg availability + job(s)
+  if (req.method === 'GET' && url.pathname === '/api/admin/status') {
+    if (!requireAdmin(ADMIN_SECRET, req)) {
+      sendJson(res, 401, { error: 'Unauthorized' });
+      return true;
+    }
+    const jobId = url.searchParams.get('job');
+    if (jobId) {
+      sendJson(res, 200, { job: getJob(jobId), ffmpeg: hasFfmpeg() });
+    } else {
+      sendJson(res, 200, { jobs: listJobs(), ffmpeg: hasFfmpeg() });
+    }
+    return true;
+  }
+
+  // POST /api/admin/delete  { id } → { ok }
+  if (req.method === 'POST' && url.pathname === '/api/admin/delete') {
+    if (!requireAdmin(ADMIN_SECRET, req)) {
+      sendJson(res, 401, { error: 'Unauthorized' });
+      return true;
+    }
+    try {
+      const raw = await readBody(req, 4096);
+      let body;
+      try { body = JSON.parse(raw); } catch { body = null; }
+      const result = await deleteVideo(body && body.id);
+      sendJson(res, result.ok ? 200 : 404, result);
+    } catch {
+      sendJson(res, 500, { error: 'Server error' });
+    }
+    return true;
+  }
+
+  // POST /api/admin/upload?name=<file>  (raw video body) → { jobId, manifestId }
+  if (req.method === 'POST' && url.pathname === '/api/admin/upload') {
+    if (!requireAdmin(ADMIN_SECRET, req)) {
+      sendJson(res, 401, { error: 'Unauthorized' });
+      return true;
+    }
+    const name = url.searchParams.get('name') || '';
+    if (!acceptableUpload(name, req.headers['content-type'])) {
+      sendJson(res, 415, { error: 'Only video files (.mp4/.mov/.m4v) are accepted.' });
+      return true;
+    }
+    await streamUpload(req, res, name);
+    return true;
+  }
+
   return false; // not an API route
+}
+
+/** Stream a raw request body to disk (bypassing readBody), then enqueue ingestion. */
+function streamUpload(req, res, name) {
+  return new Promise((resolve) => {
+    const { savedPath, partPath } = newUploadTarget(name);
+    const out = fs.createWriteStream(partPath);
+    let total = 0;
+    let aborted = false;
+
+    const fail = (status, error) => {
+      if (aborted) return;
+      aborted = true;
+      try { req.destroy(); } catch { /* ignore */ }
+      out.destroy();
+      fsp.unlink(partPath).catch(() => {});
+      sendJson(res, status, { error });
+      resolve();
+    };
+
+    req.on('data', (chunk) => {
+      total += chunk.length;
+      if (total > UPLOAD_MAX_BYTES) fail(413, 'File too large.');
+    });
+    out.on('error', () => fail(500, 'Write failed.'));
+    req.on('error', () => fail(400, 'Upload interrupted.'));
+    req.on('aborted', () => fail(400, 'Upload aborted.'));
+
+    req.pipe(out);
+
+    out.on('close', () => {
+      if (aborted) return;
+      if (total === 0) { fail(400, 'Empty upload.'); return; }
+      fsp.rename(partPath, savedPath)
+        .then(() => {
+          const { jobId, manifestId } = enqueue(savedPath, name);
+          sendJson(res, 202, { ok: true, jobId, manifestId });
+          resolve();
+        })
+        .catch(() => fail(500, 'Could not finalize upload.'));
+    });
+  });
 }
 
 const server = http.createServer(async (req, res) => {
@@ -210,6 +337,8 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`▶  YouTube clone player running at http://localhost:${PORT}`);
+server.listen(PORT, async () => {
+  console.log(`▶  BondTV running at http://localhost:${PORT}`);
+  console.log(`   admin uploads: ${adminConfigured() ? 'enabled' : 'DISABLED (set ADMIN_PASSWORD)'} · ffmpeg: ${hasFfmpeg() ? 'ok' : 'MISSING'}`);
+  await bootSweep(); // any interrupted "processing" entries → "failed"
 });

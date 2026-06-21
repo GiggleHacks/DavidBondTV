@@ -1,10 +1,10 @@
 // Generates a poster thumbnail + metadata for each Bangkok clip, for the
 // multi-video homepage preview. Reads from the source folder, writes
 // public/thumbs/*.jpg and public/thumbs/videos.json.
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fmtDur, probeDuration, makeThumb } from '../lib/media.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -47,33 +47,11 @@ const TITLES = [
   'Thank You Bangkok ❤️ Trip Recap',
 ];
 
-function fmtDur(sec) {
-  sec = Math.floor(sec);
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  const ss = String(s).padStart(2, '0');
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
-}
-
 // Real upload date = the source file's last-modified time (a genuine timestamp).
 function uploadDate(file) {
   return fs.statSync(file).mtime.toLocaleDateString('en-US', {
     year: 'numeric', month: 'short', day: 'numeric',
   });
-}
-
-function probeDuration(file) {
-  const out = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration',
-    '-of', 'default=noprint_wrappers=1:nokey=1', file], { encoding: 'utf-8' });
-  return parseFloat((out.stdout || '0').trim()) || 0;
-}
-
-function makeThumb(file, dest, seekSec) {
-  const r = spawnSync('ffmpeg', ['-y', '-ss', String(seekSec), '-i', file, '-frames:v', '1',
-    '-vf', 'scale=480:270:force_original_aspect_ratio=increase,crop=480:270', '-q:v', '3', dest],
-    { encoding: 'utf-8' });
-  return r.status === 0;
 }
 
 fs.mkdirSync(OUT, { recursive: true });
