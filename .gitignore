@@ -4,8 +4,13 @@ media/
 .claude/
 *.log
 
-# Large source video — keep on disk, never commit
+# Large source videos — keep on disk, never commit
 bikinis.mp4
+*.MP4
+*.mp4
+
+# ...but DO commit the small generated hover-preview montages
+!public/previews/*.mp4
 
 # Runtime data (comments JSON store)
 data/

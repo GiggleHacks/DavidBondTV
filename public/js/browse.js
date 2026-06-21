@@ -1,0 +1,91 @@
+// Renders the multi-video homepage grid from the generated manifest, with a
+// YouTube-style hover preview (a small baked montage that plays on hover).
+const PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+
+// Only do video previews on devices with a real hovering pointer (skip touch).
+const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+// One shared <video> element, reparented into whichever card is hovered.
+let preview = null;
+let hoverTimer = null;
+
+function ensurePreviewEl() {
+  if (preview) return preview;
+  preview = document.createElement('video');
+  preview.className = 'vpreview';
+  preview.muted = true;
+  preview.loop = true;
+  preview.playsInline = true;
+  preview.preload = 'none';
+  preview.setAttribute('disablepictureinpicture', '');
+  preview.addEventListener('playing', () => preview.classList.add('show'));
+  return preview;
+}
+
+function startPreview(cardEl) {
+  const src = cardEl.dataset.preview;
+  if (!src) return; // no baked preview → stay on the static thumbnail
+  const v = ensurePreviewEl();
+  cardEl.querySelector('.vthumb').appendChild(v);
+  v.src = src;
+  v.currentTime = 0;
+  v.play().catch(() => {}); // swallow autoplay / rapid-hover AbortError
+}
+
+function stopPreview() {
+  if (!preview) return;
+  preview.classList.remove('show');
+  preview.pause();
+  preview.removeAttribute('src');
+  preview.load(); // release the network/decoder
+  preview.remove();
+}
+
+function card(v) {
+  const a = document.createElement('a');
+  a.className = 'vcard';
+  a.href = '/'; // clicking a card opens the watch page (demo player)
+  a.innerHTML = `
+    <div class="vthumb">
+      <img loading="lazy" alt="" src="${v.thumb}" />
+      <span class="vdur"></span>
+    </div>
+    <div class="vinfo">
+      <div class="vavatar">${PLAY}</div>
+      <div class="vmeta">
+        <div class="vtitle"></div>
+        <div class="vchannel">David Bond TV <span class="check">✔</span></div>
+        <div class="vstats"></div>
+      </div>
+    </div>`;
+  // user-facing text via textContent (XSS-safe)
+  a.querySelector('.vdur').textContent = v.durLabel;
+  a.querySelector('.vtitle').textContent = v.title;
+  a.querySelector('.vstats').textContent = v.uploaded || '';
+
+  if (canHover) {
+    a.dataset.preview = v.preview || '';
+    a.addEventListener('mouseenter', () => {
+      clearTimeout(hoverTimer);
+      hoverTimer = setTimeout(() => startPreview(a), 450); // hover-intent delay
+    });
+    a.addEventListener('mouseleave', () => {
+      clearTimeout(hoverTimer);
+      stopPreview();
+    });
+  }
+  return a;
+}
+
+async function init() {
+  const grid = document.getElementById('grid');
+  try {
+    const res = await fetch('/thumbs/videos.json');
+    const videos = await res.json();
+    grid.replaceChildren(...videos.map(card));
+  } catch {
+    grid.textContent = 'Could not load videos.';
+  }
+}
+
+init();

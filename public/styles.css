@@ -321,3 +321,69 @@ body {
   .cf-bottom { flex-direction: column; align-items: stretch; gap: 12px; }
   .cf-submit { width: 100%; }
 }
+
+/* ============================================================
+   Browse / homepage grid (multi-video)
+   ============================================================ */
+.search {
+  flex: 1; max-width: 520px; margin: 0 auto; display: flex; align-items: center;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px;
+  padding: 9px 18px; color: var(--text-dim); font-size: 14px; gap: 10px;
+}
+.search svg { width: 18px; height: 18px; fill: var(--text-dim); flex: none; }
+
+.browse { width: min(1600px, 100%); margin: 0 auto; padding: 22px 24px 60px; }
+.browse-chips { display: flex; gap: 10px; margin-bottom: 22px; flex-wrap: wrap; }
+.chip {
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 999px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.chip.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+.browse-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 26px 16px;
+}
+.vcard { cursor: pointer; text-decoration: none; color: inherit; display: block; }
+.vthumb {
+  position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden;
+  background: var(--surface-2); box-shadow: 0 6px 18px var(--shadow);
+  transition: box-shadow .18s ease, transform .18s ease;
+}
+.vthumb img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .25s; }
+.vcard:hover .vthumb img { transform: scale(1.05); }
+/* light-blue accent ring + lift on hover (follows the active theme) */
+.vcard:hover .vthumb, .vcard:focus-visible .vthumb {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 2px var(--accent),
+              0 0 0 6px color-mix(in srgb, var(--accent) 28%, transparent),
+              0 10px 26px var(--shadow);
+}
+.vcard:focus-visible { outline: none; }
+/* hover preview video, layered over the thumbnail */
+.vpreview {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; display: block; background: #000;
+  opacity: 0; transition: opacity .25s ease; z-index: 1; pointer-events: none;
+}
+.vpreview.show { opacity: 1; }
+.vdur {
+  position: absolute; right: 8px; bottom: 8px; background: rgba(0, 0, 0, 0.85);
+  color: #fff; font-size: 12px; font-weight: 600; padding: 1px 6px; border-radius: 5px;
+  z-index: 2;
+}
+.vinfo { display: flex; gap: 12px; margin-top: 12px; }
+.vavatar {
+  width: 36px; height: 36px; border-radius: 50%; flex: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  display: flex; align-items: center; justify-content: center;
+}
+.vavatar svg { width: 20px; height: 20px; fill: var(--accent-contrast); }
+.vmeta { min-width: 0; }
+.vtitle {
+  font-size: 14px; font-weight: 600; line-height: 1.3; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.vchannel { font-size: 12.5px; color: var(--text-dim); margin-top: 6px; }
+.vchannel .check { color: var(--accent); }
+.vstats { font-size: 12.5px; color: var(--text-dim); margin-top: 1px; }
