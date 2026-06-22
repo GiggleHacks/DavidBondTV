@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Course — David Bond TV</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/account.css" />
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="/" aria-label="David Bond TV — home" style="text-decoration:none">
+      <span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span>
+    </a>
+    <div class="auth-widget" id="auth-widget"></div>
+  </header>
+
+  <div class="cl-wrap" id="course-root">
+    <div id="banner" class="cl-banner" hidden></div>
+    <div id="content" hidden>
+      <section class="cl-hero" id="hero">
+        <img class="cl-logo" id="cl-logo" alt="" hidden />
+        <h1 class="cl-name" id="cl-name"></h1>
+        <p class="cl-headline" id="cl-headline"></p>
+        <p class="cl-body" id="cl-body"></p>
+      </section>
+      <section class="cl-card" id="card">
+        <div class="cl-price" id="cl-price"></div>
+        <p class="cl-price-note">One-time purchase · lifetime access · no membership required</p>
+        <ul class="cl-benefits" id="cl-benefits"></ul>
+        <button class="acc-btn gold-cta cl-buy" id="buy-btn" type="button"></button>
+        <div class="cl-owned" id="owned-view" hidden>
+          <p class="cl-price-note">✓ You own this course.</p>
+          <a class="acc-btn cl-buy" id="watch-link" href="/">Browse the course →</a>
+        </div>
+        <p class="acc-msg" id="msg" hidden></p>
+      </section>
+    </div>
+    <p id="notfound" hidden style="text-align:center;color:var(--text-dim);margin-top:48px">This course isn’t available.</p>
+  </div>
+
+  <script type="module" src="/js/course.js"></script>
+  <script type="module" src="/js/auth-widget.js"></script>
+  <script src="/js/age-gate.js"></script>
+  <script src="/js/footer.js"></script>
+</body>
+</html>

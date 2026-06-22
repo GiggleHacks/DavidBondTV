@@ -56,6 +56,11 @@
 
     .mb-cta { position: relative; width: 100%; padding: 16px; font-size: 17px; }
     .mb-year { position: relative; width: 100%; margin-top: 10px; }
+    .mb-year-row { text-align: center; margin: 14px 0 4px; }
+    .mb-year-label { display: block; font-size: 12.5px; color: var(--text-dim); margin-bottom: 8px; }
+    .mb-year { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: auto; padding: 11px 22px; }
+    .mb-year strong { font-weight: 800; }
+    .mb-year-save { font-size: 11px; font-weight: 800; letter-spacing: .4px; padding: 3px 9px; border-radius: 999px; background: rgba(16,185,129,.16); color: #34d399; }
     .mb-fine { position: relative; color: var(--text-dim); font-size: 12px; margin: 14px 0 0; display: flex; align-items: center; justify-content: center; gap: 6px; }
     .mb-fine svg { width: 13px; height: 13px; fill: currentColor; opacity: .8; }
     .mb-foot { position: relative; text-align: center; margin-top: 16px; font-size: 14px; }
@@ -198,6 +203,14 @@
           <p class="pay-note">No middleman. Stay based.</p>
           <button class="acc-btn mb-cta giga-cta" id="pay-crypto" type="button">Coming soon</button>
         </div>
+      </div>
+
+      <div class="mb-year-row" id="year-row" hidden>
+        <span class="mb-year-label">Prefer to pay yearly?</span>
+        <button class="acc-btn mb-year" id="pay-year" type="button">
+          Get a year for <strong id="year-amount">$120</strong>
+          <span class="mb-year-save" id="year-save" hidden>save 41%</span>
+        </button>
       </div>
 
       <p class="mb-price-note">Cancel anytime. No commitment.</p>

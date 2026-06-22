@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { contentType, parseRange, sendJson, readBody, clientIp } from './lib/http-util.js';
+import { contentType, parseRange, sendJson, readBody, clientIp, withSecurityHeaders } from './lib/http-util.js';
 import { createChallenge, verifyChallenge } from './lib/challenge.js';
 import { createRateLimiter } from './lib/rate-limit.js';
 import { validateComment, addComment, listComments, deleteComment, readAllComments } from './lib/comments-store.js';
@@ -21,6 +21,7 @@ import { createCommentGuard, DEFAULT_BANNED } from './lib/comment-guard.js';
 import { adminUser } from './lib/users-store.js';
 import { createPaymentsStore } from './lib/payments-store.js';
 import { createStripePayments } from './lib/stripe-payments.js';
+import { createTelegramNotifier } from './lib/telegram-bot.js';
 import { hasActiveMembership } from './lib/membership.js';
 import { avatarUrl } from './lib/avatars.js';
 import {
@@ -34,6 +35,8 @@ import {
 } from './lib/notifications-store.js';
 import { hasFfmpeg } from './lib/media.mjs';
 import * as categories from './lib/categories.js';
+import * as products from './lib/products.js';
+import * as pricing from './lib/pricing.js';
 import * as subscribers from './lib/subscribers.js';
 import { createRequestContext } from './lib/request-context.mjs';
 import { createAnalytics } from './lib/analytics-store.mjs';
@@ -140,6 +143,10 @@ const accounts = createAccounts({
 // at BASE_URL/api/pay/stripe/webhook (it is, behind nginx/Cloudflare in prod).
 const PAYMENTS_FILE = path.join(__dirname, 'data', 'payments.json');
 const paymentsStore = createPaymentsStore(PAYMENTS_FILE);
+const telegramNotifier = createTelegramNotifier({
+  botToken: process.env.TELEGRAM_BOT_TOKEN,
+  chatId: process.env.TELEGRAM_CHAT_ID,
+});
 const stripePayments = createStripePayments({
   store: accounts.store,
   currentUser: accounts.currentUser,
@@ -149,6 +156,9 @@ const stripePayments = createStripePayments({
   webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
   priceMonthly: process.env.STRIPE_PRICE_MONTHLY,
   priceYearly: process.env.STRIPE_PRICE_YEARLY,
+  products,
+  pricing,
+  telegramNotifier,
 });
 
 // --- analytics + per-request context ---
@@ -213,11 +223,11 @@ try { UNDER_CONSTRUCTION = fs.readFileSync(path.join(PUBLIC_DIR, 'under-construc
 
 /** Serve the neutral "Under Construction" page (200, never reveals the reason). */
 function serveUnderConstruction(res) {
-  res.writeHead(200, {
+  res.writeHead(200, withSecurityHeaders({
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-store',
     'X-Robots-Tag': 'noindex',
-  });
+  }));
   res.end(UNDER_CONSTRUCTION || '<!doctype html><meta name="robots" content="noindex"><title>David Bond TV</title><h1>Under Construction</h1>');
 }
 
@@ -248,6 +258,163 @@ function resolveFile(urlPath) {
   // (/thumbs,/previews,/videos,/storyboards) → CONTENT_DIR, everything else →
   // public/. Traversal guard lives in resolveAssetPath (returns null on escape).
   return resolveAssetPath(pathname);
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function generateSitemap() {
+  const urls = [];
+  
+  // Base URLs
+  urls.push({ loc: `${BASE_URL}/`, changefreq: 'daily', priority: '1.0' });
+  urls.push({ loc: `${BASE_URL}/membership`, changefreq: 'monthly', priority: '0.8' });
+  
+  // Videos
+  try {
+    const videos = listManifest().filter((v) => v.published !== false && v.status === 'ready');
+    for (const v of videos) {
+      urls.push({
+        loc: `${BASE_URL}/watch?v=${v.id}`,
+        changefreq: 'weekly',
+        priority: '0.9',
+      });
+    }
+  } catch (err) {
+    console.error('Sitemap generator: failed to list videos:', err);
+  }
+
+  // User profiles
+  try {
+    const allUsers = accounts.store.listAll().filter((u) => u.profileComplete);
+    for (const u of allUsers) {
+      urls.push({
+        loc: `${BASE_URL}/u/${encodeURIComponent(u.username)}`,
+        changefreq: 'weekly',
+        priority: '0.6',
+      });
+    }
+  } catch (err) {
+    console.error('Sitemap generator: failed to list users:', err);
+  }
+
+  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+  xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
+  for (const item of urls) {
+    xml += '  <url>\n';
+    xml += `    <loc>${escapeHtml(item.loc)}</loc>\n`;
+    xml += `    <changefreq>${item.changefreq}</changefreq>\n`;
+    xml += `    <priority>${item.priority}</priority>\n`;
+    xml += '  </url>\n';
+  }
+  xml += '</urlset>';
+  return xml;
+}
+
+function injectMetaTags(html, reqUrl) {
+  const urlObj = new URL(reqUrl, BASE_URL);
+  const pathname = decodeURIComponent(urlObj.pathname);
+
+  let title = 'David Bond TV';
+  let description = 'Watch David Bond TV — Exclusive travel videos, documentaries, vlogs, and community updates.';
+  let ogImage = `${BASE_URL}/logo.jpg`;
+  let ogUrl = `${BASE_URL}${urlObj.pathname}${urlObj.search}`;
+  let ogType = 'website';
+
+  if (pathname === '/' || pathname === '/browse.html') {
+    title = 'David Bond TV — Browse';
+    description = 'Watch David Bond TV — Exclusive travel videos, documentaries, vlogs, and community updates.';
+    ogImage = `${BASE_URL}/logo.jpg`;
+    ogUrl = `${BASE_URL}/`;
+    ogType = 'website';
+  } else if (pathname === '/watch' || pathname === '/index.html') {
+    const videoId = urlObj.searchParams.get('v');
+    if (videoId) {
+      const video = listManifest().find((v) => v.id === videoId);
+      if (video && video.published !== false) {
+        title = `${video.title} — David Bond TV`;
+        description = video.description || `Watch ${video.title} on David Bond TV.`;
+        if (video.thumb) {
+          ogImage = `${BASE_URL}${video.thumb}`;
+        }
+        ogUrl = `${BASE_URL}/watch?v=${video.id}`;
+        ogType = 'video.other';
+      }
+    }
+  } else if (pathname.startsWith('/u/')) {
+    const match = pathname.match(/^\/u\/([^/]+)/);
+    if (match) {
+      const username = match[1];
+      const user = accounts.store.getByUsername(username);
+      if (user) {
+        title = `${user.username} — David Bond TV`;
+        description = user.about || `Check out ${user.username}'s profile on David Bond TV.`;
+        const avatar = avatarUrl(user.avatar, user.username);
+        if (avatar && !avatar.startsWith('data:')) {
+          ogImage = `${BASE_URL}${avatar}`;
+        } else {
+          ogImage = `${BASE_URL}/logo.jpg`;
+        }
+        ogUrl = `${BASE_URL}/u/${encodeURIComponent(user.username)}`;
+        ogType = 'profile';
+      } else {
+        title = 'Profile Not Found — David Bond TV';
+        description = "This user doesn't exist or hasn't finished setting up their profile.";
+      }
+    }
+  } else if (pathname === '/membership' || pathname === '/membership.html') {
+    title = 'Membership — David Bond TV';
+    description = 'Join David Bond TV for exclusive premium videos and community access.';
+  } else if (pathname === '/terms' || pathname === '/terms.html') {
+    title = 'Terms of Service — David Bond TV';
+  } else if (pathname === '/privacy' || pathname === '/privacy.html') {
+    title = 'Privacy Policy — David Bond TV';
+  } else if (pathname === '/refunds' || pathname === '/refunds.html') {
+    title = 'Refund Policy — David Bond TV';
+  } else if (pathname === '/login' || pathname === '/login.html') {
+    title = 'Login — David Bond TV';
+  } else if (pathname === '/signup' || pathname === '/signup.html') {
+    title = 'Sign Up — David Bond TV';
+  } else if (pathname === '/recover' || pathname === '/recover.html') {
+    title = 'Recover Account — David Bond TV';
+  }
+
+  const metaTags = `
+  <title>${escapeHtml(title)}</title>
+  <meta name="description" content="${escapeHtml(description)}" />
+  
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="${escapeHtml(ogType)}" />
+  <meta property="og:url" content="${escapeHtml(ogUrl)}" />
+  <meta property="og:title" content="${escapeHtml(title)}" />
+  <meta property="og:description" content="${escapeHtml(description)}" />
+  <meta property="og:image" content="${escapeHtml(ogImage)}" />
+  <meta property="og:site_name" content="David Bond TV" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content="${escapeHtml(ogUrl)}" />
+  <meta name="twitter:title" content="${escapeHtml(title)}" />
+  <meta name="twitter:description" content="${escapeHtml(description)}" />
+  <meta name="twitter:image" content="${escapeHtml(ogImage)}" />
+`;
+
+  // Remove existing title tags and metadata tags that we want to override
+  html = html.replace(/<title>[^]*?<\/title>/gi, '');
+  html = html.replace(/<meta\s+name=["']description["']\s+content=["'][^]*?["']\s*\/?>/gi, '');
+  html = html.replace(/<meta\s+property=["']og:[^]*?["']\s+content=["'][^]*?["']\s*\/?>/gi, '');
+  html = html.replace(/<meta\s+name=["']twitter:[^]*?["']\s+content=["'][^]*?["']\s*\/?>/gi, '');
+
+  // Inject right after <head>
+  html = html.replace(/<head>/i, `<head>${metaTags}`);
+  return html;
 }
 
 /** Handle API routes. Returns true if the request was handled, false to fall through. */
@@ -988,6 +1155,105 @@ async function handleApi(req, res, ctx) {
     }
   }
 
+  // Products / courses: public storefront list + per-slug lookup.
+  if (url.pathname === '/api/products' && req.method === 'GET') {
+    sendJson(res, 200, { products: products.listPublished().map(products.publicView) });
+    return true;
+  }
+  if (url.pathname.startsWith('/api/products/') && req.method === 'GET') {
+    const slug = decodeURIComponent(url.pathname.slice('/api/products/'.length));
+    const p = products.getBySlug(slug);
+    if (!p || !p.published) { sendJson(res, 404, { error: 'Not found' }); return true; }
+    sendJson(res, 200, { product: products.publicView(p) });
+    return true;
+  }
+
+  // Admin product management: /api/admin/products[/<id>[/videos|branding|publish|asset]]
+  if (url.pathname === '/api/admin/products' || url.pathname.startsWith('/api/admin/products/')) {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const rest = url.pathname.slice('/api/admin/products'.length).replace(/^\//, '');
+    const [productId, action] = rest.split('/');
+
+    // GET full list (incl. unpublished) for the admin grid.
+    if (req.method === 'GET' && !productId) { sendJson(res, 200, { products: products.list() }); return true; }
+
+    // POST create.
+    if (req.method === 'POST' && !productId) {
+      try {
+        const raw = await readBody(req, 16384);
+        let body; try { body = JSON.parse(raw); } catch { body = null; }
+        if (!body) { sendJson(res, 400, { error: 'Invalid request' }); return true; }
+        const result = products.add(body);
+        sendJson(res, result.ok ? 200 : 400, result);
+      } catch { sendJson(res, 500, { error: 'Server error' }); }
+      return true;
+    }
+
+    const existing = productId ? products.getById(productId) : null;
+    if (!existing) { sendJson(res, 404, { error: 'Product not found' }); return true; }
+
+    // GET one.
+    if (req.method === 'GET' && !action) { sendJson(res, 200, { product: existing }); return true; }
+
+    // DELETE.
+    if (req.method === 'DELETE' && !action) {
+      const result = products.remove(productId);
+      sendJson(res, result.ok ? 200 : 404, result);
+      return true;
+    }
+
+    // POST asset upload (logo/bg) — raw image body, streamed to content/product-assets.
+    if (req.method === 'POST' && action === 'asset') {
+      const kind = url.searchParams.get('kind') === 'bg' ? 'bg' : 'logo';
+      const target = products.productAssetTarget(productId, kind, req.headers['content-type']);
+      if (!target) { sendJson(res, 415, { error: 'Provide a PNG, JPEG or WEBP image.' }); return true; }
+      await streamProductAsset(req, res, productId, target);
+      return true;
+    }
+
+    // POST update / videos / branding / publish.
+    if (req.method === 'POST' && (!action || action === 'videos' || action === 'branding' || action === 'publish')) {
+      try {
+        const raw = await readBody(req, 65536);
+        let body; try { body = JSON.parse(raw); } catch { body = null; }
+        if (!body) { sendJson(res, 400, { error: 'Invalid request' }); return true; }
+        let result;
+        if (action === 'videos') {
+          const ids = Array.isArray(body.videoIds) ? body.videoIds.filter((v) => isKnownVideo(v)) : [];
+          result = products.setVideos(productId, ids);
+        } else if (action === 'branding') {
+          result = products.setBranding(productId, body.branding || body);
+        } else if (action === 'publish') {
+          result = products.update(productId, { published: !!body.published });
+        } else {
+          result = products.update(productId, body);
+        }
+        sendJson(res, result.ok ? 200 : 400, result);
+      } catch { sendJson(res, 500, { error: 'Server error' }); }
+      return true;
+    }
+
+    sendJson(res, 405, { error: 'Method not allowed' });
+    return true;
+  }
+
+  // Subscription pricing: admin reads/writes the membership price config. (Course
+  // prices live per-product; see /api/admin/products.)
+  if (url.pathname === '/api/admin/pricing') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    if (req.method === 'GET') { sendJson(res, 200, { config: pricing.getConfig() }); return true; }
+    if (req.method === 'POST') {
+      try {
+        const raw = await readBody(req, 8192);
+        let body; try { body = JSON.parse(raw); } catch { body = null; }
+        if (!body) { sendJson(res, 400, { error: 'Invalid request' }); return true; }
+        const result = pricing.update(body);
+        sendJson(res, result.ok ? 200 : 400, result);
+      } catch { sendJson(res, 500, { error: 'Server error' }); }
+      return true;
+    }
+  }
+
   // POST /api/admin/bulk  { ids[], action } → delete/publish/unpublish/premium/free
   if (req.method === 'POST' && url.pathname === '/api/admin/bulk') {
     if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
@@ -1082,6 +1348,35 @@ function streamThumb(req, res, id, target) {
   });
 }
 
+/** Stream a raw image body to a product's branding asset path, then patch the product. */
+function streamProductAsset(req, res, id, target) {
+  return new Promise((resolve) => {
+    const out = fs.createWriteStream(target.dest);
+    let total = 0;
+    let aborted = false;
+    const fail = (status, error) => {
+      if (aborted) return;
+      aborted = true;
+      try { req.destroy(); } catch { /* ignore */ }
+      out.destroy();
+      fsp.unlink(target.dest).catch(() => {});
+      sendJson(res, status, { error });
+      resolve();
+    };
+    req.on('data', (chunk) => { total += chunk.length; if (total > THUMB_MAX_BYTES) fail(413, 'Image too large (max 8 MB).'); });
+    req.on('error', () => fail(400, 'Upload interrupted.'));
+    out.on('error', () => fail(500, 'Write failed.'));
+    req.pipe(out);
+    out.on('close', () => {
+      if (aborted) return;
+      if (total === 0) { fail(400, 'Empty upload.'); return; }
+      const result = products.setBranding(id, { [target.field]: target.url });
+      sendJson(res, result.ok ? 200 : 404, result);
+      resolve();
+    });
+  });
+}
+
 /** Stream a raw request body to disk (bypassing readBody), then enqueue ingestion. */
 function streamUpload(req, res, name, visibility = 'free', blur = '', category = '', publishAt = 0) {
   return new Promise((resolve) => {
@@ -1147,18 +1442,39 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // Premium backstop: a premium video's renditions require an active member
-    // (admins count — see ctx.isMember). Non-members get 403 even with a direct
-    // /videos/<id>/* URL (the player gate is the UX; this is the enforcement). A
-    // scheduled/unpublished video's renditions stay admin-only so a member can't
-    // pull a drip early. Free, live videos and other assets are unaffected.
+    // Media backstop for /videos/<id>/* renditions (the player gate is the UX;
+    // this is the enforcement — a direct URL is gated too). Precedence:
+    //   admin                         → always allowed
+    //   scheduled/unpublished (drip)  → admin-only (members can't pull early)
+    //   course-assigned               → requires owning ANY product it's in
+    //                                   (membership is irrelevant — courses are a
+    //                                    separate purchase; ownership is binding)
+    //   premium (not course-assigned) → requires an active member
+    //   free, live                    → open
     const vmatch = pathname.match(/^\/videos\/([^/]+)\//); // pathname is already decoded
-    if (vmatch && (
-      (videoVisibility(vmatch[1]) === 'premium' && !ctx.isMember)
-      || (!videoPublic(vmatch[1]) && !ctx.isAdmin)
-    )) {
-      res.writeHead(403);
-      return res.end('Forbidden');
+    if (vmatch) {
+      const vid = vmatch[1];
+      const courseIds = products.productIdsForVideo(vid, { publishedOnly: true });
+      const courseGated = courseIds.length > 0;
+      const ownsCourse = courseGated && courseIds.some((pid) => ctx.ownedProductIds.includes(pid));
+      const dripBlocked = !videoPublic(vid) && !ctx.isAdmin;
+      const premiumBlocked = videoVisibility(vid) === 'premium' && !ctx.isMember;
+      const blocked = !ctx.isAdmin && (dripBlocked || (courseGated ? !ownsCourse : premiumBlocked));
+      if (blocked) {
+        res.writeHead(403, withSecurityHeaders());
+        return res.end('Forbidden');
+      }
+    }
+
+    // Dynamic sitemap generation for crawlers
+    if (pathname === '/sitemap.xml') {
+      const xml = generateSitemap();
+      res.writeHead(200, withSecurityHeaders({
+        'Content-Type': 'application/xml; charset=utf-8',
+        'Content-Length': Buffer.byteLength(xml),
+        'Cache-Control': 'no-cache',
+      }));
+      return res.end(xml);
     }
 
     // The manifest is a static file, but it must not leak scheduled-but-unreleased
@@ -1168,18 +1484,18 @@ const server = http.createServer(async (req, res) => {
       const all = listManifest();
       const list = ctx.isAdmin ? all : all.filter((v) => v.published !== false);
       const json = JSON.stringify(list);
-      res.writeHead(200, {
+      res.writeHead(200, withSecurityHeaders({
         'Content-Type': 'application/json; charset=utf-8',
         'Content-Length': Buffer.byteLength(json),
         'Cache-Control': 'no-cache',
-      });
+      }));
       return res.end(json);
     }
 
     // Static file serving (unchanged)
     const filePath = resolveFile(req.url);
     if (!filePath) {
-      res.writeHead(403);
+      res.writeHead(403, withSecurityHeaders());
       return res.end('Forbidden');
     }
 
@@ -1187,11 +1503,11 @@ const server = http.createServer(async (req, res) => {
     try {
       stat = await fsp.stat(filePath);
     } catch {
-      res.writeHead(404);
+      res.writeHead(404, withSecurityHeaders());
       return res.end('Not found');
     }
     if (stat.isDirectory()) {
-      res.writeHead(404);
+      res.writeHead(404, withSecurityHeaders());
       return res.end('Not found');
     }
 
@@ -1205,6 +1521,7 @@ const server = http.createServer(async (req, res) => {
     // (pages are small) rather than streaming so we can rewrite the body.
     if (headers['Content-Type'].startsWith('text/html')) {
       let html = await fsp.readFile(filePath, 'utf8');
+      html = injectMetaTags(html, req.url);
       // Cache-bust local CSS/JS by stamping the app version onto their URLs, so a
       // deploy can never leave a browser (or the Cloudflare edge) painting with a
       // stale stylesheet/script. Only touches root-relative .css/.js refs that
@@ -1216,13 +1533,13 @@ const server = http.createServer(async (req, res) => {
       const buf = Buffer.from(html, 'utf8');
       delete headers['Accept-Ranges'];
       headers['Content-Length'] = buf.length;
-      res.writeHead(200, headers);
+      res.writeHead(200, withSecurityHeaders(headers));
       return res.end(buf);
     }
 
     const range = parseRange(req.headers.range, stat.size);
     if (range && range.invalid) {
-      res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` });
+      res.writeHead(416, withSecurityHeaders({ 'Content-Range': `bytes */${stat.size}` }));
       return res.end();
     }
 
@@ -1230,15 +1547,15 @@ const server = http.createServer(async (req, res) => {
       const { start, end } = range;
       headers['Content-Range'] = `bytes ${start}-${end}/${stat.size}`;
       headers['Content-Length'] = end - start + 1;
-      res.writeHead(206, headers);
+      res.writeHead(206, withSecurityHeaders(headers));
       fs.createReadStream(filePath, { start, end }).pipe(res);
     } else {
       headers['Content-Length'] = stat.size;
-      res.writeHead(200, headers);
+      res.writeHead(200, withSecurityHeaders(headers));
       fs.createReadStream(filePath).pipe(res);
     }
   } catch {
-    res.writeHead(500);
+    res.writeHead(500, withSecurityHeaders());
     res.end('Server error');
   }
 });
@@ -1256,6 +1573,12 @@ server.listen(PORT, async () => {
     console.log('└─────────────────────────────────────────────────────────────┘\n');
   }
   await seedAdminUser(); // ensure davidbond exists as a user with the admin role
+  // One-time pricing backfill: if the owner hasn't set membership pricing yet,
+  // seed it from the legacy env Stripe prices so a deploy keeps charging the same
+  // amount (after this, data/pricing.json is the source of truth).
+  if (!pricing.isConfigured()) {
+    try { pricing.seedFrom(await stripePayments.envPriceAmounts()); } catch { /* defaults stand */ }
+  }
   console.log(`▶  David Bond TV running at http://localhost:${PORT}`);
   console.log(`   admin uploads: ${adminConfigured(adminAccount) ? 'enabled' : 'DISABLED'} · ffmpeg: ${hasFfmpeg() ? 'ok' : 'MISSING'} · cloudflare: ${TRUST_CLOUDFLARE ? 'trusted' : 'off'}`);
   await bootSweep(); // any interrupted "processing" entries → "failed"

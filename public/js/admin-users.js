@@ -1,6 +1,6 @@
 // User management: searchable list → click a user for a detail page with
-// profile, IPs, country, subscription, viewing history, watch time, the (scrypt,
-// irreversible) password hash, a password-reset form, and block/unblock.
+// profile, IPs, country, subscription, viewing history, watch time, password/
+// recovery status, a password-reset form, and block/unblock.
 import { flagEmoji } from './world-data.js';
 import { requireAdmin } from './god-auth.js';
 
@@ -63,9 +63,10 @@ async function showDetail(id) {
       <b>Joined</b><span>${fmtDate(u.createdAt)}</span>
       <b>Last seen</b><span>${fmtDate(s.lastSeen)}</span>
       <b>About</b><span>${esc(u.about || '—')}</span>
-      <b>Password hash</b><span class="mono">${esc(u.passwordHash || '—')}</span>
+      <b>Password sign-in</b><span>${u.hasPassword ? 'Enabled' : 'Not set'}</span>
+      <b>Recovery key</b><span>${u.hasRecoveryKey ? `Set${u.recoveryKeySetAt ? ` · ${fmtDate(u.recoveryKeySetAt)}` : ''}` : 'Not set'}</span>
     </div>
-    <p class="muted" style="margin:-10px 0 18px">scrypt is a one-way function — this hash cannot be reversed. Use “Reset password” below to set a new one.</p>
+    <p class="muted" style="margin:-10px 0 18px">Admins can reset a password here, but password hashes are never exposed in the browser.</p>
 
     <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">
       <div class="stat"><b>${s.videosWatched}</b><span>Videos watched</span></div>

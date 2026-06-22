@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { createUsersStore, publicUser } from '../lib/users-store.js';
+import { createUsersStore, publicUser, adminUser } from '../lib/users-store.js';
 
 let file;
 beforeEach(() => {
@@ -61,6 +61,14 @@ describe('users-store', () => {
     expect(pub.email).toBeUndefined();
     expect(pub.passwordHash).toBeUndefined();
     expect(pub).toHaveProperty('username');
+  });
+
+  it('adminUser does not expose password hashes to the browser', async () => {
+    const store = createUsersStore(file);
+    const u = (await store.createUser({ email: 'a@b.com', passwordHash: 'secret' })).user;
+    const admin = adminUser(u);
+    expect(admin.hasPassword).toBe(true);
+    expect(admin.passwordHash).toBeUndefined();
   });
 
   it('handles concurrent writes without corruption', async () => {

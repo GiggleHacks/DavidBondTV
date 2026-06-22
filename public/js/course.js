@@ -1,0 +1,87 @@
+// Standalone course landing page (course.html). Renders one product's branding,
+// sales copy and price, and a one-time purchase button. Also the Stripe
+// success_url / cancel_url target: on ?status=success the webhook may lag, so we
+// poll /api/auth/me until the entitlement lands, then send the buyer to `next`
+// (the video they wanted) or into the course view.
+import { fetchMe } from '/js/account.js';
+import { startPurchase, pollOwnership, fmtMoney } from '/js/course-buy.js';
+import { initTheme } from '/js/theme.js';
+
+initTheme();
+
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const slug = params.get('slug') || '';
+const status = params.get('status');
+const rawNext = params.get('next');
+const next = (rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')) ? rawNext : '';
+
+const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
+
+function banner(text, kind) {
+  const b = $('banner');
+  if (!text) { b.hidden = true; return; }
+  b.hidden = false;
+  b.textContent = text;
+  b.className = `cl-banner ${kind || ''}`.trim();
+}
+
+function paintBranding(product) {
+  const root = $('course-root');
+  const b = product.branding || {};
+  root.style.setProperty('--course-primary', b.primary || '#7c3aed');
+  root.style.setProperty('--course-accent', b.accent || '#22d3ee');
+  if (b.logo) { $('cl-logo').src = b.logo; $('cl-logo').hidden = false; }
+  $('cl-name').textContent = product.name || 'Course';
+  const sales = product.sales || {};
+  $('cl-headline').textContent = sales.headline || '';
+  $('cl-body').textContent = sales.body || product.description || '';
+  $('cl-price').textContent = fmtMoney(product.price, product.currency);
+  const benefits = (sales.bullets && sales.bullets.length)
+    ? sales.bullets
+    : ['Full course — every video included', 'Instant lifetime access', 'One-time payment, no membership'];
+  $('cl-benefits').innerHTML = benefits
+    .map((t) => `<li><span class="cl-check">${CHECK}</span><span></span></li>`).join('');
+  [...$('cl-benefits').querySelectorAll('li > span:last-child')].forEach((el, i) => { el.textContent = benefits[i]; });
+}
+
+function showOwned() {
+  $('buy-btn').hidden = true;
+  $('owned-view').hidden = false;
+}
+
+async function render() {
+  if (!slug) { $('notfound').hidden = false; return; }
+  let product = null;
+  try { product = (await (await fetch(`/api/products/${encodeURIComponent(slug)}`)).json()).product; } catch { /* below */ }
+  if (!product) { $('notfound').hidden = false; return; }
+
+  paintBranding(product);
+  $('content').hidden = false;
+  document.title = `${product.name} — David Bond TV`;
+
+  const buy = $('buy-btn');
+  buy.textContent = (product.sales && product.sales.ctaLabel) || `Purchase ${fmtMoney(product.price, product.currency)}`;
+  buy.addEventListener('click', () => startPurchase(product, next, buy));
+
+  if (status === 'cancel') banner('Checkout canceled — no charge was made.', 'warn');
+
+  let me = await fetchMe();
+  const owns = (u) => !!(u && Array.isArray(u.ownedProductIds) && u.ownedProductIds.includes(product.id));
+  const isAdmin = !!(me && Array.isArray(me.roles) && me.roles.includes('admin'));
+
+  if (status === 'success' && !owns(me)) {
+    banner('Payment received — unlocking your course…', 'ok');
+    me = await pollOwnership(product.id);
+  }
+
+  if (owns(me) || isAdmin) {
+    // Already owns it (or just bought it). If they came from a specific video,
+    // bounce straight back; otherwise offer the course view.
+    if (next) { banner('You’re all set — taking you to your video…', 'ok'); setTimeout(() => { location.href = next; }, 1000); }
+    else if (status === 'success') banner('You’re all set — enjoy the course!', 'ok');
+    showOwned();
+  }
+}
+
+render();

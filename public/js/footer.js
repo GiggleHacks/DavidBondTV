@@ -11,7 +11,7 @@
       <a href="/terms">Terms</a>
       <a href="/privacy">Privacy</a>
       <a href="/refunds">Refunds &amp; Cancellation</a>
-      <a href="mailto:support@davidbondtv.com">Contact</a>
+      <a href="https://t.me/HelloDavid99" target="_blank" rel="noopener">Contact</a>
     </nav>
     <p class="site-footer-copy">© ${year} David Bond TV. All rights reserved.</p>`;
   document.body.appendChild(footer);

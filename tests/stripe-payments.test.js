@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import crypto from 'node:crypto';
+import { Readable } from 'node:stream';
 import { verifyStripeSignature, toForm, createStripePayments } from '../lib/stripe-payments.js';
 
 const SECRET = 'whsec_test';
@@ -68,6 +69,16 @@ describe('toForm', () => {
 
   it('skips null/undefined', () => {
     expect(toForm({ a: 1, b: null, c: undefined })).toBe('a=1');
+  });
+
+  it('flattens one-time price_data (dynamic pricing) bracket notation', () => {
+    const s = toForm({
+      mode: 'payment',
+      line_items: [{ quantity: 1, price_data: { currency: 'usd', unit_amount: 9900, product_data: { name: 'Digital Pickup' } } }],
+    });
+    expect(s).toContain('mode=payment');
+    expect(s).toContain('line_items%5B0%5D%5Bprice_data%5D%5Bunit_amount%5D=9900');
+    expect(s).toContain('line_items%5B0%5D%5Bprice_data%5D%5Bproduct_data%5D%5Bname%5D=Digital%20Pickup');
   });
 });
 
@@ -186,6 +197,105 @@ describe('handleEvent → applySubscription', () => {
     expect(sp._test.resolveUid({ metadata: { uid: 'meta' }, customer: 'cus_9' })).toBe('meta');
     expect(sp._test.resolveUid({ metadata: {}, customer: 'cus_9' })).toBe('u1');
     expect(sp._test.resolveUid({ customer: 'cus_none' })).toBe(null);
+  });
+});
+
+describe('handleEvent → product entitlement (one-time course purchase)', () => {
+  const paymentSession = (over = {}) => ({
+    id: 'cs_1', mode: 'payment', customer: 'cus_1',
+    amount_total: 9900, currency: 'usd',
+    client_reference_id: 'u1', metadata: { uid: 'u1', productId: 'p1' },
+    ...over,
+  });
+
+  it('grants the entitlement and records a txn, WITHOUT touching membership', async () => {
+    const store = fakeStore({ u1: { id: 'u1' } });
+    const payments = fakePayments();
+    const sp = makeSP(store, payments);
+    await sp._test.handleEvent({ id: 'evt_p1', type: 'checkout.session.completed', data: { object: paymentSession() } });
+    const u = store._users.u1;
+    expect(u.products).toHaveLength(1);
+    expect(u.products[0]).toMatchObject({ productId: 'p1', provider: 'stripe', stripeSessionId: 'cs_1', amount: 9900, currency: 'usd' });
+    expect(u.membership == null).toBe(true);   // course purchase is separate from membership
+    expect(u.hasPurchased).not.toBe(true);
+    expect(payments._txns.u1[0]).toMatchObject({ kind: 'stripe.product.paid', productId: 'p1' });
+  });
+
+  it('is idempotent for a redelivered session (one grant, one txn)', async () => {
+    const store = fakeStore({ u1: { id: 'u1' } });
+    const payments = fakePayments();
+    const sp = makeSP(store, payments);
+    const ev = { id: 'evt_p2', type: 'checkout.session.completed', data: { object: paymentSession() } };
+    await sp._test.handleEvent(ev);
+    await sp._test.handleEvent(ev); // same session id again
+    expect(store._users.u1.products).toHaveLength(1);
+    expect(payments._txns.u1).toHaveLength(1);
+  });
+
+  it('leaves subscription checkout sessions on the membership path', async () => {
+    const store = fakeStore({ u1: { id: 'u1' } });
+    const sp = makeSP(store, fakePayments());
+    // A subscription-mode session has no productId; it must NOT grant a product.
+    await sp._test.handleEvent({
+      id: 'evt_sub', type: 'checkout.session.completed',
+      data: { object: { id: 'cs_2', mode: 'subscription', customer: 'cus_1', client_reference_id: 'u1', metadata: { uid: 'u1' } } },
+    });
+    expect(store._users.u1.products || []).toHaveLength(0);
+  });
+});
+
+describe('checkout → dynamic subscription pricing', () => {
+  const fakeRes = () => ({
+    statusCode: null, body: null,
+    writeHead(s) { this.statusCode = s; },
+    end(p) { this.body = p; },
+  });
+
+  // Capture the form-encoded Stripe params by spying through fetchImpl body.
+  async function checkoutBody(config, interval = 'month') {
+    let captured = null;
+    const user = { id: 'u1', profileComplete: true, stripeCustomerId: 'cus_1', email: 'a@b.com' };
+    const sp = createStripePayments({
+      store: fakeStore({ u1: user }), paymentsStore: fakePayments(),
+      currentUser: () => user, baseUrl: 'http://x', secretKey: 'sk_test', webhookSecret: SECRET,
+      pricing: { getConfig: () => config },
+      fetchImpl: async (url, opts) => {
+        if (url.endsWith('/checkout/sessions')) { captured = opts.body; return { ok: true, json: async () => ({ url: 'https://stripe' }) }; }
+        return { ok: true, json: async () => ({ id: 'cus_1' }) };
+      },
+    });
+    const req = Readable.from([Buffer.from(JSON.stringify({ interval }))]);
+    const res = fakeRes();
+    await sp._test.checkout(req, res);
+    return { status: res.statusCode, body: captured };
+  }
+
+  const withIntro = { currency: 'usd', monthly: { amount: 1700, introAmount: 4700, introLabel: 'First month' }, yearly: { enabled: true, amount: 12000 } };
+
+  it('monthly with intro: recurring price_data + one-time intro line item + 30-day trial', async () => {
+    const { status, body } = await checkoutBody(withIntro, 'month');
+    expect(status).toBe(200);
+    expect(body).toContain('line_items%5B0%5D%5Bprice_data%5D%5Bunit_amount%5D=1700');
+    expect(body).toContain('line_items%5B0%5D%5Bprice_data%5D%5Brecurring%5D%5Binterval%5D=month');
+    expect(body).toContain('line_items%5B1%5D%5Bprice_data%5D%5Bunit_amount%5D=4700');
+    // The intro line item is one-time → it must NOT carry a recurring block.
+    expect(body).not.toContain('line_items%5B1%5D%5Bprice_data%5D%5Brecurring%5D');
+    expect(body).toContain('subscription_data%5Btrial_period_days%5D=30');
+  });
+
+  it('monthly without intro: single recurring line item, no trial, no second item', async () => {
+    const { body } = await checkoutBody({ ...withIntro, monthly: { amount: 1700, introAmount: 0 } }, 'month');
+    expect(body).toContain('line_items%5B0%5D%5Bprice_data%5D%5Bunit_amount%5D=1700');
+    expect(body).not.toContain('line_items%5B1%5D');
+    expect(body).not.toContain('trial_period_days');
+  });
+
+  it('yearly: single annual recurring line item, no intro/trial', async () => {
+    const { body } = await checkoutBody(withIntro, 'year');
+    expect(body).toContain('line_items%5B0%5D%5Bprice_data%5D%5Bunit_amount%5D=12000');
+    expect(body).toContain('line_items%5B0%5D%5Bprice_data%5D%5Brecurring%5D%5Binterval%5D=year');
+    expect(body).not.toContain('line_items%5B1%5D');
+    expect(body).not.toContain('trial_period_days');
   });
 });
 

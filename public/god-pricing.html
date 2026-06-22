@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>David Bond TV — Pricing</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+  <script>document.documentElement.classList.add('admin-auth-pending');</script>
+  <style>
+    .pr-editor { display: grid; gap: 16px; max-width: 640px; }
+    .pr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .pr-field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 5px; }
+    .pr-field input[type=text], .pr-field input[type=number] {
+      width: 100%; background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 11px; font-size: 14px; font-family: inherit;
+    }
+    .pr-hint { font-size: 12px; color: var(--text-dim); margin: 4px 0 0; }
+    .pr-readout { font-size: 13px; color: var(--text-dim); margin: 2px 0 0; }
+    .pr-preview { background: var(--surface-2); border-radius: 10px; padding: 14px 16px; font-size: 14px; }
+    .pr-preview b { color: var(--text); }
+    .pr-prodlist { display: grid; gap: 8px; }
+    .pr-prodrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 14px; font-size: 13.5px; }
+    .pr-actions { display: flex; gap: 10px; align-items: center; }
+    @media (max-width: 560px) { .pr-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="admin-wrap wide admin-app-shell">
+    <header class="admin-bar">
+      <a class="logo" href="/" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
+      <nav class="admin-nav">
+        <a href="/god">Dashboard</a>
+        <a href="/god-upload.html">Upload</a>
+        <a href="/god-videos.html">Videos</a>
+        <a href="/god-products.html">Products</a>
+        <a href="/god-pricing.html" class="active">Pricing</a>
+        <a href="/god-users.html">Users</a>
+        <a href="/god-community.html">Community</a>
+        <a class="back" href="/">← Site</a>
+      </nav>
+    </header>
+
+    <main id="app">
+      <section class="card">
+        <div class="card-head"><h2>Membership pricing</h2></div>
+        <div class="pr-editor">
+          <div class="pr-grid">
+            <div class="pr-field">
+              <label>Monthly recurring price</label>
+              <input id="f-monthly" type="number" min="0" step="0.01" placeholder="17.00" />
+              <p class="pr-hint">The ongoing monthly charge.</p>
+            </div>
+            <div class="pr-field">
+              <label>Intro first-month price (blank = none)</label>
+              <input id="f-intro" type="number" min="0" step="0.01" placeholder="47.00" />
+              <p class="pr-hint">Charged once at signup; recurring starts next month.</p>
+            </div>
+          </div>
+          <div class="pr-field">
+            <label>Intro label</label>
+            <input id="f-intro-label" type="text" maxlength="60" placeholder="First month" />
+          </div>
+
+          <div class="pr-grid">
+            <div class="pr-field">
+              <label><input type="checkbox" id="f-year-enabled" /> Offer a yearly plan</label>
+              <input id="f-yearly" type="number" min="0" step="0.01" placeholder="120.00" />
+              <p class="pr-readout" id="year-readout"></p>
+            </div>
+            <div class="pr-field">
+              <label>Currency</label>
+              <input id="f-currency" type="text" maxlength="3" value="usd" style="text-transform:uppercase" />
+            </div>
+          </div>
+
+          <div class="pr-preview" id="preview"></div>
+
+          <div class="pr-actions">
+            <button class="btn" id="save-btn">Save pricing</button>
+            <span id="msg" class="muted"></span>
+          </div>
+          <p class="pr-hint">Changes are live immediately for new sign-ups and everywhere prices are shown. Existing members keep the rate they signed up at (Stripe holds each subscription at its original price).</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Course &amp; product prices</h2><a class="back" href="/god-products.html">Manage products →</a></div>
+        <div class="pr-prodlist" id="prod-list"><p class="muted">Loading…</p></div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="/js/admin-pricing.js"></script>
+</body>
+</html>

@@ -964,6 +964,85 @@ body {
 .pg-alt:hover { color: #fff; text-decoration: underline; }
 
 /* ============================================================
+   Courses / one-time products — per-product branded surfaces
+   (gate on the watch page, modal on the grid, banner above the
+   grid, and the standalone course landing page). Colors come from
+   the product's branding via --course-primary / --course-accent.
+   ============================================================ */
+.course-gradient { background: linear-gradient(135deg, var(--course-primary, #7c3aed), var(--course-accent, #22d3ee)); }
+.cg-buy, .cm-buy, .cb-buy, .cl-buy {
+  background: linear-gradient(135deg, var(--course-primary, #7c3aed), var(--course-accent, #22d3ee)) !important;
+  color: #fff !important; box-shadow: 0 8px 24px color-mix(in srgb, var(--course-primary, #7c3aed) 45%, transparent) !important;
+}
+
+/* In-player course gate */
+.course-gate::before {
+  background: radial-gradient(120% 100% at 50% 30%,
+    color-mix(in srgb, var(--course-primary, #7c3aed) 40%, rgba(6,9,16,.6)), rgba(6,9,16,.9));
+}
+.cg-logo { max-height: 64px; max-width: 70%; margin: 0 auto 16px; display: block; object-fit: contain; }
+.cg-headline { font-size: 24px; font-weight: 800; margin-bottom: 10px; }
+.cg-body { color: rgba(255,255,255,.85); font-size: 14.5px; line-height: 1.55; }
+.cg-price { font-size: 30px; font-weight: 800; margin: 16px 0 4px; }
+.cg-buy { margin-top: 14px; padding: 14px 34px; }
+
+/* Course modal (grid) — themed border, reuses .pm-overlay/.pm-card shell. */
+.cm-card {
+  background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--course-primary, #7c3aed) 14%, var(--surface)), var(--surface) 60%);
+  border-color: color-mix(in srgb, var(--course-primary, #7c3aed) 32%, var(--border));
+}
+.cm-badge { background: linear-gradient(135deg, var(--course-primary, #7c3aed), var(--course-accent, #22d3ee)); color: #fff; }
+.cm-logo { max-height: 56px; max-width: 70%; margin: 0 auto 10px; display: block; object-fit: contain; }
+.cm-name { font-size: 22px; font-weight: 800; margin-bottom: 6px; }
+.cm-headline { color: var(--text); font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+.cm-price { font-size: 26px; font-weight: 800; margin: 8px 0 16px; }
+.cm-buy { width: 100%; padding: 14px; }
+
+/* Course banner above the grid (when a course is selected in the sidebar). */
+.course-banner {
+  position: relative; overflow: hidden; border-radius: 16px; margin: 0 0 20px;
+  padding: 22px 24px; color: #fff;
+  background: linear-gradient(135deg, var(--course-primary, #7c3aed), var(--course-accent, #22d3ee));
+}
+.cb-inner { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.cb-logo { height: 56px; width: auto; object-fit: contain; flex: none; }
+.cb-text { flex: 1 1 260px; }
+.cb-name { font-size: 22px; font-weight: 800; margin: 0 0 4px; }
+.cb-headline { font-size: 15px; font-weight: 600; margin: 0 0 4px; opacity: .95; }
+.cb-body { font-size: 13.5px; line-height: 1.5; margin: 0; opacity: .9; }
+.cb-cta { flex: none; }
+.cb-buy { padding: 13px 26px; }
+.cb-owned { display: inline-block; padding: 10px 18px; border-radius: 999px; font-weight: 700; background: rgba(255,255,255,.2); }
+
+/* Standalone course landing page (course.html). */
+.cl-wrap { width: min(760px, 100%); margin: 36px auto 80px; padding: 0 20px; }
+.cl-hero {
+  position: relative; overflow: hidden; border-radius: 20px; padding: 40px 32px; text-align: center; color: #fff;
+  background: linear-gradient(135deg, var(--course-primary, #7c3aed), var(--course-accent, #22d3ee));
+}
+.cl-logo { max-height: 80px; margin: 0 auto 18px; display: block; object-fit: contain; }
+.cl-name { font-size: 34px; font-weight: 800; letter-spacing: -.5px; margin: 0 0 8px; }
+.cl-headline { font-size: 18px; font-weight: 600; margin: 0 auto 6px; max-width: 520px; opacity: .96; }
+.cl-body { font-size: 15px; line-height: 1.6; margin: 0 auto; max-width: 520px; opacity: .92; }
+.cl-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+  padding: 28px 30px; margin-top: -28px; position: relative; box-shadow: 0 20px 60px var(--shadow);
+}
+.cl-price { font-size: 44px; font-weight: 800; letter-spacing: -1px; text-align: center; margin: 4px 0 4px; }
+.cl-price-note { color: var(--text-dim); font-size: 13px; text-align: center; margin: 0 0 20px; }
+.cl-benefits { list-style: none; margin: 0 auto 24px; padding: 0; max-width: 420px; display: grid; gap: 11px; }
+.cl-benefits li { display: flex; align-items: flex-start; gap: 11px; font-size: 14.5px; line-height: 1.4; }
+.cl-check { flex: none; width: 22px; height: 22px; margin-top: 1px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center; color: #fff;
+  background: linear-gradient(135deg, var(--course-primary, #7c3aed), var(--course-accent, #22d3ee)); }
+.cl-check svg { width: 13px; height: 13px; }
+.cl-buy { width: 100%; padding: 16px; font-size: 17px; }
+.cl-owned { text-align: center; }
+.cl-banner { border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; font-size: 14px; }
+.cl-banner.ok { background: rgba(16,185,129,.12); color: #34d399; }
+.cl-banner.warn { background: rgba(245,158,11,.12); color: #fbbf24; }
+
+/* ============================================================
    Interaction polish — hover/glow/press on primary controls
    ============================================================ */
 .chip { transition: background .15s, border-color .15s, transform .05s; }

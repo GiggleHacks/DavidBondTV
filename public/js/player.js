@@ -10,6 +10,8 @@ import { initTheme } from './theme.js';
 import { initComments } from './comments.js';
 import { initReactions } from './reactions.js';
 import { initWatchTracker } from './watch-tracker.js';
+import { canUserWatchPremium, isAdminUser, canWatchVideo } from './viewer-access.js';
+import { startPurchase, fmtMoney } from './course-buy.js';
 
 const $ = (id) => document.getElementById(id);
 const FPS = 30000 / 1001; // source frame rate (~29.97)
@@ -19,16 +21,38 @@ function getVideoId() {
   return new URLSearchParams(window.location.search).get('v') || '';
 }
 
+// One shared /api/auth/me lookup per page load: several gates need the viewer's
+// identity, so fetch it once and reuse the promise instead of re-hitting the API.
+let mePromise = null;
+function getMe() {
+  if (!mePromise) {
+    mePromise = fetch('/api/auth/me')
+      .then((r) => r.json())
+      .then((d) => d.user)
+      .catch(() => null);
+  }
+  return mePromise;
+}
+
 /** True if the signed-in viewer may watch premium content (admin OR active member). */
 async function viewerCanWatchPremium() {
-  try {
-    const me = (await (await fetch('/api/auth/me')).json()).user;
-    if (!me) return false;
-    if (Array.isArray(me.roles) && me.roles.includes('admin')) return true;
-    return !!(me.membership && me.membership.active);
-  } catch {
-    return false;
+  return canUserWatchPremium(await getMe());
+}
+
+async function viewerIsAdmin() {
+  return isAdminUser(await getMe());
+}
+
+// Published product catalog, fetched once per page load (for course gating).
+let productsPromise = null;
+function getProducts() {
+  if (!productsPromise) {
+    productsPromise = fetch('/api/products')
+      .then((r) => r.json())
+      .then((d) => (Array.isArray(d.products) ? d.products : []))
+      .catch(() => []);
   }
+  return productsPromise;
 }
 
 // Polished gold padlock used on the premium teaser. `sfx` keeps gradient ids
@@ -48,8 +72,7 @@ const PREMIUM_LOCK = (sfx) => `<svg viewBox="0 0 48 48" fill="none" aria-hidden=
  */
 async function goToUnlock(videoUrl) {
   const membershipUrl = `/membership.html?next=${encodeURIComponent(videoUrl)}`;
-  let me = null;
-  try { me = (await (await fetch('/api/auth/me')).json()).user; } catch { /* treat as logged out */ }
+  const me = await getMe();
   if (me) { location.href = membershipUrl; return; }
   try { localStorage.setItem('dbtv_after_auth', membershipUrl); } catch { /* ignore */ }
   location.href = `/signup.html?next=${encodeURIComponent(membershipUrl)}`;
@@ -80,6 +103,48 @@ function showPremiumGate(container, entry) {
   gate.querySelector('.pg-alt').addEventListener('click', (e) => {
     e.preventDefault();
     location.href = `/login.html?next=${encodeURIComponent(membershipUrl)}`;
+  });
+}
+
+/** Replace the player surface with a course's BRANDED unlock screen (colors,
+ *  logo, sales copy, price + a one-time purchase button). Separate from the
+ *  membership gate above — a course is a one-time purchase, not a subscription. */
+function showCourseGate(container, entry, product) {
+  const spinner = document.getElementById('spinner');
+  const bigPlay = document.getElementById('big-play');
+  if (spinner) spinner.hidden = true;
+  if (bigPlay) bigPlay.style.display = 'none';
+  const b = product.branding || {};
+  const sales = product.sales || {};
+  const gate = document.createElement('div');
+  gate.className = 'premium-gate course-gate';
+  gate.style.setProperty('--course-primary', b.primary || '#7c3aed');
+  gate.style.setProperty('--course-accent', b.accent || '#22d3ee');
+  if (b.bgImage) gate.style.backgroundImage = `url("${b.bgImage}")`;
+  else if (entry.thumb) gate.style.backgroundImage = `url("${entry.thumb}")`;
+  const price = fmtMoney(product.price, product.currency);
+  const cta = sales.ctaLabel || `Purchase ${price}`;
+  gate.innerHTML = `
+    <div class="pg-inner cg-inner">
+      ${b.logo ? '<img class="cg-logo" alt="" />' : '<span class="pg-badge">Course</span>'}
+      <h2 class="cg-headline"></h2>
+      <p class="cg-body"></p>
+      <div class="cg-price"></div>
+      <button class="pg-sub gold-cta cg-buy"></button>
+      <a class="pg-alt" href="#">Learn more about this course</a>
+    </div>`;
+  container.appendChild(gate);
+  if (b.logo) gate.querySelector('.cg-logo').src = b.logo;
+  gate.querySelector('.cg-headline').textContent = sales.headline || `Unlock the ${product.name} course`;
+  gate.querySelector('.cg-body').textContent = sales.body
+    || `This video is part of the ${product.name} course. One purchase unlocks every video in the course — yours for life.`;
+  gate.querySelector('.cg-price').textContent = price;
+  const buy = gate.querySelector('.cg-buy');
+  buy.textContent = cta;
+  buy.addEventListener('click', () => startPurchase(product, location.pathname + location.search, buy));
+  gate.querySelector('.pg-alt').addEventListener('click', (e) => {
+    e.preventDefault();
+    location.href = `/course.html?slug=${encodeURIComponent(product.slug)}`;
   });
 }
 
@@ -135,10 +200,15 @@ async function init() {
   if (!entry) { location.replace('/'); return; }
   const commentVideo = entry.id;
 
-  // Is this a premium video the current viewer can't watch? If so we keep the
-  // page generic (no title/description/edu hints) so the locked "Unlock Now"
-  // screen never reveals what's behind the paywall.
-  const locked = entry.visibility === 'premium' && !(await viewerCanWatchPremium());
+  // Resolve access: a course-assigned video is gated by ownership; a plain
+  // premium video by membership (see canWatchVideo). If locked, keep the page
+  // generic (no title/description/edu hints) so the unlock screen never reveals
+  // what's behind the paywall. `gateProduct` is the course to brand the gate with.
+  const productList = await getProducts();
+  const courseIds = productList.filter((p) => (p.videoIds || []).includes(entry.id)).map((p) => p.id);
+  const me = await getMe();
+  const locked = !canWatchVideo(me, entry, courseIds);
+  const gateProduct = courseIds.length ? (productList.find((p) => p.id === courseIds[0]) || null) : null;
 
   // Fill the meta row (generic for a locked premium video).
   $('v-title').textContent = locked ? 'Members-only video' : (entry.title || 'David Bond TV');
@@ -174,7 +244,8 @@ async function init() {
   // Premium gate: exclusive videos play for admins only; everyone else sees a
   // lock + subscribe prompt instead of the stream (the server 403s the media too).
   if (locked) {
-    showPremiumGate(container, entry);
+    if (gateProduct) showCourseGate(container, entry, gateProduct);
+    else showPremiumGate(container, entry);
     initReactions(commentVideo);
     initComments(commentVideo);
     return;

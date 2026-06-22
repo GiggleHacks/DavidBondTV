@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>David Bond TV — Products</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+  <script>document.documentElement.classList.add('admin-auth-pending');</script>
+  <style>
+    .prod-list { display: grid; gap: 12px; }
+    .prod-row { display: flex; align-items: center; gap: 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
+    .prod-row .pr-logo { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; background: var(--surface); flex: none; }
+    .prod-row .pr-main { flex: 1 1 auto; min-width: 0; }
+    .prod-row .pr-name { font-weight: 700; }
+    .prod-row .pr-sub { color: var(--text-dim); font-size: 12.5px; }
+    .pr-tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .pr-tag.live { background: rgba(16,185,129,.16); color: #34d399; }
+    .pr-tag.draft { background: rgba(245,158,11,.16); color: #fbbf24; }
+    .prod-editor { display: grid; gap: 14px; max-width: 720px; }
+    .pe-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .pe-field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 5px; }
+    .pe-field input[type=text], .pe-field input[type=number], .pe-field textarea, .pe-field select {
+      width: 100%; background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 11px; font-size: 13.5px; font-family: inherit;
+    }
+    .pe-field textarea { min-height: 70px; resize: vertical; }
+    .pe-color { display: flex; align-items: center; gap: 8px; }
+    .pe-color input[type=color] { width: 46px; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: none; }
+    .pe-videos { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; padding: 8px; display: grid; gap: 4px; }
+    .pe-vrow { display: flex; align-items: center; gap: 9px; padding: 5px 7px; border-radius: 7px; font-size: 13px; }
+    .pe-vrow:hover { background: var(--surface-2); }
+    .pe-vrow img { width: 54px; height: 32px; object-fit: cover; border-radius: 4px; flex: none; }
+    .pe-actions { display: flex; gap: 10px; align-items: center; }
+    .pe-asset { display: flex; align-items: center; gap: 10px; }
+    .pe-asset img { height: 40px; border-radius: 6px; }
+    @media (max-width: 620px) { .pe-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="admin-wrap wide admin-app-shell">
+    <header class="admin-bar">
+      <a class="logo" href="/" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
+      <nav class="admin-nav">
+        <a href="/god">Dashboard</a>
+        <a href="/god-upload.html">Upload</a>
+        <a href="/god-videos.html">Videos</a>
+        <a href="/god-products.html" class="active">Products</a>
+        <a href="/god-users.html">Users</a>
+        <a href="/god-community.html">Community</a>
+        <a class="back" href="/">← Site</a>
+      </nav>
+    </header>
+
+    <main id="app">
+      <!-- Product list -->
+      <section class="card" id="list-card">
+        <div class="card-head">
+          <h2>Products &amp; courses <span id="pcount" class="muted"></span></h2>
+          <button class="btn sm" id="new-btn">+ New product</button>
+        </div>
+        <div class="prod-list" id="prod-list"></div>
+      </section>
+
+      <!-- Editor (hidden until New/Edit) -->
+      <section class="card" id="editor-card" hidden>
+        <div class="card-head">
+          <h2 id="editor-title">New product</h2>
+          <button class="btn sm ghost" id="cancel-btn">← Back to list</button>
+        </div>
+        <div class="prod-editor">
+          <div class="pe-grid">
+            <div class="pe-field"><label>Name</label><input id="f-name" type="text" maxlength="120" placeholder="Digital Pickup" /></div>
+            <div class="pe-field"><label>Slug (URL)</label><input id="f-slug" type="text" maxlength="60" placeholder="digital-pickup" /></div>
+            <div class="pe-field"><label>Type</label>
+              <select id="f-type">
+                <option value="course">Course</option>
+                <option value="bundle">Bundle</option>
+                <option value="digital">Digital product</option>
+              </select>
+            </div>
+            <div class="pe-field"><label>Price (USD)</label><input id="f-price" type="number" min="0" step="0.01" placeholder="99.00" /></div>
+          </div>
+
+          <div class="pe-field"><label>Short description</label><textarea id="f-description" maxlength="4000"></textarea></div>
+
+          <div class="pe-grid">
+            <div class="pe-field"><label>Primary color</label><div class="pe-color"><input id="f-primary" type="color" value="#7c3aed" /><input id="f-primary-hex" type="text" maxlength="9" value="#7c3aed" /></div></div>
+            <div class="pe-field"><label>Accent color</label><div class="pe-color"><input id="f-accent" type="color" value="#22d3ee" /><input id="f-accent-hex" type="text" maxlength="9" value="#22d3ee" /></div></div>
+          </div>
+
+          <div class="pe-grid">
+            <div class="pe-field"><label>Logo</label><div class="pe-asset"><img id="logo-prev" alt="" hidden /><input id="f-logo" type="file" accept="image/png,image/jpeg,image/webp" /></div></div>
+            <div class="pe-field"><label>Background graphic</label><div class="pe-asset"><img id="bg-prev" alt="" hidden /><input id="f-bg" type="file" accept="image/png,image/jpeg,image/webp" /></div></div>
+          </div>
+
+          <h3 style="margin:6px 0 0">Sales copy</h3>
+          <div class="pe-field"><label>Headline</label><input id="f-headline" type="text" maxlength="200" /></div>
+          <div class="pe-field"><label>Body</label><textarea id="f-body" maxlength="4000"></textarea></div>
+          <div class="pe-field"><label>Bullets (one per line)</label><textarea id="f-bullets" placeholder="Full course, instant lifetime access&#10;Proven frameworks&#10;One-time payment"></textarea></div>
+          <div class="pe-field"><label>Button label</label><input id="f-cta" type="text" maxlength="60" placeholder="Purchase $99" /></div>
+
+          <h3 style="margin:6px 0 0">Assigned videos <span id="vsel-count" class="muted"></span></h3>
+          <div class="pe-videos" id="f-videos"></div>
+
+          <label class="switch"><input type="checkbox" id="f-published" /> <span>Published (visible on the site)</span></label>
+
+          <div class="pe-actions">
+            <button class="btn" id="save-btn">Save product</button>
+            <button class="btn ghost danger" id="delete-btn" hidden>Delete</button>
+            <span id="editor-msg" class="muted"></span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="/js/admin-products.js"></script>
+</body>
+</html>

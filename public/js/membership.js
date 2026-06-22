@@ -7,6 +7,7 @@
 // ?status=success&next=…; since the webhook may lag, we poll /api/auth/me until
 // the membership flips active, then redirect to `next`.
 import { fetchMe, postJSON } from '/js/account.js';
+import { deriveBillingView } from '/js/billing-view.js';
 import { initTheme } from '/js/theme.js';
 
 initTheme();
@@ -49,16 +50,18 @@ function fmtMoney(amount, currency) {
 function showMember(me) {
   $('plans-view').hidden = true;
   $('member-view').hidden = false;
-  const m = me.membership || {};
-  let status = 'You have full access to every exclusive video. Enjoy the show!';
-  if (m.cancelAtPeriodEnd && m.currentPeriodEnd) {
-    status = `Your membership ends on ${fmtDate(m.currentPeriodEnd)} — you keep access until then.`;
-  } else if (m.status === 'past_due') {
-    status = 'Your last payment didn’t go through. Update your card to keep your membership active.';
-  } else if (m.currentPeriodEnd) {
-    status = `Active${m.interval ? ` · billed ${m.interval}ly` : ''} · renews ${fmtDate(m.currentPeriodEnd)}.`;
-  }
-  $('member-status').textContent = status;
+  const view = deriveBillingView(me);
+  const title = document.querySelector('#member-view .mb-title');
+  const foot = document.querySelector('#member-view .mb-foot a');
+  $('member-status').textContent = view.kind === 'admin-access'
+    ? 'Your admin account already has full access to every exclusive video.'
+    : view.status;
+  if (title) title.textContent = view.kind === 'admin-access' ? 'Admin access included.' : "You're in.";
+  if (foot) foot.textContent = view.kind === 'admin-access' ? 'Back to the admin dashboard →' : 'Browse exclusive videos →';
+  if (foot && view.kind === 'admin-access') foot.href = '/god';
+  if (foot && view.kind !== 'admin-access') foot.href = '/';
+  const manage = $('manage-btn');
+  manage.hidden = view.action !== 'manage';
 }
 
 function showPlans() {
@@ -108,13 +111,44 @@ async function pollUntilActive(tries = 6) {
 // Crypto is priced 20% below the card price (paid direct, no processor fees).
 const CRYPTO_DISCOUNT = 0.20;
 
-/** Show the headline price on both cards (card = full, crypto = 20% off). */
-function setPrices(amount, currency, per) {
-  $('price-amount').textContent = fmtMoney(amount, currency);
-  $('price-per').textContent = `/ ${per}`;
-  const cryptoAmt = Math.round(amount * (1 - CRYPTO_DISCOUNT));
-  $('crypto-was').textContent = fmtMoney(amount, currency);
-  $('crypto-amount').textContent = fmtMoney(cryptoAmt, currency);
+/**
+ * Render the monthly card headline from live config. With an intro price we show
+ * "<intro> first month" + a "then <recurring>/mo" note; otherwise the flat
+ * monthly price. The crypto card always reflects the recurring monthly price.
+ */
+function setCardPricing(month, intro) {
+  const recurring = month.amount;
+  const cur = month.currency;
+  const note = document.querySelector('.pay-opt.normie .pay-note');
+  if (intro && intro.amount > 0) {
+    $('price-amount').textContent = fmtMoney(intro.amount, cur);
+    $('price-per').textContent = (intro.label || 'first month').toLowerCase();
+    if (note) note.textContent = `then ${fmtMoney(recurring, cur)}/mo`;
+  } else {
+    $('price-amount').textContent = fmtMoney(recurring, cur);
+    $('price-per').textContent = '/ mo';
+    if (note) note.textContent = 'Standard price';
+  }
+  const cryptoAmt = Math.round(recurring * (1 - CRYPTO_DISCOUNT));
+  $('crypto-was').textContent = fmtMoney(recurring, cur);
+  $('crypto-amount').textContent = fmtMoney(cryptoAmt, cur);
+}
+
+/** Show/populate the yearly option (with its discount vs 12× monthly), or hide it. */
+function setYearly(year, month) {
+  const row = $('year-row');
+  if (!row) return;
+  if (!year) { row.hidden = true; return; }
+  row.hidden = false;
+  $('year-amount').textContent = fmtMoney(year.amount, year.currency);
+  const saveEl = $('year-save');
+  if (saveEl && month && month.amount > 0 && year.amount < month.amount * 12) {
+    const pct = Math.round((1 - year.amount / (month.amount * 12)) * 100);
+    saveEl.textContent = `save ${pct}%`;
+    saveEl.hidden = false;
+  } else if (saveEl) {
+    saveEl.hidden = true;
+  }
 }
 
 async function applyConfig() {
@@ -126,18 +160,23 @@ async function applyConfig() {
     return;
   }
   const prices = cfg.prices || {};
-  // Headline price: prefer monthly; fall back to yearly if monthly isn't offered.
+  // Headline price: prefer monthly (with optional intro); fall back to yearly.
   if (cfg.intervals.month && prices.month) {
     primaryInterval = 'month';
-    setPrices(prices.month.amount, prices.month.currency, 'mo');
+    setCardPricing(prices.month, cfg.intro);
+    setYearly(cfg.intervals.year ? prices.year : null, prices.month);
   } else if (cfg.intervals.year && prices.year) {
     primaryInterval = 'year';
-    setPrices(prices.year.amount, prices.year.currency, 'yr');
+    $('price-amount').textContent = fmtMoney(prices.year.amount, prices.year.currency);
+    $('price-per').textContent = '/ yr';
+    setYearly(null, null);
   }
 }
 
 async function render() {
   $('pay-card').addEventListener('click', (e) => startCheckout(primaryInterval, e.currentTarget));
+  const payYear = $('pay-year');
+  if (payYear) payYear.addEventListener('click', (e) => startCheckout('year', e.currentTarget));
   $('pay-crypto').addEventListener('click', () => {
     // Crypto checkout (self-hosted ETH/XMR/LTC/BCH) isn't live yet — graceful note.
     showBanner('🚀 GigaChad crypto checkout (ETH · XMR · LTC · BCH) is landing soon — 20% off when it goes live. Card works now.', 'ok');
@@ -158,18 +197,19 @@ async function render() {
     }
   }
 
-  const active = !!(me && me.membership && me.membership.active);
+  const view = me ? deriveBillingView(me) : deriveBillingView(null);
+  const hasAccess = view.kind === 'member' || view.kind === 'admin-access';
 
   // Already a member (or just became one) and we have somewhere to send them back
   // to → go straight to the content they wanted.
-  if (active && next) {
+  if (hasAccess && next) {
     showBanner('You’re all set — taking you to your video…', 'ok');
     setTimeout(() => { location.href = next; }, 1000);
     showMember(me);
     return;
   }
 
-  if (active) {
+  if (hasAccess) {
     if (status === 'success') showBanner('You’re all set — welcome to David Bond TV membership!', 'ok');
     showMember(me);
   } else {

@@ -100,6 +100,7 @@
 
   <script type="module">
     import { fetchMe, postJSON, initialAvatarDataUri, fetchAuthConfig, mountSecretReveal } from '/js/account.js';
+    import { deriveBillingView } from '/js/billing-view.js';
     const $ = (id) => document.getElementById(id);
     const PROVIDER_LABELS = { discord: 'Discord', google: 'Google', github: 'GitHub' };
     let authCfg = { providers: {} };
@@ -156,21 +157,13 @@
       $('submit').disabled = false;
     });
 
-    function fmtDate(ms) {
-      try { return new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }); }
-      catch { return ''; }
-    }
-
     function renderBilling(user) {
-      const m = user.membership;
       const status = $('billing-status');
       const action = $('billing-action');
-      if (m && m.active) {
-        let txt = 'Active member.';
-        if (m.cancelAtPeriodEnd && m.currentPeriodEnd) txt = `Membership ends ${fmtDate(m.currentPeriodEnd)} — you keep access until then.`;
-        else if (m.status === 'past_due') txt = 'Payment failed — please update your card to keep your membership.';
-        else if (m.currentPeriodEnd) txt = `Active${m.interval ? ` · billed ${m.interval}ly` : ''} · renews ${fmtDate(m.currentPeriodEnd)}.`;
-        status.textContent = txt;
+      const view = deriveBillingView(user);
+      status.textContent = view.status;
+
+      if (view.action === 'manage') {
         action.textContent = 'Manage billing';
         action.hidden = false;
         action.onclick = async () => {
@@ -180,11 +173,13 @@
           action.disabled = false;
           setMsg(r.data.error || 'Could not open the billing portal.', 'error');
         };
-      } else {
-        status.textContent = 'You’re not a member yet. Unlock all exclusive videos.';
+      } else if (view.action === 'join') {
         action.textContent = 'Become a member';
         action.hidden = false;
         action.onclick = () => { window.location.href = '/membership.html'; };
+      } else {
+        action.hidden = true;
+        action.onclick = null;
       }
     }
 
