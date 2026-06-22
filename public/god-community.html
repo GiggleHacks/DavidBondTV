@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>David Bond TV — Community</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+  <script>document.documentElement.classList.add('admin-auth-pending');</script>
+</head>
+<body>
+  <div class="admin-wrap wide admin-app-shell">
+    <header class="admin-bar">
+      <a class="logo" href="/" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
+      <nav class="admin-nav">
+        <a href="/god">Dashboard</a>
+        <a href="/god-upload.html">Upload</a>
+        <a href="/god-videos.html">Videos</a>
+        <a href="/god-users.html">Users</a>
+        <a href="/god-community.html" class="active">Community</a>
+        <a class="back" href="/">← Site</a>
+      </nav>
+    </header>
+
+    <main id="app">
+      <section class="card">
+        <div class="card-head">
+          <h2>Community <span id="ccount" class="muted"></span></h2>
+        </div>
+
+        <!-- Summary stat strip -->
+        <div class="stat-grid" id="summary" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px"></div>
+
+        <!-- Filter bar -->
+        <div class="comm-filters">
+          <input id="search" placeholder="Search comments, names…" />
+          <select id="video"><option value="">All videos</option></select>
+          <select id="author">
+            <option value="all">Everyone</option>
+            <option value="registered">Registered users</option>
+            <option value="anon">Anonymous</option>
+            <option value="member">Members</option>
+            <option value="admin">Admins</option>
+          </select>
+          <select id="sort">
+            <option value="new">Newest first</option>
+            <option value="old">Oldest first</option>
+          </select>
+          <button id="clear" class="btn sm ghost" type="button">Clear</button>
+        </div>
+
+        <div id="comm-list"></div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="/js/admin-community.js"></script>
+</body>
+</html>

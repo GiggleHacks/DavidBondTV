@@ -5,14 +5,10 @@
 // into public/thumbs/videos.json (index-aligned with thumbs.mjs).
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { probeDuration, segments, makePreview } from '../lib/media.mjs';
+import { PREVIEWS_DIR as OUT, MANIFEST } from '../lib/paths.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.join(__dirname, '..');
 const SRC = 'D:/Local/Traveling/Bangkok 2026/shopping jess barbie'; // same source as thumbs.mjs
-const OUT = path.join(ROOT, 'public', 'previews');
-const MANIFEST = path.join(ROOT, 'public', 'thumbs', 'videos.json');
 
 fs.mkdirSync(OUT, { recursive: true });
 const files = fs.readdirSync(SRC).filter((f) => /\.mp4$/i.test(f)).sort();

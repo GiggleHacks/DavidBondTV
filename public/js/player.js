@@ -141,6 +141,24 @@ async function init() {
   $('v-date').textContent = entry && entry.uploaded ? entry.uploaded : '';
   document.title = entry ? `${entry.title} — David Bond TV` : 'David Bond TV';
 
+  // Educational disclaimer for hacking / cybersecurity content. Shows when the
+  // admin flags the video (entry.educational) or its category/title mentions
+  // cyber-security / hacking. Rendered once, just under the description.
+  const eduRe = /cyber|hack|security|infosec|pentest/i;
+  const isEdu = entry && (entry.educational === true
+    || eduRe.test(entry.category || '') || eduRe.test(entry.title || ''));
+  if (isEdu && !document.getElementById('v-edu-note')) {
+    const note = document.createElement('p');
+    note.id = 'v-edu-note';
+    note.className = 'v-edu-note';
+    note.innerHTML = '<strong>For educational purposes only.</strong> '
+      + 'This cybersecurity content is provided for education and awareness — '
+      + 'not an endorsement of, or instruction to carry out, any unlawful activity. '
+      + 'See our <a href="/terms">Terms</a>.';
+    const desc = $('v-desc');
+    desc.parentNode.insertBefore(note, desc.nextSibling);
+  }
+
   // Poster = this video's own thumbnail (grabbed from the same clip), so the
   // freeze-frame shown before playback matches the content.
   if (entry.thumb) video.poster = entry.thumb;

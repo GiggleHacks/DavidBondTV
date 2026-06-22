@@ -76,6 +76,7 @@ function loggedIn(user) {
       ['/god', 'Dashboard'],
       ['/god-videos.html', 'Manage videos'],
       ['/god-users.html', 'Users'],
+      ['/god-community.html', 'Community'],
     ]) {
       const a = document.createElement('a');
       a.href = href;

@@ -88,6 +88,10 @@
           <label class="cf-anon"><input type="checkbox" id="cf-anon" /> Post anonymously</label>
         </div>
         <textarea id="cf-text" class="cf-text" placeholder="Add a comment…" maxlength="1000" rows="3"></textarea>
+        <!-- Honeypot: hidden from humans; bots that fill it are silently dropped. -->
+        <div style="position:absolute;left:-9999px" aria-hidden="true">
+          <label>Leave this empty <input id="cf-hp" type="text" tabindex="-1" autocomplete="off" /></label>
+        </div>
         <div class="cf-row cf-bottom">
           <span class="cf-challenge">
             <label id="cf-question" for="cf-answer">Loading…</label>
@@ -107,5 +111,7 @@
   <script type="module" src="/js/auth-widget.js"></script>
   <script src="/js/admin-link.js"></script>
   <script src="/js/notifications.js"></script>
+  <script src="/js/age-gate.js"></script>
+  <script src="/js/footer.js"></script>
 </body>
 </html>

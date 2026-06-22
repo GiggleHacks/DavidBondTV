@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { contentType, parseRange, sendJson, readBody, clientIp } from './lib/http-util.js';
 import { createChallenge, verifyChallenge } from './lib/challenge.js';
 import { createRateLimiter } from './lib/rate-limit.js';
-import { validateComment, addComment, listComments, deleteComment } from './lib/comments-store.js';
+import { validateComment, addComment, listComments, deleteComment, readAllComments } from './lib/comments-store.js';
 import { getCounts, getUserVote, setVote } from './lib/reactions-store.js';
 import { adminConfigured } from './lib/admin-auth.js';
 import { createAdminAccount } from './lib/admin-account.js';
@@ -16,6 +16,8 @@ import { hashPassword, verifyPassword } from './lib/password.js';
 import { createGeoip } from './lib/geoip.js';
 import { createAccounts } from './lib/accounts.js';
 import { createTurnstile } from './lib/turnstile.js';
+import { createTenor, isTenorGifUrl } from './lib/tenor.js';
+import { createCommentGuard, DEFAULT_BANNED } from './lib/comment-guard.js';
 import { adminUser } from './lib/users-store.js';
 import { createPaymentsStore } from './lib/payments-store.js';
 import { createStripePayments } from './lib/stripe-payments.js';
@@ -36,11 +38,10 @@ import * as subscribers from './lib/subscribers.js';
 import { createRequestContext } from './lib/request-context.mjs';
 import { createAnalytics } from './lib/analytics-store.mjs';
 import { createGeoGate } from './lib/geo-gate.mjs';
+import { PUBLIC_DIR, MEDIA_DIR, MANIFEST, resolveAssetPath } from './lib/paths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 8080;
-const PUBLIC_DIR = path.join(__dirname, 'public');
-const MEDIA_DIR = path.join(__dirname, 'media');
 
 // App version (single source of truth = package.json). Shown as a small badge in
 // the corner of every page so changes are easy to track. Bump package.json on
@@ -56,12 +57,32 @@ const VERSION_BADGE = `<div id="site-version" style="position:fixed;bottom:8px;r
   + `background:rgba(0,0,0,.35);padding:3px 7px;border-radius:6px;pointer-events:none;user-select:none">`
   + `v${APP_VERSION}</div>`;
 
+// Stamp ?v=<version> onto root-relative .css/.js asset URLs in an HTML page so
+// every deploy busts both browser and Cloudflare-edge caches. Skips refs that
+// already have a query string (idempotent) and absolute/protocol URLs.
+function addAssetVersion(html, version) {
+  return html.replace(
+    /\b(href|src)=("|')(\/[^"'?#]+\.(?:css|js))\2/gi,
+    (m, attr, q, url) => `${attr}=${q}${url}?v=${version}${q}`,
+  );
+}
+
 // --- API setup ---
 const SECRET = crypto.randomBytes(32).toString('hex');
 // Admin token signing key. Set ADMIN_SECRET to keep tokens valid across restarts;
 // otherwise a fresh random key logs admins out on each restart (fine for one admin).
 const ADMIN_SECRET = process.env.ADMIN_SECRET || crypto.randomBytes(32).toString('hex');
 const limiter = createRateLimiter(60_000, 3); // up to 3 comments/min per IP
+// Comment anti-spam: per-account limits, duplicate/flood detection, link controls,
+// banned-word blocklist. Extra blocked words can be added in data/comment-blocklist.json
+// (a JSON array of strings) without a code change.
+const commentBlocklist = (() => {
+  try {
+    const extra = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'comment-blocklist.json'), 'utf8'));
+    return Array.isArray(extra) ? [...DEFAULT_BANNED, ...extra.filter((w) => typeof w === 'string')] : DEFAULT_BANNED;
+  } catch { return DEFAULT_BANNED; }
+})();
+const commentGuard = createCommentGuard({ banned: commentBlocklist });
 const recoverLimiter = createRateLimiter(60_000, 5); // 5 recovery attempts/min per IP
 const UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB cap
 const COMMENTS_FILE = path.join(__dirname, 'data', 'comments.json');
@@ -82,6 +103,11 @@ const geoip = createGeoip(GEOIP_FILE);
 // Cloudflare Turnstile (bot gate for signup/reset). When TURNSTILE_SECRET is
 // unset it stays disabled and accounts fall back to the math challenge.
 const turnstile = createTurnstile({ secret: process.env.TURNSTILE_SECRET });
+
+// GIF picker for comments (Tenor). Disabled when TENOR_API_KEY is unset — the
+// comment box just hides the GIF button (graceful degradation).
+const tenor = createTenor({ apiKey: process.env.TENOR_API_KEY });
+const gifLimiter = createRateLimiter(60_000, 60); // 60 gif lookups/min per IP
 
 // Social-login providers. Each is enabled only when BOTH its id + secret are set;
 // otherwise it's hidden in the UI and its routes 404 (graceful degradation).
@@ -198,7 +224,7 @@ function serveUnderConstruction(res) {
 /** id → title map from the manifest, for joining analytics/history to names. */
 function manifestTitleMap() {
   try {
-    const arr = JSON.parse(fs.readFileSync(path.join(PUBLIC_DIR, 'thumbs', 'videos.json'), 'utf8'));
+    const arr = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
     return Object.fromEntries(arr.map((v) => [v.id, v.title]));
   } catch {
     return {};
@@ -210,18 +236,18 @@ function resolveFile(urlPath) {
   if (pathname === '/') pathname = '/browse.html'; // homepage = the video grid
   if (pathname === '/watch') pathname = '/index.html'; // per-video watch page (?v=<id>)
   if (pathname === '/god') pathname = '/god.html'; // the admin backend lives at /god
+  // Pretty URLs for the legal / policy pages (linked from the site footer).
+  if (pathname === '/terms') pathname = '/terms.html';
+  if (pathname === '/privacy') pathname = '/privacy.html';
+  if (pathname === '/refunds') pathname = '/refunds.html';
   // Pretty public-profile URLs: /u/<username> all serve the profile page,
   // which reads the username from the path and fetches /api/users/<name>.
   if (pathname.startsWith('/u/')) pathname = '/profile.html';
 
-  const isMedia = pathname.startsWith('/media/');
-  const root = isMedia ? MEDIA_DIR : PUBLIC_DIR;
-  const rel = isMedia ? pathname.slice('/media'.length) : pathname;
-  const filePath = path.normalize(path.join(root, rel));
-
-  // Traversal guard: resolved path must stay within its root.
-  if (filePath !== root && !filePath.startsWith(root + path.sep)) return null;
-  return filePath;
+  // Map onto the filesystem: /media/* → MEDIA_DIR, the content prefixes
+  // (/thumbs,/previews,/videos,/storyboards) → CONTENT_DIR, everything else →
+  // public/. Traversal guard lives in resolveAssetPath (returns null on escape).
+  return resolveAssetPath(pathname);
 }
 
 /** Handle API routes. Returns true if the request was handled, false to fall through. */
@@ -253,6 +279,22 @@ async function handleApi(req, res, ctx) {
       sendJson(res, 200, { question, token });
     } catch {
       sendJson(res, 500, { error: 'Server error' });
+    }
+    return true;
+  }
+
+  // GET /api/gifs/trending  and  /api/gifs/search?q=  — Tenor proxy for the
+  // comment GIF picker. Keeps the API key server-side + forces the content filter.
+  if (req.method === 'GET' && (url.pathname === '/api/gifs/trending' || url.pathname === '/api/gifs/search')) {
+    if (!tenor.enabled) { sendJson(res, 200, { enabled: false, gifs: [] }); return true; }
+    if (!gifLimiter.hit(clientIp(req)).allowed) { sendJson(res, 429, { error: 'Slow down a moment.' }); return true; }
+    try {
+      const gifs = url.pathname.endsWith('/search')
+        ? await tenor.search(url.searchParams.get('q') || '', 24)
+        : await tenor.trending(24);
+      sendJson(res, 200, { enabled: true, gifs });
+    } catch {
+      sendJson(res, 200, { enabled: true, gifs: [] });
     }
     return true;
   }
@@ -312,14 +354,27 @@ async function handleApi(req, res, ctx) {
         return true;
       }
 
+      // Honeypot: a hidden field humans never see. If a bot fills it, pretend the
+      // post succeeded (silent drop) so it gets no signal to adapt.
+      if (body.hp) { sendJson(res, 200, { ok: true }); return true; }
+
       const { video, name, anonymous, text, answer, token } = body;
       const user = accounts.currentUser(req);
       const country = geoip.lookup(ip) || undefined;
+      // Optional GIF: only embed if it's a valid Tenor URL (and gifs are enabled).
+      const gifUrl = (tenor.enabled && isTenorGifUrl(body.gif)) ? body.gif : undefined;
+
+      // Anti-spam: link/banned-word/duplicate/per-account checks (admins bypass).
+      const guard = commentGuard.check({ user, ip, text });
+      if (!guard.ok) {
+        sendJson(res, guard.status || 400, { error: guard.error, retryAfter: guard.retryAfter });
+        return true;
+      }
 
       let stored;
       if (user && user.profileComplete) {
         // Logged-in: post as the profile identity, no math challenge needed.
-        const validation = validateComment({ name: user.username, anonymous: false, text });
+        const validation = validateComment({ name: user.username, anonymous: false, text, hasGif: !!gifUrl });
         if (!validation.ok) {
           sendJson(res, 400, { error: validation.error });
           return true;
@@ -331,6 +386,7 @@ async function handleApi(req, res, ctx) {
           username: user.username,
           admin: Array.isArray(user.roles) && user.roles.includes('admin'),
           avatar: avatarUrl(user.avatar, user.username),
+          gifUrl,
           country,
         });
       } else {
@@ -339,7 +395,7 @@ async function handleApi(req, res, ctx) {
           sendJson(res, 400, { error: 'Incorrect answer to the verification question.' });
           return true;
         }
-        const validation = validateComment({ name, anonymous, text });
+        const validation = validateComment({ name, anonymous, text, hasGif: !!gifUrl });
         if (!validation.ok) {
           sendJson(res, 400, { error: validation.error });
           return true;
@@ -348,6 +404,7 @@ async function handleApi(req, res, ctx) {
           name: validation.value.name,
           text: validation.value.text,
           avatarSeed: crypto.randomBytes(4).toString('hex'),
+          gifUrl,
           country,
         });
       }
@@ -676,6 +733,93 @@ async function handleApi(req, res, ctx) {
     return true;
   }
 
+  // --- Community inbox (admin) --- aggregate every comment across all videos.
+  // GET /api/admin/community?q=&video=&author=&sort=&limit=&offset=
+  if (req.method === 'GET' && url.pathname === '/api/admin/community') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    try {
+      const store = readAllComments(COMMENTS_FILE);
+      // video id -> { title, thumb } for the context column + filter dropdown.
+      const vmeta = new Map();
+      for (const v of listManifest()) vmeta.set(v.id, { id: v.id, title: v.title || v.id, thumb: v.thumb || null });
+
+      const q = (url.searchParams.get('q') || '').trim().toLowerCase();
+      const videoFilter = url.searchParams.get('video') || '';
+      const author = url.searchParams.get('author') || 'all';
+      const sort = url.searchParams.get('sort') === 'old' ? 'old' : 'new';
+      const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit')) || 100));
+      const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
+
+      // Flatten + enrich with live author status and video context.
+      let all = [];
+      const summary = { total: 0, registered: 0, anon: 0, withGif: 0 };
+      const videosWithComments = [];
+      for (const [vid, list] of Object.entries(store)) {
+        if (!Array.isArray(list) || !list.length) continue;
+        const vc = vmeta.get(vid) || { id: vid, title: vid, thumb: null };
+        videosWithComments.push({ id: vid, title: vc.title, count: list.length });
+        for (const c of list) {
+          const u = c.username ? accounts.store.getByUsername(c.username) : null;
+          const isMember = !!(u && hasActiveMembership(u));
+          const isAdmin = !!(u && Array.isArray(u.roles) && u.roles.includes('admin'));
+          summary.total += 1;
+          if (c.username) summary.registered += 1; else summary.anon += 1;
+          if (c.gifUrl) summary.withGif += 1;
+          all.push({
+            id: c.id, video: vc, name: c.name || 'Anonymous', username: c.username || null,
+            userId: c.userId || null, text: c.text || '', ts: c.ts || 0,
+            avatar: c.avatar || null, gifUrl: c.gifUrl || null, country: c.country || null,
+            isMember, isAdmin,
+          });
+        }
+      }
+
+      // Filters.
+      if (videoFilter) all = all.filter((c) => c.video.id === videoFilter);
+      if (author === 'registered') all = all.filter((c) => c.username);
+      else if (author === 'anon') all = all.filter((c) => !c.username);
+      else if (author === 'member') all = all.filter((c) => c.isMember);
+      else if (author === 'admin') all = all.filter((c) => c.isAdmin);
+      if (q) all = all.filter((c) => c.text.toLowerCase().includes(q) || (c.name || '').toLowerCase().includes(q) || (c.username || '').toLowerCase().includes(q));
+
+      all.sort((a, b) => (sort === 'old' ? a.ts - b.ts : b.ts - a.ts));
+      const matched = all.length;
+      const page = all.slice(offset, offset + limit);
+      videosWithComments.sort((a, b) => b.count - a.count);
+
+      sendJson(res, 200, { comments: page, matched, summary, videos: videosWithComments });
+    } catch {
+      sendJson(res, 500, { error: 'Server error' });
+    }
+    return true;
+  }
+
+  // POST /api/admin/community/reply — post an admin reply (@mention) on a video.
+  if (req.method === 'POST' && url.pathname === '/api/admin/community/reply') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    try {
+      const admin = accounts.currentUser(req);
+      const raw = await readBody(req, 8192);
+      let body; try { body = JSON.parse(raw); } catch { body = null; }
+      if (!body || !body.video) { sendJson(res, 400, { error: 'Invalid request' }); return true; }
+      const mention = body.to ? `@${String(body.to).replace(/\s+/g, '')} ` : '';
+      const validation = validateComment({ name: admin.username, anonymous: false, text: `${mention}${body.text || ''}` });
+      if (!validation.ok) { sendJson(res, 400, { error: validation.error }); return true; }
+      const stored = await addComment(COMMENTS_FILE, body.video, {
+        name: admin.username,
+        text: validation.value.text,
+        userId: admin.id,
+        username: admin.username,
+        admin: true,
+        avatar: avatarUrl(admin.avatar, admin.username),
+      });
+      sendJson(res, 200, { ok: true, comment: stored });
+    } catch {
+      sendJson(res, 500, { error: 'Server error' });
+    }
+    return true;
+  }
+
   // --- User management (admin) --- /api/admin/users[/<id>[/password|block|unblock]]
   if (url.pathname === '/api/admin/users' || url.pathname.startsWith('/api/admin/users/')) {
     if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
@@ -758,6 +902,8 @@ async function handleApi(req, res, ctx) {
           provider: 'admin', status: 'active', interval: null,
           currentPeriodEnd: null, cancelAtPeriodEnd: false,
           grantedBy: admin ? admin.id : null, updatedAt: Date.now(),
+          // Preserve an existing "member since" across re-grants.
+          since: (u.membership && typeof u.membership.since === 'number') ? u.membership.since : Date.now(),
         };
         await accounts.store.updateUser(userId, { membership, hasPurchased: true });
         await paymentsStore.addTxn(userId, { kind: 'admin.grant', ts: Date.now(), by: admin ? admin.id : null });
@@ -1059,6 +1205,11 @@ const server = http.createServer(async (req, res) => {
     // (pages are small) rather than streaming so we can rewrite the body.
     if (headers['Content-Type'].startsWith('text/html')) {
       let html = await fsp.readFile(filePath, 'utf8');
+      // Cache-bust local CSS/JS by stamping the app version onto their URLs, so a
+      // deploy can never leave a browser (or the Cloudflare edge) painting with a
+      // stale stylesheet/script. Only touches root-relative .css/.js refs that
+      // don't already carry a query string.
+      html = addAssetVersion(html, APP_VERSION);
       html = html.includes('</body>')
         ? html.replace('</body>', `${VERSION_BADGE}</body>`)
         : html + VERSION_BADGE;

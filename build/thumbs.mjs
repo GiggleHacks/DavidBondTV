@@ -5,11 +5,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fmtDur, probeDuration, makeThumb } from '../lib/media.mjs';
+import { THUMBS_DIR as OUT } from '../lib/paths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 const SRC = 'D:/Local/Traveling/Bangkok 2026/shopping jess barbie';
-const OUT = path.join(ROOT, 'public', 'thumbs');
 
 const TITLES = [
   'Bangkok Barbie Haul 🛍️ Jess Goes Wild at the Mall',

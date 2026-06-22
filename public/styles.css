@@ -599,6 +599,14 @@ body {
 /* Wide screens: reserve space so the fixed panel never overlaps the grid. */
 @media (min-width: 1000px) {
   body.has-sidebar .browse { margin-left: 248px; width: auto; }
+  /* Run the sidebar to the very top so the brand fills the space that used to
+     sit empty above it (the header only carries the auth widget on the right,
+     so the left column is free). Sits above the translucent header band. */
+  .sidebar { top: 0; z-index: 31; padding-top: 18px; }
+  /* Bigger mascot on PC only (narrow screens keep the compact 72px size). */
+  .sb-avatar { width: 124px; height: 124px; border-radius: 26px; }
+  .sb-brand { padding-top: 2px; }
+  .sb-brand .logo-wm { font-size: 24px; }
 }
 /* Narrow screens: the panel reflows to a brand-on-top bar with a horizontal
    scrolling nav row — still permanently visible, no hamburger. */
@@ -672,15 +680,20 @@ body {
     padding-left: 12px;
     padding-right: 12px;
   }
+  /* Keep the categories on ONE horizontal scrolling row on phones too — don't
+     wrap them into a tall multi-row block that shoves the video grid down. The
+     row inherits overflow-x:auto + flex-direction:row from the ≤999px rules. */
   .sb-nav {
-    flex-wrap: wrap;
-    overflow-x: visible;
-    row-gap: 10px;
-    padding-right: 0;
+    gap: 6px;
+    padding-top: 10px;
+    padding-right: 12px;
   }
   .sb-item {
-    flex: 0 1 auto;
+    padding: 7px 13px;
+    font-size: 12.5px;
+    min-height: 40px;
   }
+  .sb-item .sb-ico { display: none; }   /* drop icons on phones — labels alone read cleaner and pack tighter */
 }
 
 .browse-empty { color: var(--text-dim); font-size: 15px; padding: 30px 4px; }
@@ -724,6 +737,82 @@ body {
 .member-badge.lg { font-size: 12px; padding: 4px 12px 4px 9px; }
 .member-badge.lg svg { width: 15px; height: 15px; }
 
+/* Educational-use disclaimer on cybersecurity/hacking watch pages. */
+.v-edu-note {
+  margin: 10px 0 0; padding: 10px 14px;
+  border-left: 3px solid #f4a300;
+  background: color-mix(in srgb, #f4a300 9%, transparent);
+  border-radius: 0 8px 8px 0;
+  font-size: 13px; line-height: 1.5; color: var(--text-dim);
+}
+.v-edu-note strong { color: var(--text); }
+.v-edu-note a { color: var(--accent); }
+
+/* "Member since" recognition line on the public profile. */
+.member-since {
+  margin-top: 3px; font-size: 13px; font-weight: 700;
+  color: color-mix(in srgb, #5cc6ff 70%, var(--text));
+}
+
+/* ============================================================
+   Site footer (legal/policy links) + legal page layout
+   ============================================================ */
+.site-footer {
+  margin-top: 48px; padding: 24px 20px 40px;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  text-align: center;
+}
+.site-footer-links {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 20px;
+}
+.site-footer-links a {
+  color: var(--text-dim); text-decoration: none; font-size: 13.5px; font-weight: 600;
+}
+.site-footer-links a:hover { color: var(--text); text-decoration: underline; }
+.site-footer-copy { color: var(--text-dim); font-size: 12.5px; margin: 0; }
+
+.legal {
+  width: min(760px, 100%); margin: 32px auto 0; padding: 0 22px;
+  line-height: 1.65; color: var(--text);
+}
+.legal h1 { font-size: 30px; letter-spacing: -.5px; margin: 0 0 6px; }
+.legal h2 { font-size: 18px; margin: 28px 0 8px; }
+.legal p, .legal li { color: var(--text); font-size: 15px; }
+.legal ul { padding-left: 22px; display: grid; gap: 6px; margin: 8px 0; }
+.legal a { color: var(--accent); }
+.legal-updated { color: var(--text-dim); font-size: 13px; margin: 0 0 18px; }
+.legal-back { margin-top: 32px; }
+.legal-back a { text-decoration: none; font-weight: 700; }
+
+/* 18+ age gate overlay (shown once per browser, before first access). */
+.age-gate {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: rgba(5, 8, 14, .82); backdrop-filter: blur(6px);
+}
+.age-gate-card {
+  width: min(420px, 100%); text-align: center;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 18px; padding: 32px 28px;
+  box-shadow: 0 30px 80px var(--shadow);
+}
+.age-gate-mark { display: inline-block; margin-bottom: 18px; font-weight: 800; font-size: 20px; }
+.age-gate-card h2 { margin: 0 0 8px; font-size: 22px; }
+.age-gate-card p { color: var(--text-dim); font-size: 14.5px; line-height: 1.55; margin: 0 0 20px; }
+.age-gate-enter { width: 100%; padding: 14px; font-size: 16px; }
+.age-gate-leave { display: inline-block; margin-top: 14px; color: var(--text-dim); font-size: 13.5px; text-decoration: none; }
+.age-gate-leave:hover { color: var(--text); text-decoration: underline; }
+.age-gate-fine { margin: 18px 0 0 !important; font-size: 11.5px; }
+.age-gate-fine a { color: var(--accent); }
+
+/* Fine-print consent line under the signup button. */
+.acc-consent {
+  margin: 12px 0 0; font-size: 12px; line-height: 1.5; text-align: center;
+  color: var(--text-dim);
+}
+.acc-consent a { color: var(--accent); }
+
 /* Subtle "exclusive comment styling" perk: a member's comment gets a faint blue
    accent stripe — a quiet recognition, not a loud highlight. */
 .comment.is-member { position: relative; }
@@ -733,6 +822,46 @@ body {
   background: linear-gradient(90deg, color-mix(in srgb, #2563eb 7%, transparent), transparent 60%);
   border-radius: 0 8px 8px 0;
 }
+
+/* GIF attachment shown inside a posted comment. */
+.comment-gif {
+  display: block; margin-top: 8px; max-width: min(320px, 100%); height: auto;
+  border-radius: 10px; border: 1px solid var(--border);
+}
+
+/* GIF picker in the comment form. */
+.cf-gif-btn {
+  appearance: none; cursor: pointer;
+  background: var(--surface-2, rgba(255,255,255,.06)); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  font-weight: 800; font-size: 12px; letter-spacing: .4px; padding: 0 12px; margin-right: 8px;
+}
+.cf-gif-btn:hover { border-color: var(--accent); color: var(--accent); }
+.cf-gifpreview { position: relative; display: inline-block; margin: 0 0 10px; }
+.cf-gifpreview img { max-height: 110px; border-radius: 10px; border: 1px solid var(--border); display: block; }
+.cf-gif-remove {
+  position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; cursor: pointer;
+  border-radius: 50%; border: none; background: #000; color: #fff; font-size: 15px; line-height: 1;
+  display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,.5);
+}
+.cf-gifpanel {
+  margin: 0 0 12px; padding: 12px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface); box-shadow: 0 12px 40px var(--shadow);
+}
+.cf-gifsearch {
+  width: 100%; box-sizing: border-box; padding: 9px 12px; margin-bottom: 10px;
+  background: var(--bg, rgba(0,0,0,.25)); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; font-size: 14px;
+}
+.cf-gifgrid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px;
+  max-height: 320px; overflow-y: auto;
+}
+.cf-gifcell { padding: 0; border: none; background: none; cursor: pointer; border-radius: 8px; overflow: hidden; line-height: 0; }
+.cf-gifcell img { width: 100%; height: 100px; object-fit: cover; border-radius: 8px; transition: transform .12s; }
+.cf-gifcell:hover img { transform: scale(1.04); }
+.cf-gifempty { grid-column: 1 / -1; color: var(--text-dim); font-size: 14px; padding: 16px; text-align: center; }
+.cf-gifcredit { color: var(--text-dim); font-size: 11px; margin-top: 8px; text-align: right; }
 
 /* ============================================================
    Premium / exclusive video layer (design only)

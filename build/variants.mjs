@@ -19,9 +19,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
-const MANIFEST = path.join(ROOT, 'public', 'thumbs', 'videos.json');
-const VIDEOS_OUT = path.join(ROOT, 'public', 'videos');
-const THUMBS_OUT = path.join(ROOT, 'public', 'thumbs');
+const { MANIFEST, VIDEOS_DIR: VIDEOS_OUT, THUMBS_DIR: THUMBS_OUT } = await import('../lib/paths.js');
 
 // Where original source clips might live, matched by id (filename without ext).
 const SRC_DIRS = [

@@ -80,6 +80,13 @@
       const joined = document.createElement('div'); joined.className = 'joined';
       joined.textContent = u.createdAt ? `Joined ${fmtJoined(u.createdAt)}` : '';
       meta.append(h1, joined);
+      // Members get a subtle "Member since …" line under the join date.
+      if (u.isMember && u.memberSince) {
+        const since = document.createElement('div');
+        since.className = 'member-since';
+        since.textContent = `★ Member since ${fmtJoined(u.memberSince)}`;
+        meta.append(since);
+      }
       hero.append(img, meta);
       card.append(hero);
 
@@ -99,5 +106,7 @@
     }());
   </script>
   <script type="module" src="/js/auth-widget.js"></script>
+  <script src="/js/age-gate.js"></script>
+  <script src="/js/footer.js"></script>
 </body>
 </html>

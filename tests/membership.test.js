@@ -73,14 +73,14 @@ describe('membershipSummary', () => {
     const s = membershipSummary(u, NOW);
     expect(s).toEqual({
       active: true, provider: 'stripe', status: 'active', interval: 'month',
-      currentPeriodEnd: NOW + 1000, cancelAtPeriodEnd: true,
+      currentPeriodEnd: NOW + 1000, cancelAtPeriodEnd: true, since: null,
     });
     expect('stripeSubscriptionId' in s).toBe(false);
   });
 
   it('no membership → inactive shape', () => {
     expect(membershipSummary(mk(null), NOW)).toEqual({
-      active: false, provider: null, status: null, interval: null, currentPeriodEnd: null, cancelAtPeriodEnd: false,
+      active: false, provider: null, status: null, interval: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, since: null,
     });
   });
 });

@@ -45,6 +45,8 @@
           <label>Leave this empty <input id="hp" type="text" tabindex="-1" autocomplete="off" /></label>
         </div>
         <button class="acc-btn" id="submit" type="submit">Create account</button>
+        <p class="acc-consent">You must be 18 or older. By creating an account, you agree to our
+          <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p>
         <p class="acc-msg" id="msg" hidden></p>
       </form>
       <p class="acc-foot">Already have an account? <a href="/login.html">Sign in</a></p>
@@ -105,5 +107,7 @@
     });
     init();
   </script>
+  <script src="/js/age-gate.js"></script>
+  <script src="/js/footer.js"></script>
 </body>
 </html>

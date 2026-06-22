@@ -21,6 +21,17 @@ function seededColor(seed) {
   return `hsl(${h} 55% 45%)`;
 }
 
+// Only embed GIFs from Tenor (matches the server-side allowlist) — defense in
+// depth so a tampered stored value can't inject an arbitrary image.
+function isTenorGif(u) {
+  try {
+    const x = new URL(u);
+    return x.protocol === 'https:'
+      && (x.hostname === 'tenor.com' || x.hostname.endsWith('.tenor.com'))
+      && x.pathname.toLowerCase().endsWith('.gif');
+  } catch { return false; }
+}
+
 // ISO-2 country code → flag emoji (regional indicator pair). '' if unknown.
 function flagEmoji(cc) {
   const up = typeof cc === 'string' ? cc.toUpperCase() : '';
@@ -49,6 +60,7 @@ export function initComments(videoId) {
   let token = null;
   let me = null;
   let cooling = false; // true while a rate-limit countdown is running
+  let pendingGif = null; // { url, preview } chosen from the GIF picker, or null
 
   function setMsg(text, kind) {
     if (!text) { msgEl.hidden = true; return; }
@@ -179,6 +191,14 @@ export function initComments(videoId) {
 
     body.append(head, textEl);
 
+    // Optional GIF attachment (only render trusted Tenor URLs).
+    if (c.gifUrl && isTenorGif(c.gifUrl)) {
+      const gif = document.createElement('img');
+      gif.className = 'comment-gif';
+      gif.src = c.gifUrl; gif.alt = 'GIF'; gif.loading = 'lazy';
+      body.append(gif);
+    }
+
     // Admin-only moderation controls.
     if (amAdmin()) {
       const mod = document.createElement('div');
@@ -243,11 +263,90 @@ export function initComments(videoId) {
     });
   }
 
+  // --- GIF picker (Tenor) -----------------------------------------------------
+  function clearGif() {
+    pendingGif = null;
+    const pv = document.getElementById('cf-gifpreview');
+    if (pv) { pv.hidden = true; const i = pv.querySelector('img'); if (i) i.src = ''; }
+  }
+
+  async function setupGifPicker() {
+    // Probe availability; if Tenor isn't configured the feature stays hidden.
+    let first;
+    try { first = await (await fetch('/api/gifs/trending')).json(); } catch { return; }
+    if (!first || !first.enabled) return;
+
+    const bottom = form.querySelector('.cf-bottom');
+    if (!bottom) return;
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'cf-gif-btn'; btn.textContent = 'GIF';
+    bottom.insertBefore(btn, submitBtn);
+
+    // Chosen-GIF preview chip (shown above the bottom row).
+    const preview = document.createElement('div');
+    preview.id = 'cf-gifpreview'; preview.className = 'cf-gifpreview'; preview.hidden = true;
+    const pImg = document.createElement('img'); pImg.alt = 'Selected GIF';
+    const pRm = document.createElement('button');
+    pRm.type = 'button'; pRm.className = 'cf-gif-remove'; pRm.setAttribute('aria-label', 'Remove GIF'); pRm.textContent = '×';
+    pRm.addEventListener('click', clearGif);
+    preview.append(pImg, pRm);
+    form.insertBefore(preview, bottom);
+
+    // Picker panel: search box + results grid.
+    const panel = document.createElement('div');
+    panel.className = 'cf-gifpanel'; panel.hidden = true;
+    const search = document.createElement('input');
+    search.type = 'text'; search.className = 'cf-gifsearch'; search.placeholder = 'Search GIFs…'; search.maxLength = 100;
+    const grid = document.createElement('div'); grid.className = 'cf-gifgrid';
+    const credit = document.createElement('div'); credit.className = 'cf-gifcredit'; credit.textContent = 'Powered by Tenor';
+    panel.append(search, grid, credit);
+    form.insertBefore(panel, bottom);
+
+    function renderGifs(list) {
+      grid.replaceChildren();
+      const safe = (list || []).filter((g) => g && isTenorGif(g.url));
+      if (!safe.length) {
+        const e = document.createElement('div'); e.className = 'cf-gifempty'; e.textContent = 'No GIFs found.'; grid.append(e); return;
+      }
+      for (const g of safe) {
+        const cell = document.createElement('button');
+        cell.type = 'button'; cell.className = 'cf-gifcell';
+        const im = document.createElement('img'); im.src = g.preview || g.url; im.alt = g.desc || 'GIF'; im.loading = 'lazy';
+        cell.append(im);
+        cell.addEventListener('click', () => {
+          pendingGif = { url: g.url, preview: g.preview || g.url };
+          pImg.src = pendingGif.preview; preview.hidden = false;
+          panel.hidden = true;
+        });
+        grid.append(cell);
+      }
+    }
+    renderGifs(first.gifs);
+
+    let timer = null;
+    search.addEventListener('input', () => {
+      clearTimeout(timer);
+      const q = search.value.trim();
+      timer = setTimeout(async () => {
+        try {
+          const url = q ? `/api/gifs/search?q=${encodeURIComponent(q)}` : '/api/gifs/trending';
+          const r = await (await fetch(url)).json();
+          renderGifs(r.gifs);
+        } catch { /* ignore */ }
+      }, 300);
+    });
+
+    btn.addEventListener('click', () => {
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) search.focus();
+    });
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (cooling) return;
     const text = textInput.value.trim();
-    if (!text) { setMsg('Please write a comment first.', 'error'); return; }
+    if (!text && !pendingGif) { setMsg('Please write a comment or pick a GIF.', 'error'); return; }
     const authed = me && me.profileComplete;
     if (!authed && !answerInput.value.trim()) {
       setMsg('Please answer the verification question.', 'error');
@@ -265,19 +364,24 @@ export function initComments(videoId) {
           name: nameInput ? nameInput.value : '',
           anonymous: anonInput ? anonInput.checked : false,
           text,
+          gif: pendingGif ? pendingGif.url : undefined,
           answer: answerInput.value,
           token,
+          hp: (document.getElementById('cf-hp') || {}).value || '',
         }),
       });
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.ok) {
-        const empty = listEl.querySelector('.comment-empty');
-        if (empty) empty.remove();
-        listEl.prepend(makeCommentEl(data.comment));
-        updateCount();
+        if (data.comment) {
+          const empty = listEl.querySelector('.comment-empty');
+          if (empty) empty.remove();
+          listEl.prepend(makeCommentEl(data.comment));
+          updateCount();
+        }
         textInput.value = '';
         answerInput.value = '';
+        clearGif();
         setMsg('Comment posted!', 'ok');
       } else if (res.status === 429) {
         startCooldown(data.retryAfter);
@@ -322,6 +426,7 @@ export function initComments(videoId) {
       form.prepend(hint);
       await loadChallenge();
     }
+    setupGifPicker();
     await loadComments();
   }());
 }

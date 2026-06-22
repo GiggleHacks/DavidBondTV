@@ -12,7 +12,7 @@ import { hasFfmpeg } from '../lib/media.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 const SRC = 'D:/Local/Traveling/Bangkok 2026/shopping jess barbie';
-const MANIFEST = path.join(ROOT, 'public', 'thumbs', 'videos.json');
+const { MANIFEST } = await import('../lib/paths.js');
 
 if (!hasFfmpeg()) {
   console.warn('⚠  ffmpeg not found — titles will be metadata-only (no visual signal).');
