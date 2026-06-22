@@ -27,3 +27,26 @@ describe('serializeCookie', () => {
     expect(serializeCookie('a', 'b', { secure: true })).toContain('Secure');
   });
 });
+
+describe('serializeCookie — Domain', () => {
+  it('omits Domain when not provided', () => {
+    expect(serializeCookie('s', 'v', { httpOnly: true })).not.toMatch(/Domain=/);
+  });
+
+  it('includes Domain when provided', () => {
+    expect(serializeCookie('s', 'v', { domain: 'davidbondtv.com' }))
+      .toMatch(/; Domain=davidbondtv\.com/);
+  });
+
+  it('keeps the other attributes alongside Domain', () => {
+    const c = serializeCookie('s', 'v', {
+      maxAge: 60, httpOnly: true, sameSite: 'Lax', secure: true, domain: 'davidbondtv.com',
+    });
+    expect(c).toMatch(/^s=v/);
+    expect(c).toMatch(/Max-Age=60/);
+    expect(c).toMatch(/HttpOnly/);
+    expect(c).toMatch(/SameSite=Lax/);
+    expect(c).toMatch(/Secure/);
+    expect(c).toMatch(/Domain=davidbondtv\.com/);
+  });
+});
