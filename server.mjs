@@ -264,15 +264,18 @@ async function handleApi(req, res, ctx) {
       // Hide comments from banned (blocked) users — banning an author also
       // removes their comments from view.
       const blockedIds = new Set(geoGate.getRules().blockedUserIds);
-      // Derive the admin badge live from current roles (covers comments posted
-      // before the flag existed, and stays accurate if roles ever change).
+      // Derive the admin + member badges live from the author's CURRENT status,
+      // overriding whatever was stored at post time — so a member badge appears
+      // the moment they subscribe and disappears when they cancel/lapse, and an
+      // ex-admin's old badge clears too.
       const comments = listComments(COMMENTS_FILE, video)
         .filter((c) => !(c.userId && blockedIds.has(c.userId)))
         .map((c) => {
           if (!c.username) return c;
           const u = accounts.store.getByUsername(c.username);
-          const isAdmin = !!(u && Array.isArray(u.roles) && u.roles.includes('admin'));
-          return isAdmin ? { ...c, admin: true } : c;
+          const admin = !!(u && Array.isArray(u.roles) && u.roles.includes('admin'));
+          const member = !!(u && hasActiveMembership(u));
+          return { ...c, admin, member };
         });
       sendJson(res, 200, { comments });
     } catch {

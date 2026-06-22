@@ -37,6 +37,12 @@ function loggedIn(user) {
     badge.title = 'Site administrator';
     badge.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8l4.5 3.2L12 4l5.5 7.2L22 8l-2 11H4L2 8z"/></svg>';
     trigger.append(badge);
+  } else if (user.membership && user.membership.active) {
+    const badge = document.createElement('span');
+    badge.className = 'member-badge mini';
+    badge.title = 'David Bond TV member';
+    badge.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.2l2.95 5.98 6.6.96-4.77 4.65 1.13 6.57L12 17.98 6.09 20.33l1.13-6.57L2.45 9.14l6.6-.96z"/></svg>';
+    trigger.append(badge);
   }
 
   const menu = document.createElement('div');
