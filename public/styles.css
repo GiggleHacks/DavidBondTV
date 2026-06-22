@@ -83,12 +83,15 @@ body {
    ============================================================ */
 .site-header {
   position: sticky; top: 0; z-index: 30;
-  display: flex; align-items: center; justify-content: flex-start;
+  display: flex; align-items: center; justify-content: flex-end;
   gap: 16px; padding: 12px 24px;
   background: color-mix(in srgb, var(--surface) 80%, transparent);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
 }
+/* Header logo (when present) anchors left; everything else — upload button,
+   notification bell, auth widget — clusters together on the right. */
+.site-header .logo { margin-right: auto; }
 /* Self-hosted pixel/retro wordmark face (matches the David Bond TV logo). */
 @font-face {
   font-family: "Pixelify Sans";

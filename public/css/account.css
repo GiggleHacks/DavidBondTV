@@ -3,7 +3,7 @@
    styles.css, so it inherits all theme variables. */
 
 /* ---------- Header auth widget ---------- */
-.auth-widget { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.auth-widget { display: flex; align-items: center; gap: 10px; }
 .auth-widget a { text-decoration: none; }
 .aw-link {
   color: var(--text); font-size: 14px; font-weight: 600;
