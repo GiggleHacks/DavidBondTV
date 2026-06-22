@@ -26,13 +26,14 @@
           <label for="email">Email address</label>
           <input class="acc-input" id="email" type="email" autocomplete="email" placeholder="you@example.com" />
         </div>
-        <div class="acc-field">
+        <div class="acc-field" id="challenge-field">
           <label for="answer">Quick check</label>
           <span class="acc-challenge">
             <label id="question" for="answer">Loading…</label>
             <input class="acc-input" id="answer" type="text" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="?" />
           </span>
         </div>
+        <div class="acc-field" id="turnstile" hidden></div>
         <button class="acc-btn" id="submit" type="submit">Send reset link</button>
         <p class="acc-msg" id="msg" hidden></p>
       </form>
@@ -41,9 +42,10 @@
   </div>
 
   <script type="module">
-    import { postJSON, loadChallenge } from '/js/account.js';
+    import { postJSON, loadChallenge, fetchAuthConfig, mountTurnstile, turnstileToken } from '/js/account.js';
     const $ = (id) => document.getElementById(id);
     let token = null;
+    let useTurnstile = false;
     async function refresh() {
       const c = await loadChallenge();
       if (c) { token = c.token; $('question').textContent = c.question; }
@@ -54,26 +56,35 @@
       if (!t) { m.hidden = true; return; }
       m.hidden = false; m.textContent = t; m.className = `acc-msg ${kind || ''}`.trim();
     }
+    async function init() {
+      const cfg = await fetchAuthConfig();
+      if (cfg.turnstileSiteKey) {
+        useTurnstile = true;
+        $('challenge-field').hidden = true;
+        mountTurnstile($('turnstile'), cfg.turnstileSiteKey);
+      } else {
+        await refresh();
+      }
+    }
     $('form').addEventListener('submit', async (e) => {
       e.preventDefault();
       $('submit').disabled = true;
       setMsg('');
-      const r = await postJSON('/api/auth/request-reset', {
-        email: $('email').value.trim(),
-        answer: $('answer').value.trim(),
-        token,
-      });
+      const payload = { email: $('email').value.trim() };
+      if (useTurnstile) payload.turnstileToken = turnstileToken($('turnstile'));
+      else { payload.answer = $('answer').value.trim(); payload.token = token; }
+      const r = await postJSON('/api/auth/request-reset', payload);
       if (r.ok && r.data.ok) {
         $('form').reset();
         setMsg(r.data.message || 'If that email is registered, a reset link is on its way.', 'ok');
       } else {
         setMsg(r.data.error || 'Could not process that.', 'error');
       }
-      $('answer').value = '';
-      await refresh();
+      if (!useTurnstile) { $('answer').value = ''; await refresh(); }
+      else if (window.turnstile) { try { window.turnstile.reset(); } catch {} }
       $('submit').disabled = false;
     });
-    refresh();
+    init();
   </script>
 </body>
 </html>

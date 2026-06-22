@@ -8,9 +8,10 @@
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/css/admin.css" />
+  <script>document.documentElement.classList.add('admin-auth-pending');</script>
 </head>
 <body>
-  <div class="admin-wrap wide">
+  <div class="admin-wrap wide admin-app-shell">
     <header class="admin-bar">
       <a class="logo" href="/" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
       <nav class="admin-nav">
@@ -30,7 +31,7 @@
           <input id="search" placeholder="Search name or email" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:13px" />
         </div>
         <div class="tbl">
-          <div class="user-row" style="cursor:default">
+          <div class="user-row user-row-head" style="cursor:default">
             <b>Name</b><b>Email</b><b>Country</b><b>Watched</b><b>Status</b>
           </div>
         </div>

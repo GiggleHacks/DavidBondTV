@@ -32,11 +32,11 @@ function renderList(filter = '') {
     const row = document.createElement('div');
     row.className = 'user-row';
     row.innerHTML = `
-      <span class="name">${esc(u.username || '—')}</span>
-      <span class="em">${esc(u.email || '')}</span>
-      <span>${u.country ? flagEmoji(u.country) + ' ' + u.country : '—'}</span>
-      <span>${u.videosWatched} vids · ${u.minutesWatched}m</span>
-      <span>${statusBadge(u)}</span>`;
+      <span class="name" data-label="Name">${esc(u.username || '—')}</span>
+      <span class="em" data-label="Email">${esc(u.email || '')}</span>
+      <span class="country" data-label="Country">${u.country ? flagEmoji(u.country) + ' ' + u.country : '—'}</span>
+      <span class="watched" data-label="Watched">${u.videosWatched} vids · ${u.minutesWatched}m</span>
+      <span class="status" data-label="Status">${statusBadge(u)}</span>`;
     row.addEventListener('click', () => showDetail(u.id));
     $('user-list').appendChild(row);
   }

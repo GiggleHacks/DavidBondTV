@@ -62,11 +62,28 @@
       <p class="acc-sub" id="billing-status">&nbsp;</p>
       <button class="acc-btn" id="billing-action" type="button" hidden></button>
     </div>
+
+    <div class="acc-card" id="connections-card" style="margin-top:16px">
+      <h2 style="margin-top:0">Sign-in &amp; recovery</h2>
+      <p class="acc-sub">Connect more ways to sign in so you can always get back into your account — even if you forget a password.</p>
+      <div id="connections"></div>
+      <div id="setpw" hidden style="margin-top:14px">
+        <div class="acc-field">
+          <label for="newpw">Set a password</label>
+          <input class="acc-input" id="newpw" type="password" autocomplete="new-password" placeholder="At least 4 characters" />
+          <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">Adds email + password as a second way to sign in.</p>
+        </div>
+        <button class="acc-btn acc-btn-ghost" id="setpw-btn" type="button" style="width:auto">Set password</button>
+      </div>
+      <p class="acc-msg" id="conn-msg" hidden></p>
+    </div>
   </div>
 
   <script type="module">
-    import { fetchMe, postJSON, initialAvatarDataUri } from '/js/account.js';
+    import { fetchMe, postJSON, initialAvatarDataUri, fetchAuthConfig } from '/js/account.js';
     const $ = (id) => document.getElementById(id);
+    const PROVIDER_LABELS = { discord: 'Discord', google: 'Google', github: 'GitHub' };
+    let authCfg = { providers: {} };
     // undefined → photo unchanged; '' → revert to generated initial; else an upload value.
     let selected;
     let me = null;
@@ -152,17 +169,76 @@
       }
     }
 
+    function setConnMsg(t, kind) {
+      const m = $('conn-msg');
+      if (!t) { m.hidden = true; return; }
+      m.hidden = false; m.textContent = t; m.className = `acc-msg ${kind || ''}`.trim();
+    }
+
+    function renderConnections(user) {
+      const wrap = $('connections');
+      const linked = new Set((user.oauthAccounts || []).map((a) => a.provider));
+      const methods = (user.oauthAccounts || []).length + (user.hasPassword ? 1 : 0);
+      const provs = Object.entries(authCfg.providers || {}).filter(([, on]) => on).map(([p]) => p);
+      for (const p of linked) if (!provs.includes(p)) provs.push(p); // always show linked ones
+      const next = encodeURIComponent('/account.html');
+      wrap.innerHTML = provs.map((p) => {
+        const label = PROVIDER_LABELS[p] || p;
+        if (linked.has(p)) {
+          const right = methods > 1
+            ? `<button class="acc-btn acc-btn-ghost conn-unlink" data-p="${p}" style="width:auto">Disconnect</button>`
+            : '<span style="color:var(--text-dim);font-size:12px">your only sign-in</span>';
+          return `<div class="conn-row"><span>✓ ${label} — connected</span>${right}</div>`;
+        }
+        return `<div class="conn-row"><span>${label}</span>`
+          + `<a class="acc-btn acc-btn-ghost" style="width:auto" href="/api/auth/oauth/${p}/start?link=1&next=${next}">Connect</a></div>`;
+      }).join('') || '<p class="acc-sub">No social providers are available right now.</p>';
+      wrap.querySelectorAll('.conn-unlink').forEach((b) => b.addEventListener('click', async () => {
+        b.disabled = true;
+        setConnMsg('');
+        const r = await postJSON(`/api/auth/oauth/${b.dataset.p}/unlink`, {});
+        if (r.ok && r.data.ok) { me = await fetchMe(); renderConnections(me); renderSetPw(me); }
+        else { setConnMsg(r.data.error || 'Could not disconnect.', 'error'); b.disabled = false; }
+      }));
+    }
+
+    function renderSetPw(user) { $('setpw').hidden = Boolean(user.hasPassword); }
+
+    $('setpw-btn').addEventListener('click', async () => {
+      setConnMsg('');
+      $('setpw-btn').disabled = true;
+      const r = await postJSON('/api/auth/set-password', { password: $('newpw').value });
+      if (r.ok && r.data.ok) {
+        $('newpw').value = '';
+        setConnMsg('Password set — you can now sign in with your email and password too.', 'ok');
+        me = await fetchMe(); renderSetPw(me); renderConnections(me);
+      } else {
+        setConnMsg(r.data.error || 'Could not set your password.', 'error');
+      }
+      $('setpw-btn').disabled = false;
+    });
+
     (async function start() {
       me = await fetchMe();
       if (!me) { window.location.href = '/login.html'; return; }
       if (!me.profileComplete) { window.location.href = '/profile-setup.html'; return; }
-      $('email-line').textContent = me.email;
+      $('email-line').textContent = me.email || 'Social account';
       $('username').value = me.username || '';
       $('about').value = me.about || '';
       $('link').value = me.link || '';
       $('current').src = me.avatarUrl || initialAvatarDataUri(me.username);
       $('view-profile').href = `/u/${encodeURIComponent(me.username)}`;
       renderBilling(me);
+      authCfg = await fetchAuthConfig();
+      renderConnections(me);
+      renderSetPw(me);
+      // Surface the result of a link round-trip.
+      const err = new URLSearchParams(location.search).get('error');
+      if (err && err.startsWith('oauth')) {
+        setConnMsg(err === 'oauth_taken'
+          ? 'That account is already connected to a different user.'
+          : 'Couldn’t connect that account. Please try again.', 'error');
+      }
     }());
   </script>
   <script type="module" src="/js/auth-widget.js"></script>

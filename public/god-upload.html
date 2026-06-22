@@ -8,11 +8,13 @@
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/css/admin.css" />
+  <script>document.documentElement.classList.add('admin-auth-pending');</script>
   <style>
     .banner { border-radius: 10px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
     .banner.warn { background: color-mix(in srgb, #f59e0b 18%, transparent); border: 1px solid color-mix(in srgb, #f59e0b 40%, transparent); color: #fde68a; }
     .vis-row { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; font-size: 14px; }
-    .vis-row label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+    .vis-row label { display: inline-flex; gap: 10px; align-items: center; cursor: pointer; min-height: 44px; padding: 8px 12px; border-radius: 12px; background: color-mix(in srgb, var(--surface-2) 84%, transparent); }
+    .vis-row input[type="radio"] { width: 18px; height: 18px; accent-color: var(--accent); }
     .drop {
       border: 2px dashed var(--border); border-radius: 12px; padding: 40px 18px; text-align: center;
       color: var(--text-dim); transition: border-color .15s, background .15s; cursor: pointer;
@@ -65,10 +67,20 @@
     .card > h2 { margin-bottom: 16px; }
     .drop { padding: 48px 18px; }
     .drop strong { font-size: 16px; }
+    @media (max-width: 560px) {
+      .vis-row { flex-direction: column; align-items: stretch; gap: 10px; }
+      .vis-row label,
+      .vis-row select,
+      .vis-row .muted,
+      .drop-select {
+        width: 100%;
+      }
+      .vis-row label { justify-content: flex-start; }
+    }
   </style>
 </head>
 <body>
-  <div class="admin-wrap wide">
+  <div class="admin-wrap wide admin-app-shell">
     <header class="admin-bar">
       <a class="logo" href="/" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
       <nav class="admin-nav">

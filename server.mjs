@@ -15,6 +15,7 @@ import { serializeCookie } from './lib/cookies.js';
 import { hashPassword, verifyPassword } from './lib/password.js';
 import { createGeoip } from './lib/geoip.js';
 import { createAccounts } from './lib/accounts.js';
+import { createTurnstile } from './lib/turnstile.js';
 import { adminUser } from './lib/users-store.js';
 import { createPaymentsStore } from './lib/payments-store.js';
 import { createStripePayments } from './lib/stripe-payments.js';
@@ -78,6 +79,23 @@ const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 const USERS_FILE = path.join(__dirname, 'data', 'users.json');
 const GEOIP_FILE = path.join(__dirname, 'data', 'geoip-country.json');
 const geoip = createGeoip(GEOIP_FILE);
+// Cloudflare Turnstile (bot gate for signup/reset). When TURNSTILE_SECRET is
+// unset it stays disabled and accounts fall back to the math challenge.
+const turnstile = createTurnstile({ secret: process.env.TURNSTILE_SECRET });
+
+// Social-login providers. Each is enabled only when BOTH its id + secret are set;
+// otherwise it's hidden in the UI and its routes 404 (graceful degradation).
+function oauthProvider(idEnv, secretEnv) {
+  const clientId = process.env[idEnv];
+  const clientSecret = process.env[secretEnv];
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+const oauthProviders = {
+  discord: oauthProvider('OAUTH_DISCORD_CLIENT_ID', 'OAUTH_DISCORD_CLIENT_SECRET'),
+  google: oauthProvider('OAUTH_GOOGLE_CLIENT_ID', 'OAUTH_GOOGLE_CLIENT_SECRET'),
+  github: oauthProvider('OAUTH_GITHUB_CLIENT_ID', 'OAUTH_GITHUB_CLIENT_SECRET'),
+};
+
 const accounts = createAccounts({
   tokenSecret: AUTH_SECRET,
   challengeSecret: SECRET, // same key that mints /api/challenge tokens
@@ -85,6 +103,9 @@ const accounts = createAccounts({
   usersFile: USERS_FILE,
   mediaDir: MEDIA_DIR,
   isSecure: BASE_URL.startsWith('https'),
+  turnstile,
+  providers: oauthProviders,
+  turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || null,
 });
 
 // --- Payments (Stripe membership) ---

@@ -8,6 +8,7 @@
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/css/admin.css" />
+  <script>document.documentElement.classList.add('admin-auth-pending');</script>
   <style>
     .edit-grid { display: grid; grid-template-columns: 300px 1fr; gap: 24px; align-items: start; }
     @media (max-width: 720px) { .edit-grid { grid-template-columns: 1fr; } }
@@ -28,17 +29,19 @@
     .ev-cand:hover { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
     .ev-cand.selected { border-color: var(--accent); }
     .ev-cand.selected::after { content: '✓'; position: absolute; top: 4px; right: 5px; font-size: 12px; font-weight: 800; color: var(--accent-contrast); background: var(--accent); border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; }
-    .ev-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+    .ev-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
     .ev-links { display: flex; gap: 10px; margin-top: 14px; }
     .ev-msg { font-size: 13px; }
     .ev-msg.ok { color: #4ade80; } .ev-msg.error { color: #f87171; }
     .ev-radios { display: flex; flex-wrap: wrap; gap: 16px; font-size: 14px; }
-    .ev-radios label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+    .ev-radios label { display: inline-flex; gap: 10px; align-items: center; cursor: pointer; min-height: 44px; padding: 8px 12px; border-radius: 12px; background: color-mix(in srgb, var(--surface-2) 84%, transparent); }
+    .ev-radios input[type="radio"] { width: 18px; height: 18px; accent-color: var(--accent); }
     #ev-blur { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; }
+    @media (max-width: 560px) { .ev-links > a, .ev-actions > button { width: 100%; } }
   </style>
 </head>
 <body>
-  <div class="admin-wrap">
+  <div class="admin-wrap admin-app-shell">
     <header class="admin-bar">
       <a class="logo" href="/" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
       <nav class="admin-nav">

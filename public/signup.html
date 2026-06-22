@@ -21,6 +21,7 @@
     <div class="acc-card">
       <h1>Create your account</h1>
       <p class="acc-sub">Sign up to comment and build your public profile.</p>
+      <div id="oauth" class="acc-oauth" hidden></div>
       <form id="form" novalidate>
         <div class="acc-field">
           <label for="email">Email address</label>
@@ -30,13 +31,15 @@
           <label for="password">Password</label>
           <input class="acc-input" id="password" type="password" autocomplete="new-password" placeholder="At least 4 characters" />
         </div>
-        <div class="acc-field">
+        <!-- Bot gate: Cloudflare Turnstile when configured, else the math challenge. -->
+        <div class="acc-field" id="challenge-field">
           <label for="answer">Quick check</label>
           <span class="acc-challenge">
             <label id="question" for="answer">Loading…</label>
             <input class="acc-input" id="answer" type="text" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="?" />
           </span>
         </div>
+        <div class="acc-field" id="turnstile" hidden></div>
         <!-- Honeypot: hidden from humans, bots tend to fill it. -->
         <div style="position:absolute;left:-9999px" aria-hidden="true">
           <label>Leave this empty <input id="hp" type="text" tabindex="-1" autocomplete="off" /></label>
@@ -49,9 +52,11 @@
   </div>
 
   <script type="module">
-    import { postJSON, loadChallenge } from '/js/account.js';
+    import { postJSON, loadChallenge, fetchAuthConfig, renderProviderButtons, mountTurnstile, turnstileToken } from '/js/account.js';
     const $ = (id) => document.getElementById(id);
-    let token = null;
+    const next = new URLSearchParams(location.search).get('next');
+    let token = null;       // math-challenge token (fallback)
+    let useTurnstile = false;
     async function refresh() {
       const c = await loadChallenge();
       if (c) { token = c.token; $('question').textContent = c.question; }
@@ -62,28 +67,36 @@
       if (!t) { m.hidden = true; return; }
       m.hidden = false; m.textContent = t; m.className = `acc-msg ${kind || ''}`.trim();
     }
+    async function init() {
+      const cfg = await fetchAuthConfig();
+      renderProviderButtons($('oauth'), cfg.providers, next);
+      if (cfg.turnstileSiteKey) {
+        useTurnstile = true;
+        $('challenge-field').hidden = true;
+        mountTurnstile($('turnstile'), cfg.turnstileSiteKey);
+      } else {
+        await refresh();
+      }
+    }
     $('form').addEventListener('submit', async (e) => {
       e.preventDefault();
       $('submit').disabled = true;
       setMsg('');
-      const r = await postJSON('/api/auth/signup', {
-        email: $('email').value.trim(),
-        password: $('password').value,
-        answer: $('answer').value.trim(),
-        token,
-        hp: $('hp').value,
-      });
+      const payload = { email: $('email').value.trim(), password: $('password').value, hp: $('hp').value };
+      if (useTurnstile) payload.turnstileToken = turnstileToken($('turnstile'));
+      else { payload.answer = $('answer').value.trim(); payload.token = token; }
+      const r = await postJSON('/api/auth/signup', payload);
       if (r.ok && r.data.ok) {
         $('form').reset();
         setMsg(r.data.message || 'Check your email to confirm your account. Be sure to check your spam folder.', 'ok');
       } else {
         setMsg(r.data.error || 'Could not sign you up.', 'error');
       }
-      $('answer').value = '';
-      await refresh();
+      if (!useTurnstile) { $('answer').value = ''; await refresh(); }
+      else if (window.turnstile) { try { window.turnstile.reset(); } catch {} }
       $('submit').disabled = false;
     });
-    refresh();
+    init();
   </script>
 </body>
 </html>

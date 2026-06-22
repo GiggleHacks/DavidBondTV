@@ -3,12 +3,12 @@
    styles.css, so it inherits all theme variables. */
 
 /* ---------- Header auth widget ---------- */
-.auth-widget { display: flex; align-items: center; gap: 10px; }
+.auth-widget { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .auth-widget a { text-decoration: none; }
 .aw-link {
   color: var(--text); font-size: 14px; font-weight: 600;
   padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border);
-  background: var(--surface-2);
+  background: var(--surface-2); min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
 }
 .aw-link:hover { background: color-mix(in srgb, var(--accent) 18%, var(--surface-2)); }
 .aw-link.primary { background: var(--accent); color: var(--accent-contrast); border-color: transparent; }
@@ -16,7 +16,7 @@
 .aw-trigger {
   display: flex; align-items: center; gap: 8px; cursor: pointer;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px;
-  padding: 5px 12px 5px 5px; color: var(--text); font-weight: 600; font-size: 14px;
+  padding: 5px 12px 5px 5px; color: var(--text); font-weight: 600; font-size: 14px; min-height: 44px;
 }
 .aw-trigger img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; background: var(--surface); }
 .aw-menu {
@@ -58,7 +58,7 @@
 .acc-field label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
 .acc-input, .acc-textarea {
   width: 100%; box-sizing: border-box; background: var(--surface-2); color: var(--text);
-  border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 15px; font-family: inherit;
+  border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 15px; font-family: inherit; min-height: 44px;
 }
 .acc-input:focus, .acc-textarea:focus { outline: none; border-color: var(--accent); }
 .acc-textarea { resize: vertical; min-height: 90px; }
@@ -69,7 +69,7 @@
 .acc-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
   background: linear-gradient(135deg, var(--accent), var(--accent-strong)); color: var(--accent-contrast);
-  border: none; border-radius: 999px; padding: 13px 22px; font-size: 15px; font-weight: 700; cursor: pointer;
+  border: none; border-radius: 999px; padding: 13px 22px; font-size: 15px; font-weight: 700; cursor: pointer; min-height: 44px;
   transition: filter .15s, transform .05s;
 }
 .acc-btn:hover { filter: brightness(1.08); }
@@ -116,7 +116,7 @@
 /* Subscribe (free follow) button */
 .sub-btn {
   border: none; cursor: pointer; border-radius: 999px; padding: 8px 16px;
-  font-size: 13px; font-weight: 700; background: var(--accent); color: var(--accent-contrast);
+  font-size: 13px; font-weight: 700; background: var(--accent); color: var(--accent-contrast); min-height: 44px;
   transition: filter .15s, transform .05s, background .15s, color .15s;
 }
 .sub-btn:hover { filter: brightness(1.08); }
@@ -126,7 +126,7 @@
 .react-btn {
   display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
   background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
-  border-radius: 999px; padding: 7px 15px; font-size: 14px; font-weight: 600;
+  border-radius: 999px; padding: 7px 15px; font-size: 14px; font-weight: 600; min-height: 44px;
 }
 .react-btn svg { width: 18px; height: 18px; fill: currentColor; }
 .react-btn:hover { background: color-mix(in srgb, var(--accent) 16%, var(--surface-2)); }
@@ -145,3 +145,44 @@
 .comment-flag { font-size: 14px; line-height: 1; }
 a.comment-name { color: var(--text); text-decoration: none; }
 a.comment-name:hover { color: var(--accent); text-decoration: underline; }
+
+@media (max-width: 560px) {
+  .profile-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .v-subrow {
+    align-items: stretch;
+    gap: 10px;
+  }
+  .reactions {
+    margin-left: 0;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .sub-btn,
+  .react-btn {
+    min-height: 44px;
+  }
+}
+
+/* ---------- Social login (OAuth) buttons + connections ---------- */
+.acc-oauth { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 4px; }
+.acc-oauth-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; box-sizing: border-box; min-height: 44px; padding: 11px 14px;
+  border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text); font-size: 15px; font-weight: 600; text-decoration: none;
+}
+.acc-oauth-btn:hover { background: color-mix(in srgb, var(--accent) 14%, var(--surface-2)); }
+.acc-oauth-btn.oauth-discord:hover { background: color-mix(in srgb, #5865F2 22%, var(--surface-2)); border-color: #5865F2; }
+.acc-oauth-btn.oauth-github:hover { background: color-mix(in srgb, #6e7781 22%, var(--surface-2)); border-color: #6e7781; }
+.acc-oauth-btn.oauth-google:hover { background: color-mix(in srgb, #ea4335 18%, var(--surface-2)); border-color: #ea4335; }
+.acc-or { display: flex; align-items: center; gap: 12px; color: var(--text-dim); font-size: 13px; margin: 6px 0 2px; }
+.acc-or::before, .acc-or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.conn-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px;
+}
+.conn-row:last-child { border-bottom: none; }

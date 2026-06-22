@@ -62,3 +62,46 @@ export async function fetchMe() {
   const data = await getJSON('/api/auth/me');
   return data ? data.user : null;
 }
+
+/** Public auth config: { turnstileSiteKey, providers:{discord,google,github} }. */
+export async function fetchAuthConfig() {
+  return (await getJSON('/api/auth/config')) || { turnstileSiteKey: null, providers: {} };
+}
+
+const PROVIDER_LABELS = { discord: 'Discord', google: 'Google', github: 'GitHub' };
+
+/**
+ * Render "Continue with …" buttons for each enabled provider into `container`,
+ * followed by an "or" divider. Hides the container when none are enabled.
+ */
+export function renderProviderButtons(container, providers, next) {
+  if (!container) return;
+  const entries = Object.entries(providers || {}).filter(([, on]) => on);
+  if (!entries.length) { container.hidden = true; container.innerHTML = ''; return; }
+  const q = next ? `?next=${encodeURIComponent(next)}` : '';
+  container.innerHTML = entries.map(([p]) =>
+    `<a class="acc-oauth-btn oauth-${p}" href="/api/auth/oauth/${p}/start${q}">`
+    + `Continue with ${PROVIDER_LABELS[p] || p}</a>`).join('')
+    + '<div class="acc-or"><span>or</span></div>';
+  container.hidden = false;
+}
+
+/** Inject a Cloudflare Turnstile widget into `holder` and load the script once. */
+export function mountTurnstile(holder, siteKey) {
+  if (!holder || !siteKey) return;
+  holder.innerHTML = `<div class="cf-turnstile" data-sitekey="${siteKey}"></div>`;
+  holder.hidden = false;
+  if (!document.getElementById('cf-turnstile-script')) {
+    const s = document.createElement('script');
+    s.id = 'cf-turnstile-script';
+    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+    s.async = true; s.defer = true;
+    document.head.appendChild(s);
+  }
+}
+
+/** Read the token the Turnstile widget writes into its hidden input. */
+export function turnstileToken(holder) {
+  const el = holder && holder.querySelector('[name="cf-turnstile-response"]');
+  return el ? el.value : '';
+}
