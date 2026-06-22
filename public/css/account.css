@@ -186,3 +186,4 @@ a.comment-name:hover { color: var(--accent); text-decoration: underline; }
   padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px;
 }
 .conn-row:last-child { border-bottom: none; }
+.acc-oauth-ic { flex: none; display: inline-block; vertical-align: middle; }
