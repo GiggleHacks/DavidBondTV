@@ -1,8 +1,8 @@
 // Dedicated per-video edit page (/god-edit.html?v=<id>). Cookie-authenticated.
 // Loads the video's manifest record and lets the admin change title,
-// description, and thumbnail. Reuses the existing admin endpoints:
-//   POST /api/admin/edit   { id, title, description }
-//   POST /api/admin/thumb?id=<id>  (raw image body)
+// description, visibility (free/premium), and pick a thumbnail from frames
+// auto-extracted across the clip. Reuses the existing admin endpoint:
+//   POST /api/admin/edit   { id, title, description, visibility, blur, thumb }
 import { requireAdmin } from './god-auth.js';
 
 const $ = (id) => document.getElementById(id);
@@ -107,7 +107,6 @@ async function main() {
     } catch { setMsg('Network error.', 'error'); }
   }
   if (cands.length) {
-    $('ev-cands-field').classList.remove('hidden');
     $('ev-candidates').replaceChildren(...cands.map((url) => {
       const b = document.createElement('button');
       b.type = 'button';
@@ -118,6 +117,10 @@ async function main() {
       b.addEventListener('click', () => selectCandidate(url, b));
       return b;
     }));
+  } else {
+    // Older uploads predate frame-candidate generation — explain rather than
+    // offering a custom upload (thumbnails come only from video frames now).
+    $('ev-cands-none').classList.remove('hidden');
   }
 
   // Save title + description.
@@ -143,29 +146,6 @@ async function main() {
       else setMsg(data.error || 'Save failed.', 'error');
     } catch { setMsg('Network error.', 'error'); }
     finally { btn.disabled = false; }
-  });
-
-  // Replace thumbnail.
-  const file = $('ev-thumb-file');
-  $('ev-thumb-btn').addEventListener('click', () => file.click());
-  file.addEventListener('change', async () => {
-    const f = file.files[0]; file.value = '';
-    if (!f) return;
-    const btn = $('ev-thumb-btn');
-    btn.disabled = true; btn.textContent = 'Uploading…';
-    try {
-      const res = await fetch(`/api/admin/thumb?id=${encodeURIComponent(entry.id)}`, {
-        method: 'POST', headers: { 'Content-Type': f.type }, body: f,
-      });
-      if (res.status === 401) { location.reload(); return; }
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok) {
-        entry.thumb = data.thumb; paintThumb(data.thumb);
-        $('ev-candidates').querySelectorAll('.ev-cand').forEach((el) => el.classList.remove('selected'));
-        setMsg('Thumbnail updated.', 'ok');
-      } else setMsg(data.error || 'Thumbnail upload failed.', 'error');
-    } catch { setMsg('Network error.', 'error'); }
-    finally { btn.disabled = false; btn.textContent = 'Upload image…'; }
   });
 }
 main();

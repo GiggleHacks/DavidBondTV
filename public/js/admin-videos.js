@@ -25,11 +25,6 @@ async function load() {
 }
 
 const catName = (slug) => (cats.find((c) => c.slug === slug) || {}).name || '';
-function catOptions(selectedSlug) {
-  const opts = ['<option value="">Uncategorized</option>'];
-  for (const c of cats) opts.push(`<option value="${esc(c.slug)}"${c.slug === selectedSlug ? ' selected' : ''}>${esc(c.name)}</option>`);
-  return opts.join('');
-}
 
 function applyFilter() {
   const q = $('search').value.trim().toLowerCase();
@@ -76,71 +71,14 @@ function libRow(v) {
     <img alt="" ${v.thumb ? `src="${v.thumb}?_=${Date.now()}"` : ''} />
     <div class="lt"><b></b><span class="meta"></span></div>
     <div class="lib-actions">
-      <button class="btn-edit" type="button">Edit</button>
-      <button class="btn-thumb" type="button">Thumbnail</button>
+      <a class="btn-edit" href="/god-edit.html?v=${encodeURIComponent(v.id)}">Edit</a>
       <button class="btn-del" type="button">Delete</button>
-    </div>
-    <div class="lib-editor hidden">
-      <input class="ed-title" type="text" maxlength="200" placeholder="Title" />
-      <textarea class="ed-desc" maxlength="2000" rows="3" placeholder="Description"></textarea>
-      <label class="ed-blur-row ed-blur-wrap">Premium thumbnail blur:
-        <select class="ed-blur">
-          <option value="strong">Strong blur</option>
-          <option value="medium">Medium blur</option>
-          <option value="off">No blur</option>
-        </select>
-      </label>
-      <label class="ed-blur-row">Category:
-        <select class="ed-category">${catOptions(v.category || '')}</select>
-      </label>
-      <div class="ed-row"><button class="ed-save" type="button">Save</button><button class="ed-cancel" type="button">Cancel</button><span class="ed-msg"></span></div>
-    </div>
-    <input class="thumb-file hidden" type="file" accept="image/png,image/jpeg,image/webp" />`;
+    </div>`;
   row.querySelector('b').textContent = v.title || v.id;
   row.querySelector('.meta').innerHTML = `${esc(v.durLabel || '')} · ${esc(v.uploaded || '')} ${badges(v)}`.trim();
 
   const check = row.querySelector('.row-check');
   check.addEventListener('change', () => { if (check.checked) selected.add(v.id); else selected.delete(v.id); updateSel(); });
-
-  const editor = row.querySelector('.lib-editor');
-  const titleInput = row.querySelector('.ed-title');
-  const descInput = row.querySelector('.ed-desc');
-  const blurSel = row.querySelector('.ed-blur');
-  const catSel = row.querySelector('.ed-category');
-  const msg = row.querySelector('.ed-msg');
-  const blurOf = (x) => (['strong', 'medium', 'off'].includes(x.blur) ? x.blur : (x.visibility === 'premium' ? 'strong' : 'off'));
-  row.querySelector('.btn-edit').addEventListener('click', () => {
-    titleInput.value = v.title || ''; descInput.value = v.description || ''; blurSel.value = blurOf(v);
-    catSel.value = v.category || ''; msg.textContent = '';
-    // Blur only affects premium thumbnails, so hide it for free videos.
-    row.querySelector('.ed-blur-wrap').classList.toggle('hidden', v.visibility !== 'premium');
-    editor.classList.toggle('hidden');
-  });
-  row.querySelector('.ed-cancel').addEventListener('click', () => editor.classList.add('hidden'));
-  row.querySelector('.ed-save').addEventListener('click', async () => {
-    const save = row.querySelector('.ed-save'); save.disabled = true; msg.textContent = 'Saving…';
-    try {
-      const res = await fetch('/api/admin/edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: v.id, title: titleInput.value, description: descInput.value, blur: blurSel.value, category: catSel.value }) });
-      if (res.status === 401) { location.reload(); return; }
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok) { v.title = titleInput.value.trim(); v.description = descInput.value.trim(); v.blur = blurSel.value; v.category = catSel.value; row.querySelector('b').textContent = v.title || v.id; row.querySelector('.meta').innerHTML = `${esc(v.durLabel || '')} · ${esc(v.uploaded || '')} ${badges(v)}`.trim(); editor.classList.add('hidden'); }
-      else msg.textContent = data.error || 'Save failed.';
-    } catch { msg.textContent = 'Network error.'; } finally { save.disabled = false; }
-  });
-
-  const thumbFile = row.querySelector('.thumb-file');
-  row.querySelector('.btn-thumb').addEventListener('click', () => thumbFile.click());
-  thumbFile.addEventListener('change', async () => {
-    const file = thumbFile.files[0]; thumbFile.value = ''; if (!file) return;
-    const btn = row.querySelector('.btn-thumb'); btn.disabled = true; btn.textContent = 'Uploading…';
-    try {
-      const res = await fetch(`/api/admin/thumb?id=${encodeURIComponent(v.id)}`, { method: 'POST', headers: { 'Content-Type': file.type }, body: file });
-      if (res.status === 401) { location.reload(); return; }
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok) { v.thumb = data.thumb; row.querySelector('img').src = `${data.thumb}?_=${Date.now()}`; }
-      else alert(data.error || 'Thumbnail upload failed.');
-    } catch { alert('Network error.'); } finally { btn.disabled = false; btn.textContent = 'Thumbnail'; }
-  });
 
   row.querySelector('.btn-del').addEventListener('click', async () => {
     if (!confirm(`Delete "${v.title || v.id}"? This removes it and its files.`)) return;

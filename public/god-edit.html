@@ -60,15 +60,10 @@
         <div id="edit-body" class="edit-grid hidden">
           <div>
             <div class="ev-thumb" id="ev-thumb"><img id="ev-thumb-img" alt="" /></div>
-            <div class="ev-field hidden" id="ev-cands-field" style="margin-top:14px">
+            <div class="ev-field" id="ev-cands-field" style="margin-top:14px">
               <label>Choose a thumbnail</label>
               <div class="ev-cands" id="ev-candidates"></div>
-            </div>
-            <div class="ev-field" style="margin-top:14px">
-              <label>Or upload your own</label>
-              <button class="btn ghost sm" type="button" id="ev-thumb-btn">Upload image…</button>
-              <input id="ev-thumb-file" type="file" accept="image/png,image/jpeg,image/webp" class="hidden" />
-              <div class="muted" style="font-size:12px;margin-top:6px">PNG, JPEG or WEBP · up to 8 MB</div>
+              <div class="muted hidden" id="ev-cands-none" style="font-size:12px;margin-top:6px">No frame thumbnails available for this older upload.</div>
             </div>
           </div>
           <div>
@@ -84,7 +79,7 @@
               <label>Visibility</label>
               <div class="ev-radios">
                 <label><input type="radio" name="ev-vis" value="free" /> Free</label>
-                <label><input type="radio" name="ev-vis" value="premium" /> Premium (subscribers only)</label>
+                <label><input type="radio" name="ev-vis" value="premium" /> <span class="badge-premium"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7l4 4 5-7 5 7 4-4-2 12H5L3 7z"/></svg>Premium</span> <span class="muted">(subscribers only)</span></label>
               </div>
             </div>
             <div class="ev-field hidden" id="ev-blur-field">

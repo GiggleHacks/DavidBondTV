@@ -26,6 +26,20 @@ export function flagEmoji(cc) {
   return String.fromCodePoint(A + cc.toUpperCase().charCodeAt(0) - 65, A + cc.toUpperCase().charCodeAt(1) - 65);
 }
 
+/**
+ * ISO-2 country code → HTML markup for a self-hosted SVG flag icon.
+ * Flags live under /vendor/flags/4x3/<cc>.svg (lowercase). Unknown/invalid
+ * codes get a neutral placeholder so the UI never shows a broken image.
+ */
+export function flagIcon(cc) {
+  if (typeof cc !== 'string' || !/^[A-Za-z]{2}$/.test(cc)) {
+    return '<span class="flag flag-unknown" aria-hidden="true"></span>';
+  }
+  const code = cc.toLowerCase();
+  return `<span class="flag"><img loading="lazy" src="/vendor/flags/4x3/${code}.svg" alt="" `
+    + `onerror="this.parentNode.classList.add('flag-unknown');this.remove()"></span>`;
+}
+
 /** Equirectangular projection into a 0..360 × 0..180 viewBox. */
 export function project(lat, lng) {
   return { x: lng + 180, y: 90 - lat };

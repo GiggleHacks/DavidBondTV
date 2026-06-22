@@ -96,7 +96,10 @@
           <div>
             <h3>Blocked countries</h3>
             <div class="chips" id="cc-chips"></div>
-            <div class="addrow"><input id="cc-input" maxlength="2" placeholder="CC (e.g. TH)" /><button id="cc-add" class="btn sm">Block</button></div>
+            <div class="country-picker">
+              <input id="cc-search" type="text" autocomplete="off" placeholder="Search a country to block…" />
+              <div class="country-menu hidden" id="cc-results" role="listbox"></div>
+            </div>
           </div>
           <div>
             <h3>Blocked IPs</h3>

@@ -1,10 +1,13 @@
 // Central admin dashboard: site stats, quick actions, world bubble map, top
 // videos, recent users, and the geo-restriction panel. Cookie-authenticated.
 import { renderMap } from './admin-map.js';
-import { flagEmoji } from './world-data.js';
+import { flagIcon } from './world-data.js';
+import { COUNTRIES } from './countries.js';
 import { requireAdmin } from './god-auth.js';
 
 const $ = (id) => document.getElementById(id);
+const COUNTRY_NAME = Object.fromEntries(COUNTRIES.map((c) => [c.code, c.name]));
+const ccLabel = (cc) => `${flagIcon(cc)} ${COUNTRY_NAME[cc] ? `${COUNTRY_NAME[cc]} (${cc})` : cc}`;
 
 async function api(path, opts = {}) {
   const headers = opts.body ? { 'Content-Type': 'application/json' } : {};
@@ -25,14 +28,14 @@ function mapCounts(mode) {
 
 function drawMap(mode) {
   const counts = mapCounts(mode);
-  renderMap($('map'), counts, { onHover: (t) => { $('map-hover').textContent = t; } });
+  renderMap($('map'), counts, { onHover: (t) => { $('map-hover').innerHTML = t; } });
   // ranked list
   const rows = Object.entries(counts).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
   const max = rows.length ? rows[0][1] : 1;
   $('country-rank').innerHTML = rows.length
     ? rows.map(([cc, n]) => `
       <div class="rank-row">
-        <span>${flagEmoji(cc)} ${cc}</span>
+        <span>${flagIcon(cc)} ${cc}</span>
         <span class="bar"><i style="width:${Math.round((n / max) * 100)}%"></i></span>
         <span class="n">${n.toLocaleString()}</span>
       </div>`).join('')
@@ -59,10 +62,11 @@ async function loadCountries(mode) {
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // --- geo-restriction panel ---
-function chip(label, onRemove) {
+function chip(label, onRemove, { html = false } = {}) {
   const span = document.createElement('span');
   span.className = 'chip-x';
-  span.append(label);
+  if (html) { const inner = document.createElement('span'); inner.innerHTML = label; span.appendChild(inner); }
+  else span.append(label);
   const x = document.createElement('button');
   x.textContent = '×'; x.title = 'Remove';
   x.addEventListener('click', onRemove);
@@ -75,16 +79,21 @@ async function geoMutate(op, value, action) {
   if (d.rules) renderGeo(d.rules);
 }
 
+let blockedCountrySet = new Set();
+
 function renderGeo(rules) {
   $('geo-enabled').checked = !!rules.enabled;
   const fill = (elId, list, removeOp) => {
     const box = $(elId); box.innerHTML = '';
     if (!list.length) { box.innerHTML = '<span class="muted">None</span>'; return; }
-    for (const v of list) box.appendChild(chip(elId === 'cc-chips' ? `${flagEmoji(v)} ${v}` : v, () => geoMutate(removeOp, v, 'remove')));
+    const isCC = elId === 'cc-chips';
+    for (const v of list) box.appendChild(chip(isCC ? ccLabel(v) : v, () => geoMutate(removeOp, v, 'remove'), { html: isCC }));
   };
   fill('cc-chips', rules.blockedCountries, 'country');
   fill('ip-chips', rules.blockedIps, 'ip');
   fill('allow-chips', rules.allowIps, 'allow');
+  blockedCountrySet = new Set(rules.blockedCountries);
+  renderCountryResults();
 }
 
 async function loadGeo() {
@@ -92,13 +101,47 @@ async function loadGeo() {
   renderGeo(d.rules);
   const det = d.detected;
   const src = det.countrySource ? ` (${det.countrySource})` : '';
-  $('geo-detect').innerHTML = `This device — IP <b>${esc(det.ip)}</b>, country <b>${det.country ? flagEmoji(det.country) + ' ' + det.country : 'unknown'}</b>${src}. `
+  $('geo-detect').innerHTML = `This device — IP <b>${esc(det.ip)}</b>, country <b>${det.country ? flagIcon(det.country) + ' ' + det.country : 'unknown'}</b>${src}. `
     + `Bypass: <b>${det.bypass ? 'active ✓' : 'OFF'}</b>. Cloudflare: <b>${det.trustCloudflare ? 'trusted' : 'off'}</b>.`;
+}
+
+// --- searchable country picker (replaces manual 2-letter code entry) ---
+let countryQuery = '';
+function matchingCountries() {
+  const q = countryQuery.trim().toLowerCase();
+  const pool = COUNTRIES.filter((c) => !blockedCountrySet.has(c.code));
+  if (!q) return pool.slice(0, 60);
+  return pool.filter((c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase() === q).slice(0, 60);
+}
+function renderCountryResults() {
+  const menu = $('cc-results');
+  if (!menu) return;
+  const list = matchingCountries();
+  if (!list.length) { menu.innerHTML = '<div class="none">No matching countries.</div>'; return; }
+  menu.replaceChildren(...list.map((c) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'country-opt';
+    b.innerHTML = `${flagIcon(c.code)} <span>${esc(c.name)}</span> <span class="cc">${c.code}</span>`;
+    b.addEventListener('mousedown', (e) => {
+      e.preventDefault(); // keep focus so the menu doesn't blur-close first
+      geoMutate('country', c.code, 'block');
+      $('cc-search').value = ''; countryQuery = '';
+    });
+    return b;
+  }));
+}
+function wireCountryPicker() {
+  const input = $('cc-search'); const menu = $('cc-results');
+  if (!input || !menu) return;
+  const open = () => { menu.classList.remove('hidden'); renderCountryResults(); };
+  input.addEventListener('focus', open);
+  input.addEventListener('input', () => { countryQuery = input.value; open(); });
+  input.addEventListener('blur', () => { setTimeout(() => menu.classList.add('hidden'), 120); });
 }
 
 function wireGeo() {
   $('geo-enabled').addEventListener('change', (e) => geoMutate('enabled', e.target.checked));
-  $('cc-add').addEventListener('click', () => { const v = $('cc-input').value.trim(); if (v) { geoMutate('country', v, 'block'); $('cc-input').value = ''; } });
+  wireCountryPicker();
   $('ip-add').addEventListener('click', () => { const v = $('ip-input').value.trim(); if (v) { geoMutate('ip', v, 'block'); $('ip-input').value = ''; } });
   $('allow-add').addEventListener('click', () => { const v = $('allow-input').value.trim(); if (v) { geoMutate('allow', v, 'add'); $('allow-input').value = ''; } });
   $('allow-me').addEventListener('click', () => geoMutate('allow', '', 'add')); // server uses detected IP
