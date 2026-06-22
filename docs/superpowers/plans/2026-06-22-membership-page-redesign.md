@@ -18,7 +18,7 @@
 
 - **Modify** `public/membership.html` — replace the inline `<style>` block (remove `.pay-choice` / `.giga*` / `.normie*` / pixelate styles + `@keyframes`; add `.mb-ico` / `.mb-instant` / `.mb-trust` / `.mb-guarantee` / `.mb-crypto-note` + dual-glow). Replace the `#plans-view` markup. Remove the `#pixelate` SVG `<filter>` block.
 - **Modify** `public/js/membership.js` — remove the `#pay-crypto` click handler; update `setPrices()` to write the discounted price into the new `#crypto-price` span instead of the removed `#crypto-was` / `#crypto-amount`.
-- **Modify** `package.json` — bump `version` `1.12.4` → `1.12.5`.
+- **Modify** `package.json` — bump `version` `1.13.0` → `1.13.1`.
 
 ---
 
@@ -318,19 +318,19 @@ Expected: `1`
 Change line 3 from:
 
 ```json
-  "version": "1.12.4",
+  "version": "1.13.0",
 ```
 
 to:
 
 ```json
-  "version": "1.12.5",
+  "version": "1.13.1",
 ```
 
 - [ ] **Step 2: Verify**
 
 Run: `node -e "console.log(require('./package.json').version)"`
-Expected: `1.12.5`
+Expected: `1.13.1`
 
 ---
 
