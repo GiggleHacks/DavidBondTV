@@ -38,6 +38,20 @@ const PORT = Number(process.env.PORT) || 8080;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MEDIA_DIR = path.join(__dirname, 'media');
 
+// App version (single source of truth = package.json). Shown as a small badge in
+// the corner of every page so changes are easy to track. Bump package.json on
+// each change to roll it forward.
+const APP_VERSION = (() => {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version || '0.0.0'; }
+  catch { return '0.0.0'; }
+})();
+// Self-contained (inline-styled) so it renders regardless of which stylesheet a
+// page loads; pointer-events:none so it never blocks clicks (e.g. player controls).
+const VERSION_BADGE = `<div id="site-version" style="position:fixed;bottom:8px;right:10px;z-index:2147483000;`
+  + `font:600 11px/1 system-ui,-apple-system,sans-serif;color:rgba(255,255,255,.4);`
+  + `background:rgba(0,0,0,.35);padding:3px 7px;border-radius:6px;pointer-events:none;user-select:none">`
+  + `v${APP_VERSION}</div>`;
+
 // --- API setup ---
 const SECRET = crypto.randomBytes(32).toString('hex');
 // Admin token signing key. Set ADMIN_SECRET to keep tokens valid across restarts;
@@ -960,6 +974,20 @@ const server = http.createServer(async (req, res) => {
       'Accept-Ranges': 'bytes',
       'Cache-Control': 'no-cache',
     };
+
+    // HTML pages: inject the version badge just before </body>. Read into memory
+    // (pages are small) rather than streaming so we can rewrite the body.
+    if (headers['Content-Type'].startsWith('text/html')) {
+      let html = await fsp.readFile(filePath, 'utf8');
+      html = html.includes('</body>')
+        ? html.replace('</body>', `${VERSION_BADGE}</body>`)
+        : html + VERSION_BADGE;
+      const buf = Buffer.from(html, 'utf8');
+      delete headers['Accept-Ranges'];
+      headers['Content-Length'] = buf.length;
+      res.writeHead(200, headers);
+      return res.end(buf);
+    }
 
     const range = parseRange(req.headers.range, stat.size);
     if (range && range.invalid) {
