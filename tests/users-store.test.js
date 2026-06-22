@@ -1,0 +1,78 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { createUsersStore, publicUser } from '../lib/users-store.js';
+
+let file;
+beforeEach(() => {
+  file = path.join(os.tmpdir(), `users-${crypto.randomUUID()}.json`);
+});
+afterEach(() => {
+  try { fs.unlinkSync(file); } catch { /* ignore */ }
+});
+
+describe('users-store', () => {
+  it('creates a user and looks it up by email (case-insensitive)', async () => {
+    const store = createUsersStore(file);
+    const r = await store.createUser({ email: 'Person@Example.com', passwordHash: 'h' });
+    expect(r.ok).toBe(true);
+    expect(r.user.verified).toBe(false);
+    expect(r.user.securityStamp).toBeTruthy();
+    expect(store.getByEmail('person@example.com').id).toBe(r.user.id);
+  });
+
+  it('rejects a duplicate email', async () => {
+    const store = createUsersStore(file);
+    await store.createUser({ email: 'a@b.com', passwordHash: 'h' });
+    const dup = await store.createUser({ email: 'A@B.com', passwordHash: 'h' });
+    expect(dup.ok).toBe(false);
+    expect(dup.error).toBe('exists');
+  });
+
+  it('sets a username and enforces uniqueness', async () => {
+    const store = createUsersStore(file);
+    const a = (await store.createUser({ email: 'a@b.com', passwordHash: 'h' })).user;
+    const b = (await store.createUser({ email: 'c@d.com', passwordHash: 'h' })).user;
+    expect((await store.updateUser(a.id, { username: 'Cool' })).ok).toBe(true);
+    expect(store.isUsernameTaken('cool')).toBe(true);
+    expect(store.getByUsername('COOL').id).toBe(a.id);
+    const clash = await store.updateUser(b.id, { username: 'cool' });
+    expect(clash.ok).toBe(false);
+    expect(clash.error).toBe('username_taken');
+  });
+
+  it('persists across reloads', async () => {
+    const store = createUsersStore(file);
+    const u = (await store.createUser({ email: 'a@b.com', passwordHash: 'h' })).user;
+    await store.updateUser(u.id, { username: 'keeper', verified: true });
+    await store.flush();
+
+    const reopened = createUsersStore(file);
+    expect(reopened.getByUsername('keeper').id).toBe(u.id);
+    expect(reopened.getById(u.id).verified).toBe(true);
+  });
+
+  it('publicUser hides sensitive fields', async () => {
+    const store = createUsersStore(file);
+    const u = (await store.createUser({ email: 'a@b.com', passwordHash: 'secret' })).user;
+    const pub = publicUser(u);
+    expect(pub.email).toBeUndefined();
+    expect(pub.passwordHash).toBeUndefined();
+    expect(pub).toHaveProperty('username');
+  });
+
+  it('handles concurrent writes without corruption', async () => {
+    const store = createUsersStore(file);
+    await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        store.createUser({ email: `u${i}@x.com`, passwordHash: 'h' })),
+    );
+    await store.flush();
+    const reopened = createUsersStore(file);
+    for (let i = 0; i < 20; i += 1) {
+      expect(reopened.getByEmail(`u${i}@x.com`)).toBeTruthy();
+    }
+  });
+});

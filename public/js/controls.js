@@ -28,7 +28,15 @@ export function createControls({ video, container, els, onToggleSettings }) {
   }
 
   function togglePlay() {
-    if (video.paused) video.play(); else video.pause();
+    if (video.paused) {
+      // play() may reject if the browser blocks autoplay; the click itself is a
+      // user gesture so this normally succeeds. Swallow rejection to avoid a
+      // noisy unhandled promise; the play/pause events keep the UI in sync.
+      const p = video.play();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } else {
+      video.pause();
+    }
   }
 
   function setVolumeFromEvent(e) {

@@ -12,5 +12,12 @@ bikinis.mp4
 # ...but DO commit the small generated hover-preview montages
 !public/previews/*.mp4
 
+# Generated per-video quality renditions (Low/Medium/High) — large, rebuildable
+public/videos/
+
 # Runtime data (comments JSON store)
 data/
+
+# Secrets (Gmail App Password, AUTH_SECRET, etc.) — keep .env.example tracked
+.env
+.deploy-data/

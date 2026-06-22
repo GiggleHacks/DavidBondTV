@@ -22,10 +22,12 @@ export async function loadStoryboard(url) {
     const res = await fetch(url);
     if (!res.ok) return null;
     const meta = await res.json();
+    // Sheets are siblings of the index json, so resolve them against its dir.
+    const base = url.slice(0, url.lastIndexOf('/') + 1);
     return {
       meta,
       locate: (t) => spriteLocation(t, meta),
-      sheetUrl: (sheet) => `/media/storyboard/${sheet}`,
+      sheetUrl: (sheet) => `${base}${sheet}`,
     };
   } catch {
     return null;

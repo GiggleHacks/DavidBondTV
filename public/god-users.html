@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>David Bond TV — Users</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+</head>
+<body>
+  <div class="admin-wrap wide">
+    <header class="admin-bar">
+      <a class="logo" href="/" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
+      <nav class="admin-nav">
+        <a href="/god">Dashboard</a>
+        <a href="/god-upload.html">Upload</a>
+        <a href="/god-videos.html">Videos</a>
+        <a href="/god-users.html" class="active">Users</a>
+        <a class="back" href="/">← Site</a>
+      </nav>
+    </header>
+
+    <main id="app">
+      <!-- List view -->
+      <section id="list-view" class="card">
+        <div class="card-head">
+          <h2>Users <span id="ucount" class="muted"></span></h2>
+          <input id="search" placeholder="Search name or email" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:13px" />
+        </div>
+        <div class="tbl">
+          <div class="user-row" style="cursor:default">
+            <b>Name</b><b>Email</b><b>Country</b><b>Watched</b><b>Status</b>
+          </div>
+        </div>
+        <div id="user-list"></div>
+      </section>
+
+      <!-- Detail view -->
+      <section id="detail-view" class="card hidden">
+        <button class="back-link" id="to-list">← All users</button>
+        <div id="detail"></div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="/js/admin-users.js"></script>
+</body>
+</html>

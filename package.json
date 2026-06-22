@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "build:video": "node build/transcode.mjs",
+    "build:variants": "node build/variants.mjs",
     "build:storyboard": "node build/storyboard.mjs",
     "build": "npm run build:video && npm run build:storyboard",
-    "start": "node server.mjs",
+    "start": "node --env-file-if-exists=.env server.mjs",
     "test": "vitest run"
   },
   "devDependencies": {

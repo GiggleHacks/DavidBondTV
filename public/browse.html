@@ -4,39 +4,32 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>David Bond TV — Browse</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/account.css" />
 </head>
 <body>
+  <!-- Homepage header: the brand (avatar + wordmark) lives at the top of the
+       permanent sidebar now, so the header carries only the auth widget on the
+       right (plus the admin Upload button, injected by admin-link.js). -->
   <header class="site-header">
-    <a class="logo" href="/browse.html" aria-label="BondTV" style="text-decoration:none">
-      <span class="logo-wm"><span class="wm-pre">Bond</span><span class="wm-box">TV</span></span>
-    </a>
-
-    <div class="search">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 10-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 119.5 5a4.5 4.5 0 010 9z"/></svg>
-      Search David Bond TV
-    </div>
-
-    <button class="share-btn" id="share-btn" type="button">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
-      Share
-    </button>
+    <div class="auth-widget" id="auth-widget"></div>
   </header>
 
   <main class="browse">
     <div class="browse-chips">
-      <span class="chip active">All</span>
-      <span class="chip">Shopping</span>
-      <span class="chip">Bangkok</span>
-      <span class="chip">Vlogs</span>
-      <span class="chip">Barbie</span>
-      <span class="chip">Food</span>
-      <span class="chip">Markets</span>
-      <span class="chip">Recently uploaded</span>
+      <span class="chip" data-sort="recent">Recently Uploaded</span>
+      <span class="chip" data-sort="all">All</span>
     </div>
     <div class="browse-grid" id="grid"></div>
   </main>
 
   <script type="module" src="/js/browse.js"></script>
+  <script type="module" src="/js/auth-widget.js"></script>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/admin-link.js"></script>
+  <script src="/js/notifications.js"></script>
 </body>
 </html>

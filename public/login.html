@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in — David Bond TV</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/account.css" />
+</head>
+<body>
+  <div class="acc-page">
+    <div class="acc-head">
+      <a class="logo" href="/" style="text-decoration:none">
+        <img class="logo-mark" src="/brand/mark.png" alt="" width="124" height="124" />
+        <span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span>
+      </a>
+    </div>
+    <div class="acc-card">
+      <h1>Welcome back</h1>
+      <p class="acc-sub">Sign in to your DavidBond.TV account.</p>
+      <form id="form" novalidate>
+        <div class="acc-field">
+          <label for="email">Email address</label>
+          <input class="acc-input" id="email" type="email" autocomplete="email" placeholder="you@example.com" />
+        </div>
+        <div class="acc-field">
+          <label for="password">Password</label>
+          <input class="acc-input" id="password" type="password" autocomplete="current-password" placeholder="Your password" />
+        </div>
+        <button class="acc-btn" id="submit" type="submit">Sign in</button>
+        <p class="acc-msg" id="msg" hidden></p>
+      </form>
+      <p class="acc-foot"><a href="/reset-request.html">Forgot your password?</a></p>
+      <p class="acc-foot">New here? <a href="/signup.html">Create an account</a></p>
+    </div>
+  </div>
+
+  <script type="module">
+    import { postJSON } from '/js/account.js';
+    const $ = (id) => document.getElementById(id);
+    function setMsg(t, kind) {
+      const m = $('msg');
+      if (!t) { m.hidden = true; return; }
+      m.hidden = false; m.textContent = t; m.className = `acc-msg ${kind || ''}`.trim();
+    }
+    // Surface verification redirect failures.
+    if (new URLSearchParams(location.search).get('error') === 'verify') {
+      setMsg('That confirmation link is invalid or has expired. Try signing in or sign up again.', 'error');
+    }
+    $('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      $('submit').disabled = true;
+      setMsg('');
+      const r = await postJSON('/api/auth/login', {
+        email: $('email').value.trim(),
+        password: $('password').value,
+      });
+      if (r.ok && r.data.ok) {
+        const u = r.data.user;
+        window.location.href = u && u.profileComplete ? '/account.html' : '/profile-setup.html';
+      } else {
+        setMsg(r.data.error || 'Could not sign you in.', 'error');
+        $('submit').disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -31,7 +31,7 @@ export function createProgressBar({ video, els, storyboard }) {
 
     if (storyboard) {
       const loc = storyboard.locate(time);
-      els.thumbImg.style.backgroundImage = `url(${storyboard.sheetUrl(loc.sheet)})`;
+      els.thumbImg.style.backgroundImage = `url("${storyboard.sheetUrl(loc.sheet)}")`;
       els.thumbImg.style.backgroundPosition = `-${loc.x}px -${loc.y}px`;
     }
   }

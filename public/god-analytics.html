@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>David Bond TV — Video analytics</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+  <style>
+    .va-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .va-links { display: flex; gap: 10px; }
+    .stat-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 20px 0; }
+    @media (max-width: 640px) { .stat-cards { grid-template-columns: 1fr; } }
+    .stat-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+    .stat-card .sc-num { font-size: 30px; font-weight: 800; letter-spacing: -.5px; }
+    .stat-card .sc-label { color: var(--text-dim); font-size: 13px; margin-top: 4px; }
+    .chart-title { font-size: 14px; font-weight: 700; margin: 8px 0 14px; }
+    .bars { display: flex; align-items: flex-end; gap: 4px; height: 180px; padding-top: 8px; }
+    .bar { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; height: 100%; }
+    .bar > i { display: block; width: 100%; max-width: 28px; border-radius: 4px 4px 0 0; background: var(--accent); min-height: 2px; transition: height .3s; }
+    .bar > .bday { font-size: 10px; color: var(--text-dim); white-space: nowrap; transform: rotate(-45deg); transform-origin: top left; height: 28px; }
+    .chart-empty { color: var(--text-dim); font-size: 14px; padding: 24px 0; }
+  </style>
+</head>
+<body>
+  <div class="admin-wrap wide">
+    <header class="admin-bar">
+      <a class="logo" href="/" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
+      <nav class="admin-nav">
+        <a href="/god">Dashboard</a>
+        <a href="/god-upload.html">Upload</a>
+        <a href="/god-videos.html">Videos</a>
+        <a href="/god-users.html">Users</a>
+        <a class="back" href="/">← Site</a>
+      </nav>
+    </header>
+
+    <main id="app">
+      <section class="card">
+        <div class="va-head">
+          <div class="card-head"><h2 id="va-title">Video analytics</h2></div>
+          <div class="va-links">
+            <a class="btn ghost sm" id="va-view" target="_blank" rel="noopener">View video</a>
+            <a class="btn ghost sm" id="va-edit">Edit video</a>
+          </div>
+        </div>
+
+        <div class="stat-cards">
+          <div class="stat-card"><div class="sc-num" id="va-views">0</div><div class="sc-label">Views</div></div>
+          <div class="stat-card"><div class="sc-num" id="va-minutes">0</div><div class="sc-label">Minutes watched</div></div>
+          <div class="stat-card"><div class="sc-num" id="va-avg">0:00</div><div class="sc-label">Avg. view duration</div></div>
+        </div>
+
+        <div class="chart-title">Views — last 30 days</div>
+        <div class="bars" id="va-bars"></div>
+        <div class="chart-empty hidden" id="va-empty">No views recorded yet.</div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="/js/admin-video-analytics.js"></script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>David Bond TV — Videos</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+</head>
+<body>
+  <div class="admin-wrap wide">
+    <header class="admin-bar">
+      <a class="logo" href="/" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
+      <nav class="admin-nav">
+        <a href="/god">Dashboard</a>
+        <a href="/god-upload.html">Upload</a>
+        <a href="/god-videos.html" class="active">Videos</a>
+        <a href="/god-users.html">Users</a>
+        <a class="back" href="/">← Site</a>
+      </nav>
+    </header>
+
+    <main id="app">
+      <section class="card" id="cats-card">
+        <div class="card-head"><h2>Categories</h2></div>
+        <div class="cat-add">
+          <input id="cat-new" maxlength="40" placeholder="New category name" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:13px" />
+          <button class="btn sm" id="cat-add-btn">Add category</button>
+          <span id="cat-msg" class="muted"></span>
+        </div>
+        <div id="cat-list" class="cat-list"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Manage videos <span id="vcount" class="muted"></span></h2>
+          <input id="search" placeholder="Search title" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:13px" />
+        </div>
+
+        <div class="bulkbar">
+          <label class="selall"><input type="checkbox" id="select-all" /> Select all</label>
+          <span id="selcount" class="muted">0 selected</span>
+          <span style="flex:1"></span>
+          <button class="btn sm ghost" data-bulk="publish">Publish</button>
+          <button class="btn sm ghost" data-bulk="unpublish">Unpublish</button>
+          <button class="btn sm ghost" data-bulk="premium">Make Premium</button>
+          <button class="btn sm ghost" data-bulk="free">Make Free</button>
+          <button class="btn sm danger" data-bulk="delete">Delete</button>
+        </div>
+
+        <div id="library"></div>
+        <div id="pager" class="pager"></div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="/js/admin-videos.js"></script>
+</body>
+</html>

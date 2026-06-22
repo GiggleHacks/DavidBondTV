@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>David Bond TV — Dashboard</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+</head>
+<body>
+  <div class="admin-wrap wide">
+    <header class="admin-bar">
+      <a class="logo" href="/" title="Back to site" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
+      <nav class="admin-nav">
+        <a href="/god" class="active">Dashboard</a>
+        <a href="/god-upload.html">Upload</a>
+        <a href="/god-videos.html">Videos</a>
+        <a href="/god-users.html">Users</a>
+        <a class="back" href="/">← Site</a>
+      </nav>
+    </header>
+
+    <main id="app">
+      <!-- Quick actions -->
+      <div class="quick-grid">
+        <a class="quick" href="/god-upload.html"><span class="qi">⬆</span><b>Upload Video</b><span class="qs">Add new clips</span></a>
+        <a class="quick" href="/god-videos.html"><span class="qi">🎬</span><b>Manage Videos</b><span class="qs" id="q-videos">—</span></a>
+        <a class="quick" href="/god-users.html"><span class="qi">👥</span><b>Users</b><span class="qs" id="q-users">—</span></a>
+      </div>
+
+      <!-- Site statistics -->
+      <div class="stat-grid">
+        <div class="stat"><b id="s-views">—</b><span>Total views</span></div>
+        <div class="stat"><b id="s-hours">—</b><span>Hours watched</span></div>
+        <div class="stat"><b id="s-users">—</b><span>Registered users</span></div>
+        <div class="stat"><b id="s-blocked">—</b><span>Blocked visits</span></div>
+      </div>
+
+      <!-- World map -->
+      <section class="card">
+        <div class="card-head">
+          <h2>Where viewers are</h2>
+          <div class="seg" id="map-mode">
+            <button data-mode="viewers" class="active">Viewers</button>
+            <button data-mode="subscribers">Subscribers</button>
+            <button data-mode="blocked">Blocked</button>
+          </div>
+        </div>
+        <div class="map-wrap">
+          <svg id="map" viewBox="0 0 360 180" preserveAspectRatio="xMidYMid meet" aria-label="World map of viewers">
+            <g id="graticule">
+              <rect x="0" y="0" width="360" height="180" fill="var(--surface-2)" rx="3" />
+              <g stroke="var(--border)" stroke-width="0.3" fill="none">
+                <line x1="30" y1="0" x2="30" y2="180"/><line x1="60" y1="0" x2="60" y2="180"/>
+                <line x1="90" y1="0" x2="90" y2="180"/><line x1="120" y1="0" x2="120" y2="180"/>
+                <line x1="150" y1="0" x2="150" y2="180"/><line x1="210" y1="0" x2="210" y2="180"/>
+                <line x1="240" y1="0" x2="240" y2="180"/><line x1="270" y1="0" x2="270" y2="180"/>
+                <line x1="300" y1="0" x2="300" y2="180"/><line x1="330" y1="0" x2="330" y2="180"/>
+                <line x1="0" y1="30" x2="360" y2="30"/><line x1="0" y1="60" x2="360" y2="60"/>
+                <line x1="0" y1="120" x2="360" y2="120"/><line x1="0" y1="150" x2="360" y2="150"/>
+              </g>
+              <line x1="180" y1="0" x2="180" y2="180" stroke="var(--border)" stroke-width="0.5"/>
+              <line x1="0" y1="90" x2="360" y2="90" stroke="var(--border)" stroke-width="0.5"/>
+            </g>
+          </svg>
+          <div class="map-hover" id="map-hover"></div>
+        </div>
+        <div class="rank" id="country-rank"></div>
+      </section>
+
+      <div class="two-col">
+        <!-- Top videos -->
+        <section class="card">
+          <h2>Top videos</h2>
+          <div class="tbl" id="top-videos"></div>
+        </section>
+
+        <!-- Recent users -->
+        <section class="card">
+          <div class="card-head"><h2>Recent users</h2><a class="back" href="/god-users.html">Manage all →</a></div>
+          <div id="recent-users"></div>
+        </section>
+      </div>
+
+      <!-- Geo-restriction controls -->
+      <section class="card">
+        <div class="card-head">
+          <h2>Geo-restriction</h2>
+          <label class="switch"><input type="checkbox" id="geo-enabled" /> <span>Enabled</span></label>
+        </div>
+        <div id="geo-detect" class="banner info"></div>
+        <div class="geo-grid">
+          <div>
+            <h3>Blocked countries</h3>
+            <div class="chips" id="cc-chips"></div>
+            <div class="addrow"><input id="cc-input" maxlength="2" placeholder="CC (e.g. TH)" /><button id="cc-add" class="btn sm">Block</button></div>
+          </div>
+          <div>
+            <h3>Blocked IPs</h3>
+            <div class="chips" id="ip-chips"></div>
+            <div class="addrow"><input id="ip-input" placeholder="IP address" /><button id="ip-add" class="btn sm">Block</button></div>
+          </div>
+          <div>
+            <h3>Allowlist (never blocked)</h3>
+            <div class="chips" id="allow-chips"></div>
+            <div class="addrow"><input id="allow-input" placeholder="IP address" /><button id="allow-add" class="btn sm">Allow</button><button id="allow-me" class="btn sm ghost">Add my IP</button></div>
+          </div>
+          <div>
+            <h3>Test &amp; safety</h3>
+            <div class="addrow"><input id="sim-input" maxlength="2" placeholder="Simulate CC" /><button id="sim-set" class="btn sm">Preview</button><button id="sim-clear" class="btn sm ghost">Stop</button></div>
+            <p class="muted" style="margin:8px 0">Preview shows the site as a visitor from that country sees it. <a href="/under-construction.html" target="_blank">View blocked page →</a></p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="/js/admin-analytics.js"></script>
+</body>
+</html>

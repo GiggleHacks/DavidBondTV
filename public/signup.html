@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign up — David Bond TV</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/account.css" />
+</head>
+<body>
+  <div class="acc-page">
+    <div class="acc-head">
+      <a class="logo" href="/" style="text-decoration:none">
+        <img class="logo-mark" src="/brand/mark.png" alt="" width="124" height="124" />
+        <span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span>
+      </a>
+    </div>
+    <div class="acc-card">
+      <h1>Create your account</h1>
+      <p class="acc-sub">Sign up to comment and build your public profile.</p>
+      <form id="form" novalidate>
+        <div class="acc-field">
+          <label for="email">Email address</label>
+          <input class="acc-input" id="email" type="email" autocomplete="email" placeholder="you@example.com" />
+        </div>
+        <div class="acc-field">
+          <label for="password">Password</label>
+          <input class="acc-input" id="password" type="password" autocomplete="new-password" placeholder="At least 4 characters" />
+        </div>
+        <div class="acc-field">
+          <label for="answer">Quick check</label>
+          <span class="acc-challenge">
+            <label id="question" for="answer">Loading…</label>
+            <input class="acc-input" id="answer" type="text" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="?" />
+          </span>
+        </div>
+        <!-- Honeypot: hidden from humans, bots tend to fill it. -->
+        <div style="position:absolute;left:-9999px" aria-hidden="true">
+          <label>Leave this empty <input id="hp" type="text" tabindex="-1" autocomplete="off" /></label>
+        </div>
+        <button class="acc-btn" id="submit" type="submit">Create account</button>
+        <p class="acc-msg" id="msg" hidden></p>
+      </form>
+      <p class="acc-foot">Already have an account? <a href="/login.html">Sign in</a></p>
+    </div>
+  </div>
+
+  <script type="module">
+    import { postJSON, loadChallenge } from '/js/account.js';
+    const $ = (id) => document.getElementById(id);
+    let token = null;
+    async function refresh() {
+      const c = await loadChallenge();
+      if (c) { token = c.token; $('question').textContent = c.question; }
+      else $('question').textContent = 'Verification unavailable';
+    }
+    function setMsg(t, kind) {
+      const m = $('msg');
+      if (!t) { m.hidden = true; return; }
+      m.hidden = false; m.textContent = t; m.className = `acc-msg ${kind || ''}`.trim();
+    }
+    $('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      $('submit').disabled = true;
+      setMsg('');
+      const r = await postJSON('/api/auth/signup', {
+        email: $('email').value.trim(),
+        password: $('password').value,
+        answer: $('answer').value.trim(),
+        token,
+        hp: $('hp').value,
+      });
+      if (r.ok && r.data.ok) {
+        $('form').reset();
+        setMsg(r.data.message || 'Check your email to confirm your account. Be sure to check your spam folder.', 'ok');
+      } else {
+        setMsg(r.data.error || 'Could not sign you up.', 'error');
+      }
+      $('answer').value = '';
+      await refresh();
+      $('submit').disabled = false;
+    });
+    refresh();
+  </script>
+</body>
+</html>

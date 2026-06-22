@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>David Bond TV — Upload</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+  <style>
+    .banner { border-radius: 10px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
+    .banner.warn { background: color-mix(in srgb, #f59e0b 18%, transparent); border: 1px solid color-mix(in srgb, #f59e0b 40%, transparent); color: #fde68a; }
+    .vis-row { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; font-size: 14px; }
+    .vis-row label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+    .drop {
+      border: 2px dashed var(--border); border-radius: 12px; padding: 40px 18px; text-align: center;
+      color: var(--text-dim); transition: border-color .15s, background .15s; cursor: pointer;
+    }
+    .drop.drag { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--text); }
+    .drop strong { color: var(--text); font-size: 15px; display: block; }
+    .drop-ico { width: 72px; height: 72px; margin: 0 auto 16px; border-radius: 50%; background: var(--surface-2); display: flex; align-items: center; justify-content: center; }
+    .drop-ico svg { width: 34px; height: 34px; fill: var(--text-dim); }
+    .drop.drag .drop-ico svg { fill: var(--accent); }
+    .drop-select { pointer-events: none; }
+    .job { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+    .job:first-child { border-top: none; }
+    .job .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex: none; background: var(--text-dim); }
+    .job.uploading .dot { background: #3b82f6; animation: pulse 1s infinite; }
+    .job.processing .dot { background: #f59e0b; animation: pulse 1s infinite; }
+    .job.ready .dot { background: #22c55e; }
+    .job.failed .dot { background: #ef4444; }
+    @keyframes pulse { 50% { opacity: .35; } }
+    .job .jbody { flex: 1; min-width: 0; }
+    .job .jname { font-size: 13px; color: var(--text-dim); word-break: break-word; }
+    .job .jtitle { font-weight: 700; margin-top: 2px; }
+    .job .jdesc { color: var(--text-dim); font-size: 13px; margin-top: 3px; }
+    .job .jstats { font-family: 'Pixelify Sans', 'Silkscreen', 'Courier New', monospace; font-size: 12px; letter-spacing: .5px; color: var(--accent); margin-top: 5px; }
+    /* Refined retro: a crisp pixel "track" with chunky segmented fill. */
+    .retrobar {
+      height: 20px; margin-top: 10px; padding: 3px; border-radius: 4px;
+      background: #0b1120; border: 2px solid #05080f;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.05), inset 0 2px 4px rgba(0,0,0,.5);
+      image-rendering: pixelated; overflow: hidden;
+    }
+    .retrobar > i {
+      display: block; height: 100%; width: 0; border-radius: 2px;
+      /* thin dark dividers every 12px (segment look) over a glossy accent gradient */
+      background-image:
+        repeating-linear-gradient(90deg, rgba(0,0,0,.22) 0, rgba(0,0,0,.22) 2px, transparent 2px, transparent 12px),
+        linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, #fff) 0%, var(--accent) 52%, color-mix(in srgb, var(--accent) 70%, #000) 100%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.35);
+      transition: width .3s steps(16, end);
+    }
+    .job.uploading .retrobar > i { animation: retro-pulse .8s steps(2, end) infinite; }
+    @keyframes retro-pulse { 50% { filter: brightness(1.18); } }
+    /* completed-row thumbnail + quick actions */
+    .job-thumb { width: 112px; height: 63px; object-fit: cover; border-radius: 8px; background: var(--surface-2); flex: none; }
+    .job-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .btn.sm { padding: 6px 16px; font-size: 13px; }
+    /* tidy settings panel */
+    .settings { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 18px; }
+    .settings .vis-row { margin-bottom: 12px; }
+    .settings .vis-row:last-child { margin-bottom: 0; }
+    .card > h2 { margin-bottom: 16px; }
+    .drop { padding: 48px 18px; }
+    .drop strong { font-size: 16px; }
+  </style>
+</head>
+<body>
+  <div class="admin-wrap wide">
+    <header class="admin-bar">
+      <a class="logo" href="/" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
+      <nav class="admin-nav">
+        <a href="/god">Dashboard</a>
+        <a href="/god-upload.html" class="active">Upload</a>
+        <a href="/god-videos.html">Videos</a>
+        <a href="/god-users.html">Users</a>
+        <a class="back" href="/">← Site</a>
+      </nav>
+    </header>
+
+    <main id="app">
+      <section class="card">
+        <h2>Upload videos</h2>
+        <div id="ffmpeg-banner" class="banner warn hidden">⚠ ffmpeg isn’t installed on this server, so uploads can’t be processed yet.</div>
+        <div class="settings">
+          <div class="vis-row">
+            <span class="muted">Visibility:</span>
+            <label><input type="radio" name="vis" value="free" checked /> Free</label>
+            <label><input type="radio" name="vis" value="premium" /> Premium (subscribers only)</label>
+          </div>
+          <div class="vis-row" id="blur-row">
+            <span class="muted">Thumbnail blur:</span>
+            <select id="blur" class="acc-input" style="width:auto;padding:6px 10px">
+              <option value="strong">Strong blur</option>
+              <option value="medium" selected>Medium blur</option>
+              <option value="off">No blur</option>
+            </select>
+            <span class="muted" style="font-size:12px">Applied to premium thumbnails for non-subscribers.</span>
+          </div>
+          <div class="vis-row" id="schedule-row" style="flex-wrap:wrap">
+            <span class="muted">Publishing:</span>
+            <label><input type="radio" name="sched" value="now" checked /> Publish immediately</label>
+            <label><input type="radio" name="sched" value="drip" /> Schedule release (drip)</label>
+            <select id="drip-interval" class="acc-input hidden" style="width:auto;padding:6px 10px">
+              <option value="86400000">One every 24 hours</option>
+              <option value="172800000">One every 48 hours</option>
+              <option value="259200000">One every 72 hours</option>
+              <option value="604800000">One per week</option>
+            </select>
+            <span class="muted hidden" id="drip-hint" style="font-size:12px;flex-basis:100%">First video goes live now; the rest release on this cadence in the order you drop them.</span>
+          </div>
+          <div class="vis-row" id="category-row">
+            <span class="muted">Category:</span>
+            <select id="category" class="acc-input" style="width:auto;padding:6px 10px">
+              <option value="">Uncategorized</option>
+            </select>
+            <a href="/god" class="muted" style="font-size:12px">Manage categories →</a>
+          </div>
+        </div>
+        <div id="drop" class="drop">
+          <div class="drop-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4l-6 6h4v6h4v-6h4l-6-6zM5 18v2h14v-2H5z"/></svg></div>
+          <strong>Drag and drop video files to upload</strong>
+          <div class="muted" style="margin-top:6px">Up to 30 at once · 3 upload in parallel · .mp4 · .mov · .m4v</div>
+          <button type="button" class="btn drop-select" style="margin-top:16px">Select files</button>
+        </div>
+        <input id="file" type="file" accept="video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v" multiple class="hidden" />
+      </section>
+
+      <section id="jobs-card" class="card hidden">
+        <h2>Recent uploads</h2>
+        <div id="jobs"></div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="/js/admin.js"></script>
+</body>
+</html>
