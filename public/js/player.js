@@ -135,17 +135,25 @@ async function init() {
   if (!entry) { location.replace('/'); return; }
   const commentVideo = entry.id;
 
-  // Fill the meta row.
-  $('v-title').textContent = entry ? entry.title : 'David Bond TV';
-  $('v-desc').textContent = entry ? (entry.description || '') : '';
-  $('v-date').textContent = entry && entry.uploaded ? entry.uploaded : '';
-  document.title = entry ? `${entry.title} — David Bond TV` : 'David Bond TV';
+  // Is this a premium video the current viewer can't watch? If so we keep the
+  // page generic (no title/description/edu hints) so the locked "Unlock Now"
+  // screen never reveals what's behind the paywall.
+  const locked = entry.visibility === 'premium' && !(await viewerCanWatchPremium());
+
+  // Fill the meta row (generic for a locked premium video).
+  $('v-title').textContent = locked ? 'Members-only video' : (entry.title || 'David Bond TV');
+  $('v-desc').textContent = locked ? '' : (entry.description || '');
+  $('v-date').textContent = (!locked && entry.uploaded) ? entry.uploaded : '';
+  document.title = locked
+    ? 'Members only — David Bond TV'
+    : (entry.title ? `${entry.title} — David Bond TV` : 'David Bond TV');
 
   // Educational disclaimer for hacking / cybersecurity content. Shows when the
   // admin flags the video (entry.educational) or its category/title mentions
-  // cyber-security / hacking. Rendered once, just under the description.
+  // cyber-security / hacking. Rendered once, just under the description. Skipped
+  // when locked (it would otherwise hint at the hidden video's topic).
   const eduRe = /cyber|hack|security|infosec|pentest/i;
-  const isEdu = entry && (entry.educational === true
+  const isEdu = !locked && entry && (entry.educational === true
     || eduRe.test(entry.category || '') || eduRe.test(entry.title || ''));
   if (isEdu && !document.getElementById('v-edu-note')) {
     const note = document.createElement('p');
@@ -165,7 +173,7 @@ async function init() {
 
   // Premium gate: exclusive videos play for admins only; everyone else sees a
   // lock + subscribe prompt instead of the stream (the server 403s the media too).
-  if (entry && entry.visibility === 'premium' && !(await viewerCanWatchPremium())) {
+  if (locked) {
     showPremiumGate(container, entry);
     initReactions(commentVideo);
     initComments(commentVideo);
