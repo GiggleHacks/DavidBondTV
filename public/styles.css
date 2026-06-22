@@ -162,11 +162,15 @@ body {
 .hdr-bell-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
 .hdr-bell-btn svg { width: 20px; height: 20px; fill: currentColor; }
 .hdr-bell-badge {
-  position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px;
-  padding: 0 5px; box-sizing: border-box; border-radius: 999px;
-  background: #ef4444; color: #fff; font-size: 11px; font-weight: 800; line-height: 18px;
-  text-align: center; border: 2px solid var(--surface); pointer-events: none;
+  position: absolute; top: -4px; right: -4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box;
+  border-radius: 999px; background: #ef4444; color: #fff;
+  font-size: 11px; font-weight: 800; line-height: 1;
+  border: 2px solid var(--surface); pointer-events: none;
 }
+/* display:inline-flex above would override the [hidden] attribute, so restore it. */
+.hdr-bell-badge[hidden] { display: none; }
 .hdr-bell-panel {
   position: absolute; right: 0; top: calc(100% + 8px); width: 360px; max-width: 86vw;
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
