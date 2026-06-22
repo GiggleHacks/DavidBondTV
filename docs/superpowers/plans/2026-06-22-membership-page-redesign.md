@@ -2,38 +2,63 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the meme-branded two-path payment chooser on the membership offer page with a single, premium, value-first card (Concept A) that has one clear card-checkout CTA, honest crypto "coming soon" footnote, and tasteful "Level 2" color.
+> **Revision 2026-06-22 (post-rescan):** Rewritten after a large payments change landed (uncommitted) in the working tree. The membership page now consumes an admin-driven pricing system (`lib/pricing.js`) that adds a **yearly plan** and **intro ("first month") pricing**. This plan PRESERVES both and the live config contract; crypto is still "Coming soon" so it is still demoted to a footnote. Version is now `1.14.0`.
 
-**Architecture:** Pure front-end change to two static assets — `public/membership.html` (markup + its inline `<style>` block) and `public/js/membership.js` (event wiring + price rendering). No backend, no Stripe config, no new dependencies. The dynamic price still comes live from `/api/pay/stripe/config`. The active-member view (`#member-view`) and the `?status=success`/`?status=cancel` flows are untouched.
+**Goal:** Replace the meme-branded two-path payment chooser on the membership offer page with a single, premium, value-first card (Concept A): one clear monthly CTA, a secondary yearly link, intro-price support, an honest crypto "coming soon" footnote, and tasteful "Level 2" color — without breaking the new pricing/checkout wiring.
 
-**Tech Stack:** Vanilla ES modules, inline SVG icons, CSS using the existing `--surface` / `--border` / `--text-dim` / `--accent` theme variables and the brand gold `#f4a300`. Tests: vitest (`npm test`) as a regression guard; visual verification via the preview tools.
+**Architecture:** Pure front-end change to two static assets — `public/membership.html` (markup + inline `<style>`) and `public/js/membership.js` (remove the dead crypto handler; retarget two element writes). All pricing still comes live from `GET /api/pay/stripe/config`. The active-member view (`#member-view`), the yearly flow (`#pay-year` / `setYearly`), intro pricing (`setCardPricing`/`cfg.intro`), and the `?status=success`/`cancel` flows are preserved.
 
-**Note on TDD:** These are presentational/browser-module changes with no DOM unit-test harness in this repo (`tests/membership.test.js` covers backend `lib/membership.js`, not this page). So each task ends with a concrete verification step (preview render / `npm test`), not a new unit test. Do not add a brittle DOM test harness for this — it is out of scope per the spec.
+**Tech Stack:** Vanilla ES modules, inline SVG icons, CSS using the existing midnight theme vars (`--surface`, `--surface-2`, `--border`, `--text`, `--text-dim`, `--shadow`, `--accent`) + brand gold `#f4a300`. Reuses existing button helpers `.acc-btn.gold-cta` (primary) and `.acc-btn-ghost` (secondary). Tests: vitest (`npm test`) as a regression guard; visual verification via the preview tools.
+
+**Note on TDD:** Presentational/browser-module change with no DOM unit-test harness in this repo (`tests/membership.test.js` covers backend `lib/membership.js`, not this page). Each task ends with a concrete verification step (`npm test` / preview render), not a new unit test. Do not add a DOM test harness — out of scope.
 
 **Spec:** `docs/superpowers/specs/2026-06-22-membership-page-redesign-design.md`
 
 ---
 
+## Config contract (must keep consuming exactly this)
+
+`GET /api/pay/stripe/config` → (from `lib/pricing.js` `publicConfig()` + server `enabled` flag):
+
+```js
+{
+  enabled,                 // bool — false → disable #pay-card, show "not available" banner
+  currency,                // e.g. "usd"
+  intervals: { month, year },                       // bools — which are offered
+  prices: {
+    month: { amount, currency, interval } | null,   // amount in integer CENTS
+    year:  { amount, currency, interval } | null
+  },
+  intro: { amount, label, currency } | null          // present only when monthly intro > 0
+}
+```
+
+Defaults today: monthly `1700` ($17/mo), yearly `12000` ($120/yr), intro off. The redesign must render whatever the config returns — never hardcode amounts.
+
+---
+
 ## File structure
 
-- **Modify** `public/membership.html` — replace the inline `<style>` block (remove `.pay-choice` / `.giga*` / `.normie*` / pixelate styles + `@keyframes`; add `.mb-ico` / `.mb-instant` / `.mb-trust` / `.mb-guarantee` / `.mb-crypto-note` + dual-glow). Replace the `#plans-view` markup. Remove the `#pixelate` SVG `<filter>` block.
-- **Modify** `public/js/membership.js` — remove the `#pay-crypto` click handler; update `setPrices()` to write the discounted price into the new `#crypto-price` span instead of the removed `#crypto-was` / `#crypto-amount`.
-- **Modify** `package.json` — bump `version` `1.13.0` → `1.13.1`.
+- **Modify** `public/membership.html` — replace the inline `<style>` block (remove `.pay-choice` / `.giga*` / `.normie*` / pixelate + `@keyframes`; add `.mb-ico` / `.mb-instant` / `.mb-trust` / `.mb-guarantee` / `.mb-crypto-note` / `.mb-price-sub` + dual glow; keep `.mb-year*`). Replace the `#plans-view` markup. Remove the `#pixelate` SVG `<filter>` block.
+- **Modify** `public/js/membership.js` — remove the `#pay-crypto` click handler; in `setCardPricing()` retarget the intro note to `#price-sub` and the crypto price to `#crypto-price` (drop `#crypto-was`/`#crypto-amount`).
+- **Modify** `package.json` — bump `version` `1.14.0` → `1.14.1`.
+
+**Element IDs that MUST exist after the markup rewrite** (JS depends on them): `pay-card`, `price-amount`, `price-per`, `price-sub`, `year-row`, `pay-year`, `year-amount`, `year-save`, `crypto-price`. (Plus untouched member-view: `member-view`, `member-status`, `manage-btn`, `banner`, `msg`.)
 
 ---
 
 ## Task 1: Replace the inline `<style>` block in membership.html
 
 **Files:**
-- Modify: `public/membership.html:12-122` (the `<style>…</style>` block)
+- Modify: `public/membership.html:12-127` (the `<style>…</style>` block)
 
 - [ ] **Step 1: Replace the entire `<style>` block**
 
-Find the block that starts at line 12 (`  <style>`) and ends at the matching `  </style>` (currently line 122). Replace the whole block (including the `<style>`/`</style>` tags) with:
+Replace the whole block from line 12 (`  <style>`) through its matching `  </style>` (currently line 127) with:
 
 ```html
   <style>
-    .mb-wrap { width: min(560px, 100%); margin: 40px auto 80px; padding: 0 20px; }
+    .mb-wrap { width: min(540px, 100%); margin: 40px auto 80px; padding: 0 20px; }
     .sub-banner { border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; font-size: 14px; }
     .sub-banner.ok { background: rgba(16,185,129,.12); color: #34d399; }
     .sub-banner.warn { background: rgba(245,158,11,.12); color: #fbbf24; }
@@ -71,25 +96,34 @@ Find the block that starts at line 12 (`  <style>`) and ends at the matching `  
     .mb-ico { flex: none; width: 22px; height: 22px; margin-top: 1px; display: inline-flex; align-items: center; justify-content: center; }
     .mb-ico svg { width: 21px; height: 21px; }
 
-    .mb-price { display: flex; align-items: baseline; justify-content: center; gap: 6px; margin: 4px 0 16px; }
+    .mb-pricing { margin: 4px 0 18px; }
+    .mb-price { display: flex; align-items: baseline; justify-content: center; gap: 6px; }
     .mb-amount {
       font-size: 50px; font-weight: 800; letter-spacing: -1.5px; line-height: 1;
       background: linear-gradient(135deg, #ffe08a, #f4a300); -webkit-background-clip: text; background-clip: text; color: transparent;
     }
     .mb-per { color: var(--text-dim); font-size: 16px; font-weight: 600; }
+    .mb-price-sub { color: var(--text-dim); font-size: 12.5px; margin: 7px 0 0; }
+    .mb-price-sub[hidden] { display: none; }
 
-    .mb-cta { width: 100%; padding: 16px; font-size: 17px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+    /* Primary CTA uses the shared .acc-btn.gold-cta helper; this only sizes it up. */
+    .mb-cta { width: 100%; padding: 16px; font-size: 17px; }
     .mb-cta svg { width: 17px; height: 17px; fill: currentColor; }
-    /* Gold primary action — scoped to the pay button so the member-view manage button keeps the default accent. */
-    #pay-card { background: linear-gradient(135deg, #ffd76a, #f4a300) !important; color: #1a1205 !important; border: none; }
-    #pay-card:disabled { opacity: .55; }
 
     .mb-instant { color: var(--text-dim); font-size: 12.5px; margin: 10px 0 0; display: flex; align-items: center; justify-content: center; gap: 5px; }
     .mb-instant svg { width: 13px; height: 13px; fill: #f4a300; }
 
+    /* Secondary yearly action — low-emphasis ghost button below the primary CTA. */
+    .mb-year-row { margin: 14px 0 2px; }
+    .mb-year-label { display: block; font-size: 12.5px; color: var(--text-dim); margin-bottom: 8px; }
+    .mb-year { width: auto; padding: 10px 20px; font-size: 14px; }
+    .mb-year strong { font-weight: 800; }
+    .mb-year-save { font-size: 11px; font-weight: 800; letter-spacing: .4px; padding: 3px 9px; border-radius: 999px; background: rgba(16,185,129,.16); color: #34d399; }
+    .mb-year-save[hidden] { display: none; }
+
     .mb-trust {
       display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
-      margin: 16px 0 14px; padding: 13px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+      margin: 18px 0 14px; padding: 13px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
       color: var(--text-dim); font-size: 12.5px;
     }
     .mb-trust .brand { height: 22px; width: auto; }
@@ -117,26 +151,24 @@ Find the block that starts at line 12 (`  <style>`) and ends at the matching `  
   </style>
 ```
 
-- [ ] **Step 2: Verify the file still has exactly one `<style>` and one `</style>`**
+- [ ] **Step 2: Verify exactly one style block and that old class names are gone**
 
 Run: `grep -c "</style>" "public/membership.html"`
 Expected: `1`
 
-Also confirm the old class names are gone from the style block:
-
-Run: `grep -nE "pay-choice|pay-opt|\.giga|normie|gigaBorder|gigaGlow|gigaPulse|gigaFloat" "public/membership.html"`
-Expected: no output (exit code 1). (The `#plans-view` markup still references some old classes until Task 2 — that's fine; this grep is scoped to confirm the *style* names are removed, and markup is replaced next.)
+Run: `grep -nE "pay-choice|pay-opt|\.giga|gigaBorder|gigaGlow|gigaPulse|gigaFloat|normie-logos" "public/membership.html"`
+Expected: no output (exit code 1). (Markup still has some old class refs until Task 2 — that's fine; this confirms the *styles* are removed.)
 
 ---
 
 ## Task 2: Replace the `#plans-view` markup and remove the pixelate filter
 
 **Files:**
-- Modify: `public/membership.html` — the `#plans-view` block (currently lines ~155-224) and the `#pixelate` SVG `<filter>` block (currently lines ~132-141)
+- Modify: `public/membership.html` — the `#pixelate` SVG `<filter>` block (currently lines ~137-146) and the `#plans-view` block (currently lines ~160-237)
 
 - [ ] **Step 1: Remove the pixelate SVG filter block**
 
-Delete this block (currently lines 132-141, including the preceding comment line 132):
+Delete this block (currently lines 137-146, including the preceding comment):
 
 ```html
   <!-- Slight pixelation filter for the "Normie Pay" card brand marks. -->
@@ -151,11 +183,9 @@ Delete this block (currently lines 132-141, including the preceding comment line
   </svg>
 ```
 
-(Leave the `<div class="mb-wrap">` and everything else in place.)
-
 - [ ] **Step 2: Replace the entire `#plans-view` block**
 
-Replace the whole `<!-- Offer (non-members) --> … </div>` block — i.e. the `<div id="plans-view" class="mb-card" hidden> … </div>` element (currently lines 155-224) — with:
+Replace the whole `<!-- Offer (non-members) --> … </div>` element — `<div id="plans-view" class="mb-card" hidden> … </div>` (currently lines 160-237) — with:
 
 ```html
     <!-- Offer (non-members) -->
@@ -187,12 +217,15 @@ Replace the whole `<!-- Offer (non-members) --> … </div>` block — i.e. the `
         </li>
       </ul>
 
-      <div class="mb-price">
-        <span class="mb-amount" id="price-amount">$1</span>
-        <span class="mb-per" id="price-per">/ mo</span>
+      <div class="mb-pricing">
+        <div class="mb-price">
+          <span class="mb-amount" id="price-amount">$17</span>
+          <span class="mb-per" id="price-per">/ mo</span>
+        </div>
+        <p class="mb-price-sub" id="price-sub" hidden></p>
       </div>
 
-      <button class="acc-btn mb-cta" id="pay-card" type="button">
+      <button class="acc-btn gold-cta mb-cta" id="pay-card" type="button">
         <svg viewBox="0 0 24 24"><path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2v-9a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm3 8H9V6a3 3 0 016 0z"/></svg>
         Get instant access
       </button>
@@ -201,6 +234,14 @@ Replace the whole `<!-- Offer (non-members) --> … </div>` block — i.e. the `
         <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
         Start watching the moment you pay
       </p>
+
+      <div class="mb-year-row" id="year-row" hidden>
+        <span class="mb-year-label">Prefer to pay yearly?</span>
+        <button class="acc-btn acc-btn-ghost mb-year" id="pay-year" type="button">
+          Get a year for <strong id="year-amount">$120</strong>
+          <span class="mb-year-save" id="year-save" hidden>save 41%</span>
+        </button>
+      </div>
 
       <div class="mb-trust">
         <span class="brand visa"><svg viewBox="0 0 40 14" role="img" aria-label="Visa"><text x="20" y="11.5" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="900" font-style="italic" font-size="13" fill="#1a1f71">VISA</text></svg></span>
@@ -219,7 +260,7 @@ Replace the whole `<!-- Offer (non-members) --> … </div>` block — i.e. the `
         <span class="coin"><span class="dot" style="color:#FF6600">●</span>XMR</span> ·
         <span class="coin"><span class="dot" style="color:#7CA0E5">●</span>LTC</span> ·
         <span class="coin"><span class="dot" style="color:#0AC18E">●</span>BCH</span>
-        coming soon — just <span id="crypto-price">$0.80</span>/mo (20% off) when it lands.
+        coming soon — just <span id="crypto-price">$13.60</span>/mo (20% off) when it lands.
       </p>
 
       <p class="mb-consent">
@@ -231,54 +272,72 @@ Replace the whole `<!-- Offer (non-members) --> … </div>` block — i.e. the `
     </div>
 ```
 
-- [ ] **Step 3: Confirm all old payment-chooser markup and the filter are gone**
+- [ ] **Step 3: Confirm old chooser markup and the filter are gone**
 
-Run: `grep -nE "pay-choice|pay-opt|GigaChad|Normie|pay-crypto|crypto-was|crypto-amount|id=\"pixelate\"|url\(#pixelate\)" "public/membership.html"`
+Run: `grep -nE "pay-choice|pay-opt|GigaChad|Normie|pay-crypto|crypto-was|crypto-amount|id=\"pixelate\"|url\(#pixelate\)|mb-price-note" "public/membership.html"`
 Expected: no output (exit code 1).
 
-- [ ] **Step 4: Confirm the new hooks exist exactly once each**
+- [ ] **Step 4: Confirm every JS-required hook exists exactly once**
 
-Run: `grep -cE "id=\"pay-card\"|id=\"price-amount\"|id=\"price-per\"|id=\"crypto-price\"" "public/membership.html"`
-Expected: `4`
+Run: `grep -cE "id=\"pay-card\"|id=\"price-amount\"|id=\"price-per\"|id=\"price-sub\"|id=\"year-row\"|id=\"pay-year\"|id=\"year-amount\"|id=\"year-save\"|id=\"crypto-price\"" "public/membership.html"`
+Expected: `9`
 
 ---
 
-## Task 3: Update membership.js (remove crypto handler, retarget the discounted price)
+## Task 3: Update membership.js (remove crypto handler; retarget intro note + crypto price)
 
 **Files:**
-- Modify: `public/js/membership.js:114-121` (`setPrices`) and `public/js/membership.js:142-148` (crypto click handler in `render`)
+- Modify: `public/js/membership.js:119-135` (`setCardPricing`) and `public/js/membership.js:180-184` (crypto handler in `render`)
 
-- [ ] **Step 1: Update `setPrices()` to write the discounted price into `#crypto-price`**
+- [ ] **Step 1: Update `setCardPricing()` to write `#price-sub` and `#crypto-price`**
 
-Replace this function (currently lines 114-121):
+Replace this function (currently lines 119-135):
 
 ```js
-/** Show the headline price on both cards (card = full, crypto = 20% off). */
-function setPrices(amount, currency, per) {
-  $('price-amount').textContent = fmtMoney(amount, currency);
-  $('price-per').textContent = `/ ${per}`;
-  const cryptoAmt = Math.round(amount * (1 - CRYPTO_DISCOUNT));
-  $('crypto-was').textContent = fmtMoney(amount, currency);
-  $('crypto-amount').textContent = fmtMoney(cryptoAmt, currency);
+function setCardPricing(month, intro) {
+  const recurring = month.amount;
+  const cur = month.currency;
+  const note = document.querySelector('.pay-opt.normie .pay-note');
+  if (intro && intro.amount > 0) {
+    $('price-amount').textContent = fmtMoney(intro.amount, cur);
+    $('price-per').textContent = (intro.label || 'first month').toLowerCase();
+    if (note) note.textContent = `then ${fmtMoney(recurring, cur)}/mo`;
+  } else {
+    $('price-amount').textContent = fmtMoney(recurring, cur);
+    $('price-per').textContent = '/ mo';
+    if (note) note.textContent = 'Standard price';
+  }
+  const cryptoAmt = Math.round(recurring * (1 - CRYPTO_DISCOUNT));
+  $('crypto-was').textContent = fmtMoney(recurring, cur);
+  $('crypto-amount').textContent = fmtMoney(cryptoAmt, cur);
 }
 ```
 
 with:
 
 ```js
-/** Headline card price, plus the live "20% off" crypto figure shown in the footnote. */
-function setPrices(amount, currency, per) {
-  $('price-amount').textContent = fmtMoney(amount, currency);
-  $('price-per').textContent = `/ ${per}`;
-  const cryptoAmt = Math.round(amount * (1 - CRYPTO_DISCOUNT));
+function setCardPricing(month, intro) {
+  const recurring = month.amount;
+  const cur = month.currency;
+  const sub = $('price-sub');
+  if (intro && intro.amount > 0) {
+    $('price-amount').textContent = fmtMoney(intro.amount, cur);
+    $('price-per').textContent = (intro.label || 'first month').toLowerCase();
+    if (sub) { sub.textContent = `then ${fmtMoney(recurring, cur)}/mo`; sub.hidden = false; }
+  } else {
+    $('price-amount').textContent = fmtMoney(recurring, cur);
+    $('price-per').textContent = '/ mo';
+    if (sub) { sub.textContent = ''; sub.hidden = true; }
+  }
+  const cryptoAmt = Math.round(recurring * (1 - CRYPTO_DISCOUNT));
   const cryptoPrice = $('crypto-price');
-  if (cryptoPrice) cryptoPrice.textContent = fmtMoney(cryptoAmt, currency);
+  if (cryptoPrice) cryptoPrice.textContent = fmtMoney(cryptoAmt, cur);
 }
 ```
 
 - [ ] **Step 2: Remove the `#pay-crypto` click handler**
 
-In `render()`, delete this block (currently lines 144-148):
+In `render()`, delete this block (currently lines 180-184):
 
 ```js
   $('pay-crypto').addEventListener('click', () => {
@@ -288,23 +347,30 @@ In `render()`, delete this block (currently lines 144-148):
   });
 ```
 
-Leave the `#pay-card` and `#manage-btn` listeners immediately around it intact. After the edit the start of `render()` should read:
+After the edit, the top of `render()` should read (these three listeners remain, untouched):
 
 ```js
 async function render() {
   $('pay-card').addEventListener('click', (e) => startCheckout(primaryInterval, e.currentTarget));
+  const payYear = $('pay-year');
+  if (payYear) payYear.addEventListener('click', (e) => startCheckout('year', e.currentTarget));
   $('manage-btn').addEventListener('click', (e) => openPortal(e.currentTarget));
 
   const status = params.get('status');
 ```
 
-- [ ] **Step 3: Confirm no dead references remain in the JS**
+- [ ] **Step 3: Confirm no dead references remain, and the new targets are wired**
 
-Run: `grep -nE "pay-crypto|crypto-was|crypto-amount" "public/js/membership.js"`
+Run: `grep -nE "pay-crypto|crypto-was|crypto-amount|\.pay-note" "public/js/membership.js"`
 Expected: no output (exit code 1).
 
-Run: `grep -cE "crypto-price" "public/js/membership.js"`
-Expected: `1`
+Run: `grep -cE "crypto-price|price-sub" "public/js/membership.js"`
+Expected: `2`
+
+Confirm `setYearly` and the yearly handler are still present (must NOT have been removed):
+
+Run: `grep -cE "function setYearly|pay-year" "public/js/membership.js"`
+Expected: `2`  (the `function setYearly` definition line + the `const payYear = $('pay-year')` line; the `if (payYear) …` line uses `payYear`, not the `pay-year` string)
 
 ---
 
@@ -318,19 +384,19 @@ Expected: `1`
 Change line 3 from:
 
 ```json
-  "version": "1.13.0",
+  "version": "1.14.0",
 ```
 
 to:
 
 ```json
-  "version": "1.13.1",
+  "version": "1.14.1",
 ```
 
 - [ ] **Step 2: Verify**
 
 Run: `node -e "console.log(require('./package.json').version)"`
-Expected: `1.13.1`
+Expected: `1.14.1`
 
 ---
 
@@ -339,35 +405,38 @@ Expected: `1.13.1`
 - [ ] **Step 1: Regression — run the test suite**
 
 Run: `npm test`
-Expected: all suites pass (these cover backend/lib logic; this change must not break any). If anything fails, it indicates an unrelated breakage — stop and investigate before committing.
+Expected: all suites pass (these cover backend/lib logic incl. the new `pricing.test.js`, `stripe-payments.test.js`; this front-end change must not break any). If anything fails, it indicates a pre-existing/unrelated breakage — stop and investigate before committing.
 
 - [ ] **Step 2: Visual verification of the offer card (non-member view)**
 
-Start the dev server and open the page using the preview tools:
+Use the preview tools:
 - `preview_start` (runs `npm start` / `server.mjs`).
-- Navigate to `/membership.html` (no auth needed — a signed-out visitor hits `showPlans()` and sees the offer card).
-- `preview_console_logs` → expect no errors (e.g. no "Cannot set properties of null").
-- `preview_snapshot` → confirm in order: badge "Premium membership", "Unlock every exclusive", five benefit rows, the price, a single "Get instant access" button, "Start watching the moment you pay", the Visa/Mastercard/Secured-by-Stripe row, the cancel-guarantee line, and the crypto footnote ending in "(20% off) when it lands."
-- `preview_screenshot` (desktop) and `preview_resize` to a narrow width (~390px) + `preview_screenshot` to confirm the card stacks cleanly with no horizontal scroll.
+- Navigate to `/membership.html` (signed-out → `showPlans()` shows the offer).
+- `preview_console_logs` → expect no errors (e.g. no "Cannot set properties of null", confirming all retargeted IDs resolve).
+- `preview_snapshot` → confirm order: badge, "Unlock every exclusive", five colored benefit rows, the price block, "Get instant access" (gold), "Start watching the moment you pay", the yearly ghost button (if yearly configured), the Visa/Mastercard/Secured-by-Stripe row, the cancel-guarantee line, and the crypto footnote.
+- `preview_screenshot` (desktop) + `preview_resize` ~390px + `preview_screenshot` → card stacks cleanly, no horizontal scroll, no second crypto button.
 
-Expected: one focused card, no second "crypto" button, no animation/glow flicker beyond the static dual glow.
+- [ ] **Step 3: Verify pricing states render (depends on local config)**
 
-- [ ] **Step 3: Confirm the discounted price renders dynamically (if Stripe is configured in this env)**
-
-In the `preview_snapshot`, if Stripe checkout is enabled the headline price reflects the live amount and the crypto footnote shows 20% of it (e.g. headline `$1` → footnote `$0.80`). If Stripe is **not** configured locally, expect `#pay-card` disabled and the "Memberships aren't available just yet" banner — that is correct fallback behavior, and the static `$0.80` placeholder in the footnote is acceptable since `setPrices` only runs when config is enabled.
+- If Stripe + pricing are configured: headline shows the live monthly amount (default `$17 / mo`); the crypto footnote shows 20% off the recurring monthly (default `$13.60`); the yearly ghost button shows `$120` with a `save 41%` pill.
+- If an **intro** is configured: headline shows the intro amount + label (e.g. "$X first month") and `#price-sub` shows "then $17/mo".
+- If Stripe is **not** configured locally: `#pay-card` is disabled and the "Memberships aren't available just yet" banner shows — correct fallback; the static `$17` / `$13.60` placeholders are acceptable because `setCardPricing` only runs when config is enabled.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add public/membership.html public/js/membership.js package.json
-git commit -m "feat: premium single-path membership page; drop meme crypto chooser"
+git commit -m "feat: premium single-path membership page; keep yearly + intro pricing"
 ```
+
+Note: many unrelated files are already modified in the working tree (the payments change). The `git add` above stages **only** these three files so the commit stays scoped to the redesign.
 
 ---
 
 ## Self-review checklist (run before handing off)
 
-- [ ] **Spec coverage:** every spec section maps to a task — content order (Task 2), removals (Tasks 1-3), CTA "Get instant access" (Task 2), instant line / trust badges / guarantee (Task 2), crypto footnote with live 20%-off price (Tasks 2-3), Level 2 color: colored benefit icons + crypto coin dots + dual gold/violet glow (Tasks 1-2), version bump (Task 4), member-view untouched (verified by *not* editing `#member-view` / `showMember`).
-- [ ] **No leftover IDs/classes:** Task 1 Step 2, Task 2 Step 3, Task 3 Step 3 grep-verify removal of `pay-crypto` / `crypto-was` / `crypto-amount` / `pay-choice` / `giga*` / `normie*` / `pixelate`.
-- [ ] **ID consistency:** markup defines `#pay-card`, `#price-amount`, `#price-per`, `#crypto-price`; JS references exactly those (`#pay-card` listener, `setPrices` writes `#price-amount`/`#price-per`/`#crypto-price`). `#manage-btn` listener still has its element in the untouched `#member-view`.
-- [ ] **No new test harness added** (per spec scope).
+- [ ] **Spec coverage:** content order (Task 2), removals (Tasks 1-3), CTA "Get instant access" via `gold-cta` (Task 2), instant line / trust badges / guarantee (Task 2), **yearly secondary link preserved** (`#year-row`/`#pay-year`, Tasks 1-2; handler untouched Task 3), **intro pricing preserved** (`#price-sub`, Tasks 2-3), crypto footnote with live 20%-off recurring price (Tasks 2-3), Level 2 color (Tasks 1-2), version bump (Task 4), member-view untouched.
+- [ ] **No leftover IDs/classes:** Task 1 Step 2, Task 2 Step 3, Task 3 Step 3 grep-verify removal of `pay-crypto`/`crypto-was`/`crypto-amount`/`pay-choice`/`giga*`/`normie*`/`pixelate`/`.pay-note`/`mb-price-note`.
+- [ ] **ID consistency:** markup defines all 9 JS-required IDs (Task 2 Step 4); `setCardPricing` writes `#price-amount`/`#price-per`/`#price-sub`/`#crypto-price`; `setYearly` writes `#year-amount`/`#year-save`/`#year-row`; handlers reference `#pay-card`/`#pay-year`/`#manage-btn`.
+- [ ] **Contract preserved:** no edits to `lib/pricing.js`, server routes, or the config/checkout JSON shapes.
+- [ ] **Scoped commit:** only the 3 redesign files staged (Task 5 Step 4).
