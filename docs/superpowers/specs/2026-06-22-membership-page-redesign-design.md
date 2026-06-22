@@ -33,19 +33,19 @@ Keep the existing dark "midnight" theme, gold accent (`#f4a300`), and the subtle
 1. Gold pill badge — `★ Premium membership` *(keep)*
 2. Headline (`h1.mb-title`) — "Unlock every exclusive"
 3. Subhead (`.mb-sub`) — "The full David Bond TV library — plus every new drop the moment it lands."
-4. Benefits list (`.mb-benefits`, left-aligned, gold check icons; Telegram item in Telegram-blue):
-   - Every exclusive video — the entire premium library
-   - New videos the moment they drop
-   - Ad-free, uninterrupted streaming
-   - Watch on any device, anywhere
-   - Private David Bond TV Telegram channel
+4. Benefits list (`.mb-benefits`, left-aligned, each item with a meaning-coded colored icon — see Color treatment):
+   - `ti-movie` (gold `#f4a300`) — Every exclusive video — the entire premium library
+   - `ti-bolt` (coral `#e2674a`) — New videos the moment they drop
+   - `ti-circle-off` (green `#2bbd8e`) — Ad-free, uninterrupted streaming
+   - `ti-devices` (blue `#4a90e2`) — Watch on any device, anywhere
+   - `ti-brand-telegram` (Telegram-blue `#229ED9`) — Private David Bond TV Telegram channel
    *(The "cancel anytime" item moves out of the list and becomes the guarantee line in #9.)*
 5. Price block (`.mb-price`) — large gold `$1 / month`. Pulled live from `/api/pay/stripe/config` via `setPrices()`, exactly as today. Never hardcoded; falls back to yearly if monthly isn't offered.
 6. Primary CTA (`#pay-card`, `.mb-cta`) — full-width gold button: **"Get instant access"** with a lock icon.
 7. Instant-access line (directly under CTA) — "Instant access — start watching the moment you pay."
 8. Trust row — crisp, real **Visa** + **Mastercard** SVG marks · "Secured by Stripe" with a lock glyph. This row carries the "paid by card" meaning since the button no longer says "card".
 9. Guarantee line — "Cancel anytime — keep access through the end of your billing period."
-10. Crypto footnote (`.mb-crypto-note`, muted, single line) — "Prefer crypto? ETH · XMR · LTC · BCH coming soon — just `$0.80`/mo (20% off) when it lands." The price is computed live as 20% off the card price (reuse existing `CRYPTO_DISCOUNT` + `fmtMoney`).
+10. Crypto footnote (`.mb-crypto-note`, muted, single line) — "Prefer crypto? ETH · XMR · LTC · BCH coming soon — just `$0.80`/mo (20% off) when it lands." Each coin name is preceded by a small dot in the coin's brand color (ETH `#627EEA`, XMR `#FF6600`, LTC `#7CA0E5`, BCH `#0AC18E`). The price is computed live as 20% off the card price (reuse existing `CRYPTO_DISCOUNT` + `fmtMoney`).
 11. Legal consent (`.mb-consent`) — Terms / Privacy / Refunds links *(keep current wording)*.
 
 ### Removals
@@ -56,9 +56,15 @@ Keep the existing dark "midnight" theme, gold accent (`#f4a300`), and the subtle
 
 ### Visual / icon upgrades
 - Real, crisp Visa and Mastercard SVG marks (no pixelation, no `image-rendering: pixelated`).
-- Consistent gold check icons for benefits; Telegram glyph retained for that perk.
-- Single lock icon for the secure-payment row.
+- Single lock icon for the secure-payment row; Telegram glyph retained for that perk.
 - No animations — also resolves the prior `prefers-reduced-motion` special-casing.
+
+### Color treatment (chosen: "Level 2")
+The page keeps gold as its anchor accent but adds tasteful, meaning-coded color so it doesn't read as monochrome:
+- **Benefit icons** — each list item uses a distinct icon in its own hue (colors listed in content order #4). This is also a scannability win over five identical checks.
+- **Crypto coins** — coin names in the footnote are each preceded by a dot in that coin's real brand color (see #10).
+- **Card backdrop** — a second, subtle **violet** glow (`rgba(124,92,255,…)`) joins the existing gold glow behind the offer card (dual-tone aura). Achieved with layered `box-shadow` / radial backgrounds; no animation.
+- Everything else (badge, headline, price, CTA) stays solid gold — gradients are intentionally *not* applied (that was the "Level 3" option, declined) to preserve the premium feel.
 
 ## JS changes (`public/js/membership.js`)
 
