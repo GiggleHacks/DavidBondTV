@@ -119,19 +119,19 @@ const CRYPTO_DISCOUNT = 0.20;
 function setCardPricing(month, intro) {
   const recurring = month.amount;
   const cur = month.currency;
-  const note = document.querySelector('.pay-opt.normie .pay-note');
+  const sub = $('price-sub');
   if (intro && intro.amount > 0) {
     $('price-amount').textContent = fmtMoney(intro.amount, cur);
     $('price-per').textContent = (intro.label || 'first month').toLowerCase();
-    if (note) note.textContent = `then ${fmtMoney(recurring, cur)}/mo`;
+    if (sub) { sub.textContent = `then ${fmtMoney(recurring, cur)}/mo`; sub.hidden = false; }
   } else {
     $('price-amount').textContent = fmtMoney(recurring, cur);
     $('price-per').textContent = '/ mo';
-    if (note) note.textContent = 'Standard price';
+    if (sub) { sub.textContent = ''; sub.hidden = true; }
   }
   const cryptoAmt = Math.round(recurring * (1 - CRYPTO_DISCOUNT));
-  $('crypto-was').textContent = fmtMoney(recurring, cur);
-  $('crypto-amount').textContent = fmtMoney(cryptoAmt, cur);
+  const cryptoPrice = $('crypto-price');
+  if (cryptoPrice) cryptoPrice.textContent = fmtMoney(cryptoAmt, cur);
 }
 
 /** Show/populate the yearly option (with its discount vs 12× monthly), or hide it. */
@@ -177,11 +177,6 @@ async function render() {
   $('pay-card').addEventListener('click', (e) => startCheckout(primaryInterval, e.currentTarget));
   const payYear = $('pay-year');
   if (payYear) payYear.addEventListener('click', (e) => startCheckout('year', e.currentTarget));
-  $('pay-crypto').addEventListener('click', () => {
-    // Crypto checkout (self-hosted ETH/XMR/LTC/BCH) isn't live yet — graceful note.
-    showBanner('🚀 GigaChad crypto checkout (ETH · XMR · LTC · BCH) is landing soon — 20% off when it goes live. Card works now.', 'ok');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  });
   $('manage-btn').addEventListener('click', (e) => openPortal(e.currentTarget));
 
   const status = params.get('status');
