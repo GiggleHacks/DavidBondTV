@@ -113,3 +113,41 @@ export function turnstileToken(holder) {
   const el = holder && holder.querySelector('[name="cf-turnstile-response"]');
   return el ? el.value : '';
 }
+
+const maskSecret = (s) => String(s).replace(/\S/g, '•');
+
+/**
+ * Render a secret (e.g. a recovery phrase) into `holder`: masked by default,
+ * with a Show/Hide toggle and a one-click Copy button.
+ */
+export function mountSecretReveal(holder, secret) {
+  if (!holder) return;
+  holder.classList.add('secret-reveal');
+  holder.innerHTML = '<code class="secret-value"></code>'
+    + '<div class="secret-actions">'
+    + '<button type="button" class="acc-btn acc-btn-ghost secret-toggle" style="width:auto">Show</button>'
+    + '<button type="button" class="acc-btn acc-btn-ghost secret-copy" style="width:auto">Copy</button>'
+    + '</div>';
+  const val = holder.querySelector('.secret-value');
+  const toggle = holder.querySelector('.secret-toggle');
+  const copy = holder.querySelector('.secret-copy');
+  let shown = false;
+  val.textContent = maskSecret(secret);
+  toggle.addEventListener('click', () => {
+    shown = !shown;
+    val.textContent = shown ? secret : maskSecret(secret);
+    toggle.textContent = shown ? 'Hide' : 'Show';
+  });
+  copy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(secret);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = secret; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch { /* ignore */ }
+      ta.remove();
+    }
+    copy.textContent = 'Copied!';
+    setTimeout(() => { copy.textContent = 'Copy'; }, 1500);
+  });
+}

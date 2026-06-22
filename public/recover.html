@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recover with your key — David Bond TV</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/account.css" />
+</head>
+<body>
+  <div class="acc-page">
+    <div class="acc-head">
+      <a class="logo" href="/" style="text-decoration:none">
+        <img class="logo-mark" src="/brand/mark.png" alt="" width="124" height="124" />
+        <span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span>
+      </a>
+    </div>
+    <div class="acc-card">
+      <h1>Recover your account</h1>
+      <p class="acc-sub">Lost your password and email access? Enter your account email and your 12-word recovery key to set a new password.</p>
+      <form id="form" novalidate>
+        <div class="acc-field">
+          <label for="email">Email address</label>
+          <input class="acc-input" id="email" type="email" autocomplete="email" placeholder="you@example.com" />
+        </div>
+        <div class="acc-field">
+          <label for="key">Recovery key (12 words)</label>
+          <textarea class="acc-textarea" id="key" rows="3" autocomplete="off" placeholder="orbit cabin trophy …"></textarea>
+        </div>
+        <button class="acc-btn" id="submit" type="submit">Continue</button>
+        <p class="acc-msg" id="msg" hidden></p>
+      </form>
+      <p class="acc-foot"><a href="/login.html">Back to sign in</a></p>
+    </div>
+  </div>
+
+  <script type="module">
+    import { postJSON } from '/js/account.js';
+    const $ = (id) => document.getElementById(id);
+    function setMsg(t, kind) {
+      const m = $('msg');
+      if (!t) { m.hidden = true; return; }
+      m.hidden = false; m.textContent = t; m.className = `acc-msg ${kind || ''}`.trim();
+    }
+    $('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      $('submit').disabled = true;
+      setMsg('');
+      const r = await postJSON('/api/auth/recover', {
+        email: $('email').value.trim(),
+        recoveryKey: $('key').value,
+      });
+      if (r.ok && r.data.ok && r.data.resetToken) {
+        // Hand off to the existing reset flow to choose a new password.
+        window.location.href = `/reset.html?token=${encodeURIComponent(r.data.resetToken)}`;
+        return;
+      }
+      setMsg(r.data.error || 'Could not verify that. Please try again.', 'error');
+      $('submit').disabled = false;
+    });
+  </script>
+</body>
+</html>

@@ -77,10 +77,29 @@
       </div>
       <p class="acc-msg" id="conn-msg" hidden></p>
     </div>
+
+    <div class="acc-card" id="recovery-card" style="margin-top:16px" hidden>
+      <h2 style="margin-top:0">Account recovery key</h2>
+      <p class="acc-sub" id="recovery-status">&nbsp;</p>
+      <div class="recovery-warn" id="recovery-warn" hidden>
+        <strong>Write this down and store it somewhere safe.</strong>
+        It’s the only way back in if you lose both your password and your email access.
+        We can’t show it again after you leave this page.
+      </div>
+      <div id="recovery-box" class="recovery-box" hidden></div>
+      <div id="recovery-regen" hidden style="margin-top:12px">
+        <div class="acc-field">
+          <label for="recovery-pw">Confirm your password to regenerate</label>
+          <input class="acc-input" id="recovery-pw" type="password" autocomplete="current-password" placeholder="Your current password" />
+        </div>
+      </div>
+      <button class="acc-btn acc-btn-ghost" id="recovery-btn" type="button" style="width:auto"></button>
+      <p class="acc-msg" id="recovery-msg" hidden></p>
+    </div>
   </div>
 
   <script type="module">
-    import { fetchMe, postJSON, initialAvatarDataUri, fetchAuthConfig } from '/js/account.js';
+    import { fetchMe, postJSON, initialAvatarDataUri, fetchAuthConfig, mountSecretReveal } from '/js/account.js';
     const $ = (id) => document.getElementById(id);
     const PROVIDER_LABELS = { discord: 'Discord', google: 'Google', github: 'GitHub' };
     let authCfg = { providers: {} };
@@ -204,6 +223,60 @@
 
     function renderSetPw(user) { $('setpw').hidden = Boolean(user.hasPassword); }
 
+    function setRecMsg(t, kind) {
+      const m = $('recovery-msg');
+      if (!t) { m.hidden = true; return; }
+      m.hidden = false; m.textContent = t; m.className = `acc-msg ${kind || ''}`.trim();
+    }
+
+    function renderRecovery(user) {
+      const card = $('recovery-card');
+      // Recovery keys are for password accounts only.
+      if (!user.hasPassword) { card.hidden = true; return; }
+      card.hidden = false;
+      $('recovery-box').hidden = true;
+      $('recovery-warn').hidden = true;
+      const status = $('recovery-status');
+      const btn = $('recovery-btn');
+      if (user.hasRecoveryKey) {
+        status.textContent = user.recoveryKeySetAt
+          ? `You have a recovery key (created ${fmtDate(user.recoveryKeySetAt)}). Keep it somewhere safe.`
+          : 'You have a recovery key. Keep it somewhere safe.';
+        $('recovery-regen').hidden = false;
+        btn.textContent = 'Regenerate key';
+      } else {
+        status.textContent = 'You don’t have a recovery key yet. Generate one to protect your account if you lose your password or email.';
+        $('recovery-regen').hidden = true;
+        btn.textContent = 'Generate key';
+      }
+    }
+
+    $('recovery-btn').addEventListener('click', async () => {
+      setRecMsg('');
+      $('recovery-btn').disabled = true;
+      const body = me.hasRecoveryKey ? { password: $('recovery-pw').value } : {};
+      const r = await postJSON('/api/auth/recovery-key', body);
+      if (r.ok && r.data.phrase) {
+        me = r.data.user || await fetchMe();
+        // Show the phrase (once) and update the controls to the "has key" state,
+        // without clearing the freshly revealed box.
+        $('recovery-pw').value = '';
+        $('recovery-regen').hidden = false;
+        $('recovery-btn').textContent = 'Regenerate key';
+        $('recovery-status').textContent = me.recoveryKeySetAt
+          ? `You have a recovery key (created ${fmtDate(me.recoveryKeySetAt)}). Keep it somewhere safe.`
+          : 'You have a recovery key. Keep it somewhere safe.';
+        $('recovery-warn').hidden = false;
+        const box = $('recovery-box');
+        box.hidden = false;
+        mountSecretReveal(box, r.data.phrase);
+        setRecMsg('New recovery key generated — save it now, it won’t be shown again.', 'ok');
+      } else {
+        setRecMsg(r.data.error || 'Could not generate a recovery key.', 'error');
+      }
+      $('recovery-btn').disabled = false;
+    });
+
     $('setpw-btn').addEventListener('click', async () => {
       setConnMsg('');
       $('setpw-btn').disabled = true;
@@ -232,6 +305,7 @@
       authCfg = await fetchAuthConfig();
       renderConnections(me);
       renderSetPw(me);
+      renderRecovery(me);
       // Surface the result of a link round-trip.
       const err = new URLSearchParams(location.search).get('error');
       if (err && err.startsWith('oauth')) {

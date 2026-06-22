@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your recovery key — David Bond TV</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/account.css" />
+</head>
+<body>
+  <div class="acc-page">
+    <div class="acc-head">
+      <a class="logo" href="/" style="text-decoration:none">
+        <img class="logo-mark" src="/brand/mark.png" alt="" width="124" height="124" />
+        <span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span>
+      </a>
+    </div>
+    <div class="acc-card">
+      <h1>Save your recovery key</h1>
+      <p class="acc-sub">This 12-word key is your backup way to get into your account.</p>
+
+      <div class="recovery-warn">
+        <strong>Write this down and store it somewhere safe.</strong>
+        It’s the only way back in if you ever lose <em>both</em> your password and your email access.
+        We can’t show it to you again, and if you lose your password, your email, <em>and</em> this key,
+        your account can’t be recovered.
+      </div>
+
+      <div id="key" class="recovery-box"><span class="acc-sub">Generating…</span></div>
+      <p class="acc-msg" id="msg" hidden></p>
+
+      <label class="recovery-ack">
+        <input type="checkbox" id="ack" /> I’ve saved my recovery key somewhere safe.
+      </label>
+      <button class="acc-btn" id="continue" type="button" disabled>Continue</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { fetchMe, postJSON, mountSecretReveal } from '/js/account.js';
+    const $ = (id) => document.getElementById(id);
+    function setMsg(t, kind) {
+      const m = $('msg');
+      if (!t) { m.hidden = true; return; }
+      m.hidden = false; m.textContent = t; m.className = `acc-msg ${kind || ''}`.trim();
+    }
+    $('ack').addEventListener('change', () => { $('continue').disabled = !$('ack').checked; });
+    $('continue').addEventListener('click', () => { window.location.href = '/'; });
+
+    (async function start() {
+      const me = await fetchMe();
+      if (!me) { window.location.href = '/login.html'; return; }
+      // Recovery keys are for password accounts; social-only users skip this.
+      if (!me.hasPassword) { window.location.href = '/'; return; }
+      // Never silently rotate an existing key — send them to settings instead.
+      if (me.hasRecoveryKey) { window.location.href = '/account.html'; return; }
+      const r = await postJSON('/api/auth/recovery-key', {});
+      if (r.ok && r.data.phrase) {
+        mountSecretReveal($('key'), r.data.phrase);
+      } else {
+        $('key').innerHTML = '';
+        setMsg(r.data.error || 'Could not generate a recovery key. You can do this later in account settings.', 'error');
+        // Don't trap the user — let them move on.
+        $('continue').disabled = false;
+      }
+    }());
+  </script>
+</body>
+</html>

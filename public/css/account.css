@@ -187,3 +187,23 @@ a.comment-name:hover { color: var(--accent); text-decoration: underline; }
 }
 .conn-row:last-child { border-bottom: none; }
 .acc-oauth-ic { flex: none; display: inline-block; vertical-align: middle; }
+
+/* ---------- Recovery key (onboarding + settings) ---------- */
+.recovery-warn {
+  background: color-mix(in srgb, #f59e0b 14%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, #f59e0b 45%, var(--border));
+  border-radius: 10px; padding: 12px 14px; margin: 14px 0; font-size: 14px; line-height: 1.5;
+}
+.recovery-warn strong { display: block; margin-bottom: 4px; }
+.recovery-box, .secret-reveal {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px; margin: 12px 0;
+}
+.secret-value {
+  display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 16px; line-height: 1.7; letter-spacing: .5px; word-spacing: 4px;
+  color: var(--text); white-space: pre-wrap; word-break: break-word;
+}
+.secret-actions { display: flex; gap: 8px; margin-top: 12px; }
+.recovery-ack { display: flex; align-items: center; gap: 9px; font-size: 14px; margin: 14px 0; }
+.recovery-ack input { width: 18px; height: 18px; }

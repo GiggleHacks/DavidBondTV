@@ -90,7 +90,10 @@
         avatar: selected,
       });
       if (r.ok && r.data.ok) {
-        window.location.href = '/'; // back to the homepage after setup
+        // Password accounts get a one-time recovery-key step before the homepage.
+        const u = r.data.user;
+        window.location.href = (u && u.hasPassword && !u.hasRecoveryKey)
+          ? '/recovery-key.html' : '/';
       } else {
         setMsg(r.data.error || 'Could not save your profile.', 'error');
         $('submit').disabled = false;
