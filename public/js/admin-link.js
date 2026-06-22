@@ -13,7 +13,7 @@
   up.className = 'hdr-upload';
   up.href = '/god-upload.html';
   up.title = 'Upload a video (admin)';
-  up.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l-6 6h4v6h4v-6h4l-6-6zM5 18v2h14v-2H5z"/></svg><span>Upload Video</span>';
+  up.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l-6 6h4v6h4v-6h4l-6-6zM5 18v2h14v-2H5z"/></svg><span>Upload</span>';
 
   // Right-side order is Upload → Bell → Avatar. Upload goes first, so anchor it
   // before the bell if notifications.js has already inserted it, else before the

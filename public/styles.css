@@ -127,7 +127,7 @@ body {
 .hdr-upload {
   display: inline-flex; align-items: center; gap: 7px; flex: none;
   background: var(--accent); color: var(--accent-contrast); text-decoration: none;
-  border-radius: 999px; padding: 8px 15px; font-size: 14px; font-weight: 700;
+  border-radius: 999px; padding: 6px 12px; font-size: 14px; font-weight: 700;
   transition: filter .15s, transform .05s;
 }
 .hdr-upload:hover { filter: brightness(1.08); }
@@ -707,6 +707,32 @@ body {
 /* Larger variant on the profile hero */
 .admin-badge.lg { font-size: 12px; padding: 4px 12px 4px 9px; }
 .admin-badge.lg svg { width: 15px; height: 15px; }
+
+/* Paid-member badge — a blue star, deliberately distinct from the admin gold
+   crown. Granted/removed live with subscription status (server-derived). */
+.member-badge {
+  display: inline-flex; align-items: center; gap: 4px; vertical-align: middle;
+  padding: 2px 9px 2px 7px; border-radius: 999px;
+  background: linear-gradient(135deg, #5cc6ff, #2563eb);
+  color: #ffffff; font-size: 11px; font-weight: 800; letter-spacing: .2px;
+  text-transform: uppercase; line-height: 1.5;
+  box-shadow: 0 1px 6px rgba(37,99,235,.45);
+}
+.member-badge svg { width: 13px; height: 13px; fill: currentColor; }
+.member-badge.mini { padding: 2px; width: 18px; height: 18px; justify-content: center; gap: 0; }
+.member-badge.mini svg { width: 12px; height: 12px; }
+.member-badge.lg { font-size: 12px; padding: 4px 12px 4px 9px; }
+.member-badge.lg svg { width: 15px; height: 15px; }
+
+/* Subtle "exclusive comment styling" perk: a member's comment gets a faint blue
+   accent stripe — a quiet recognition, not a loud highlight. */
+.comment.is-member { position: relative; }
+.comment.is-member .comment-body {
+  border-left: 2px solid color-mix(in srgb, #2563eb 55%, transparent);
+  padding-left: 12px; margin-left: -2px;
+  background: linear-gradient(90deg, color-mix(in srgb, #2563eb 7%, transparent), transparent 60%);
+  border-radius: 0 8px 8px 0;
+}
 
 /* ============================================================
    Premium / exclusive video layer (design only)

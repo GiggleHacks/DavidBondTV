@@ -14,37 +14,32 @@
     .banner.warn { background: color-mix(in srgb, #f59e0b 18%, transparent); border: 1px solid color-mix(in srgb, #f59e0b 40%, transparent); color: #fde68a; }
 
     /* --- Upload studio layout --- */
-    .up-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+    .up-head { margin-bottom: 4px; }
     .up-head h2 { margin: 0; }
-    .up-head .sub { color: var(--text-dim); font-size: 13px; }
 
-    .up-settings { display: grid; gap: 18px; margin: 18px 0 22px; }
-    .up-field { display: grid; gap: 9px; }
+    .up-studio { display: flex; gap: 24px; align-items: stretch; margin-top: 18px; }
+    .up-sidebar { width: 210px; flex: none; }
+    .up-settings { display: grid; gap: 14px; }
+    .up-field { display: grid; gap: 8px; }
     .up-label { font-size: 12px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--text-dim); }
 
-    /* Selectable cards (radios) — used for Visibility + Publishing */
-    .choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .choice { position: relative; display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 14px; cursor: pointer;
-      background: color-mix(in srgb, var(--surface-2) 70%, transparent); border: 1.5px solid var(--border); transition: border-color .15s, background .15s, box-shadow .15s; }
-    .choice:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
-    .choice input { position: absolute; opacity: 0; pointer-events: none; }
-    .choice .ck { margin-top: 2px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--text-dim); flex: none; display: grid; place-items: center; transition: border-color .15s; }
-    .choice .ck::after { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); transform: scale(0); transition: transform .15s; }
-    .choice .ctitle { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; }
-    .choice .cdesc { color: var(--text-dim); font-size: 12px; margin-top: 3px; }
-    .choice:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface-2)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
-    .choice:has(input:checked) .ck { border-color: var(--accent); }
-    .choice:has(input:checked) .ck::after { transform: scale(1); }
+    /* Segment pill controls */
+    .seg { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .seg-opt { flex: 1; }
+    .seg-opt input { position: absolute; opacity: 0; pointer-events: none; }
+    .seg-opt span { display: block; padding: 7px 10px; text-align: center; font-size: 13px; font-weight: 500; cursor: pointer; transition: background .12s, color .12s; white-space: nowrap; }
+    .seg-opt:not(:first-child) span { border-left: 1px solid var(--border); }
+    .seg-opt:has(input:checked) span { background: var(--accent); color: var(--accent-contrast); }
+    .seg-opt:not(:has(input:checked)) span:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 
-    .acc-select { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 14px; min-height: 44px; }
+    .acc-select { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13px; width: 100%; }
     .acc-select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
     .field-note { color: var(--text-dim); font-size: 12px; }
-    .drip-wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .cat-wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .cat-wrap .acc-select { max-width: 260px; }
+    .cat-wrap { display: flex; align-items: center; gap: 8px; }
 
-    /* Dropzone — the hero moment */
-    .drop { position: relative; overflow: hidden; border: 2px dashed color-mix(in srgb, var(--border) 80%, var(--accent) 12%); border-radius: 18px; padding: 52px 22px; text-align: center;
+    /* Dropzone */
+    .drop { position: relative; overflow: hidden; flex: 1; min-width: 0;
+      border: 2px dashed color-mix(in srgb, var(--border) 80%, var(--accent) 12%); border-radius: 18px; padding: 28px 20px; text-align: center;
       color: var(--text-dim); transition: border-color .18s, background .18s, transform .18s; cursor: pointer;
       background:
         radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%),
@@ -53,36 +48,37 @@
     .drop.drag { border-color: var(--accent); border-style: solid; background:
         radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 72%),
         color-mix(in srgb, var(--accent) 8%, var(--surface-2)); color: var(--text); transform: scale(1.005); }
-    .drop strong { color: var(--text); font-size: 17px; display: block; }
-    .drop-ico { width: 76px; height: 76px; margin: 0 auto 18px; border-radius: 22px; background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
-      display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent); transition: transform .18s; }
+    .drop strong { color: var(--text); font-size: 15px; display: block; }
+    .drop-ico { width: 44px; height: 44px; margin: 0 auto 14px; border-radius: 14px;
+      background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent); transition: transform .18s; }
     .drop.drag .drop-ico { transform: translateY(-3px); }
-    .drop-ico svg { width: 36px; height: 36px; fill: var(--accent); }
-    .drop-select { pointer-events: none; margin-top: 18px; }
-    .drop-formats { margin-top: 8px; font-size: 12px; }
-    .drop-formats code { font-family: ui-monospace, 'Courier New', monospace; background: var(--surface-2); padding: 1px 6px; border-radius: 5px; }
+    .drop-ico svg { width: 22px; height: 22px; fill: var(--accent); }
+    .drop-select { pointer-events: none; margin-top: 14px; }
+    .drop-formats { margin-top: 6px; font-size: 11px; }
 
-    @media (min-width: 760px) {
-      .up-settings { grid-template-columns: 1fr 1fr; }
-      .up-field.full { grid-column: 1 / -1; }
+    @media (max-width: 700px) {
+      .up-studio { flex-direction: column; }
+      .up-sidebar { width: 100%; }
     }
 
-    /* --- Job rows (unchanged behaviour, IDs/classes consumed by admin.js) --- */
-    .job { display: flex; align-items: flex-start; gap: 12px; padding: 14px 0; border-top: 1px solid var(--border); }
+    /* --- Job rows --- */
+    .job { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
     .job:first-child { border-top: none; }
-    .job .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex: none; background: var(--text-dim); }
+    .job .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex: none; background: var(--text-dim); }
     .job.uploading .dot { background: #3b82f6; animation: pulse 1s infinite; }
     .job.processing .dot { background: #f59e0b; animation: pulse 1s infinite; }
     .job.ready .dot { background: #22c55e; }
     .job.failed .dot { background: #ef4444; }
     @keyframes pulse { 50% { opacity: .35; } }
     .job .jbody { flex: 1; min-width: 0; }
-    .job .jname { font-size: 13px; color: var(--text-dim); word-break: break-word; }
+    .job .jname { font-size: 12px; color: var(--text-dim); word-break: break-word; }
     .job .jtitle { font-weight: 700; margin-top: 2px; }
-    .job .jdesc { color: var(--text-dim); font-size: 13px; margin-top: 3px; }
-    .job .jstats { font-family: 'Pixelify Sans', 'Silkscreen', 'Courier New', monospace; font-size: 12px; letter-spacing: .5px; color: var(--accent); margin-top: 5px; }
+    .job .jdesc { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
+    .job .jstats { font-family: inherit; font-size: 12px; letter-spacing: .3px; color: var(--accent); margin-top: 4px; }
     .retrobar {
-      height: 20px; margin-top: 10px; padding: 3px; border-radius: 4px;
+      height: 10px; margin-top: 6px; padding: 2px; border-radius: 4px;
       background: #0b1120; border: 2px solid #05080f;
       box-shadow: inset 0 0 0 1px rgba(255,255,255,.05), inset 0 2px 4px rgba(0,0,0,.5);
       image-rendering: pixelated; overflow: hidden;
@@ -97,14 +93,9 @@
     }
     .job.uploading .retrobar > i { animation: retro-pulse .8s steps(2, end) infinite; }
     @keyframes retro-pulse { 50% { filter: brightness(1.18); } }
-    .job-thumb { width: 112px; height: 63px; object-fit: cover; border-radius: 8px; background: var(--surface-2); flex: none; }
-    .job-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .job-thumb { width: 72px; height: 41px; object-fit: cover; border-radius: 6px; background: var(--surface-2); flex: none; }
+    .job-actions { display: flex; gap: 8px; margin-top: 8px; }
     .btn.sm { padding: 6px 16px; font-size: 13px; }
-
-    @media (max-width: 560px) {
-      .choices { grid-template-columns: 1fr; }
-      .cat-wrap .acc-select { max-width: none; width: 100%; }
-    }
   </style>
 </head>
 <body>
@@ -123,94 +114,78 @@
     <main id="app">
       <section class="card">
         <div class="up-head">
-          <h2>Upload videos</h2>
-          <span class="sub">Set how this batch publishes, then drop your files.</span>
+          <h2>Upload</h2>
         </div>
-        <div id="ffmpeg-banner" class="banner warn hidden">⚠ ffmpeg isn’t installed on this server, so uploads can’t be processed yet.</div>
+        <div id="ffmpeg-banner" class="banner warn hidden">⚠ ffmpeg isn't installed on this server, so uploads can't be processed yet.</div>
 
-        <div class="up-settings">
-          <div class="up-field">
-            <span class="up-label">Visibility</span>
-            <div class="choices">
-              <label class="choice">
-                <input type="radio" name="vis" value="free" checked />
-                <span class="ck" aria-hidden="true"></span>
-                <span>
-                  <span class="ctitle">Free</span>
-                  <span class="cdesc">Anyone can watch.</span>
-                </span>
-              </label>
-              <label class="choice">
-                <input type="radio" name="vis" value="premium" />
-                <span class="ck" aria-hidden="true"></span>
-                <span>
-                  <span class="ctitle"><span class="badge-premium"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7l4 4 5-7 5 7 4-4-2 12H5L3 7z"/></svg>Premium</span></span>
-                  <span class="cdesc">Subscribers only.</span>
-                </span>
-              </label>
-            </div>
-          </div>
+        <div class="up-studio">
+          <aside class="up-sidebar">
+            <div class="up-settings">
 
-          <div class="up-field" id="blur-row">
-            <span class="up-label">Thumbnail blur</span>
-            <div class="drip-wrap">
-              <select id="blur" class="acc-select">
-                <option value="strong">Strong blur</option>
-                <option value="medium" selected>Medium blur</option>
-                <option value="off">No blur</option>
-              </select>
-              <span class="field-note">Applied to premium thumbnails for non-subscribers.</span>
-            </div>
-          </div>
+              <div class="up-field">
+                <span class="up-label">Visibility</span>
+                <div class="seg" role="group" aria-label="Visibility">
+                  <label class="seg-opt">
+                    <input type="radio" name="vis" value="free" checked />
+                    <span>Free</span>
+                  </label>
+                  <label class="seg-opt">
+                    <input type="radio" name="vis" value="premium" />
+                    <span>Premium</span>
+                  </label>
+                </div>
+              </div>
 
-          <div class="up-field full">
-            <span class="up-label">Publishing</span>
-            <div class="choices">
-              <label class="choice">
-                <input type="radio" name="sched" value="now" checked />
-                <span class="ck" aria-hidden="true"></span>
-                <span>
-                  <span class="ctitle">Publish immediately</span>
-                  <span class="cdesc">Every file goes live as soon as it’s processed.</span>
-                </span>
-              </label>
-              <label class="choice">
-                <input type="radio" name="sched" value="drip" />
-                <span class="ck" aria-hidden="true"></span>
-                <span>
-                  <span class="ctitle">Schedule release (drip)</span>
-                  <span class="cdesc">First goes live now; the rest release on a cadence.</span>
-                </span>
-              </label>
-            </div>
-            <div class="drip-wrap">
-              <select id="drip-interval" class="acc-select hidden">
-                <option value="86400000">One every 24 hours</option>
-                <option value="172800000">One every 48 hours</option>
-                <option value="259200000">One every 72 hours</option>
-                <option value="604800000">One per week</option>
-              </select>
-              <span class="field-note hidden" id="drip-hint">First video goes live now; the rest release on this cadence in the order you drop them.</span>
-            </div>
-          </div>
+              <div class="up-field" id="blur-row">
+                <span class="up-label">Blur</span>
+                <select id="blur" class="acc-select">
+                  <option value="strong">Strong</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="off">Off</option>
+                </select>
+              </div>
 
-          <div class="up-field full" id="category-row">
-            <span class="up-label">Category</span>
-            <div class="cat-wrap">
-              <select id="category" class="acc-select">
-                <option value="">Uncategorized</option>
-              </select>
-              <a href="/god-videos.html" class="field-note">Manage categories →</a>
+              <div class="up-field">
+                <span class="up-label">Publishing</span>
+                <div class="seg" role="group" aria-label="Publishing">
+                  <label class="seg-opt">
+                    <input type="radio" name="sched" value="now" checked />
+                    <span>Now</span>
+                  </label>
+                  <label class="seg-opt">
+                    <input type="radio" name="sched" value="drip" />
+                    <span>Schedule</span>
+                  </label>
+                </div>
+                <select id="drip-interval" class="acc-select hidden">
+                  <option value="86400000">Every 24 hours</option>
+                  <option value="172800000">Every 48 hours</option>
+                  <option value="259200000">Every 72 hours</option>
+                  <option value="604800000">Once per week</option>
+                </select>
+              </div>
+
+              <div class="up-field" id="category-row">
+                <span class="up-label">Category</span>
+                <div class="cat-wrap">
+                  <select id="category" class="acc-select">
+                    <option value="">Uncategorized</option>
+                  </select>
+                  <a href="/god-videos.html" class="field-note">Manage →</a>
+                </div>
+              </div>
+
             </div>
+          </aside>
+
+          <div id="drop" class="drop">
+            <div class="drop-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4l-6 6h4v6h4v-6h4l-6-6zM5 18v2h14v-2H5z"/></svg></div>
+            <strong>Drop videos here</strong>
+            <div class="drop-formats">.mp4 · .mov · .m4v</div>
+            <button type="button" class="btn drop-select">Select files</button>
           </div>
         </div>
 
-        <div id="drop" class="drop">
-          <div class="drop-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4l-6 6h4v6h4v-6h4l-6-6zM5 18v2h14v-2H5z"/></svg></div>
-          <strong>Drag and drop video files to upload</strong>
-          <div class="drop-formats muted">Up to 30 at once · 3 upload in parallel · <code>.mp4</code> <code>.mov</code> <code>.m4v</code></div>
-          <button type="button" class="btn drop-select">Select files</button>
-        </div>
         <input id="file" type="file" accept="video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v" multiple class="hidden" />
       </section>
 
