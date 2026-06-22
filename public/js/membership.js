@@ -105,36 +105,44 @@ async function pollUntilActive(tries = 6) {
   return fetchMe();
 }
 
+// Crypto is priced 20% below the card price (paid direct, no processor fees).
+const CRYPTO_DISCOUNT = 0.20;
+
+/** Show the headline price on both cards (card = full, crypto = 20% off). */
+function setPrices(amount, currency, per) {
+  $('price-amount').textContent = fmtMoney(amount, currency);
+  $('price-per').textContent = `/ ${per}`;
+  const cryptoAmt = Math.round(amount * (1 - CRYPTO_DISCOUNT));
+  $('crypto-was').textContent = fmtMoney(amount, currency);
+  $('crypto-amount').textContent = fmtMoney(cryptoAmt, currency);
+}
+
 async function applyConfig() {
   let cfg = null;
   try { cfg = await (await fetch('/api/pay/stripe/config')).json(); } catch { /* default below */ }
   if (!cfg || !cfg.enabled) {
-    $('buy-month').disabled = true;
-    $('buy-year').hidden = true;
+    $('pay-card').disabled = true;
     showBanner('Memberships aren’t available just yet — check back soon.', 'warn');
     return;
   }
   const prices = cfg.prices || {};
   // Headline price: prefer monthly; fall back to yearly if monthly isn't offered.
   if (cfg.intervals.month && prices.month) {
-    $('price-amount').textContent = fmtMoney(prices.month.amount, prices.month.currency);
-    $('price-per').textContent = '/ month';
     primaryInterval = 'month';
-    $('buy-year').hidden = !cfg.intervals.year;
-    if (cfg.intervals.year && prices.year) {
-      $('buy-year').textContent = `Or pay ${fmtMoney(prices.year.amount, prices.year.currency)}/year`;
-    }
+    setPrices(prices.month.amount, prices.month.currency, 'mo');
   } else if (cfg.intervals.year && prices.year) {
-    $('price-amount').textContent = fmtMoney(prices.year.amount, prices.year.currency);
-    $('price-per').textContent = '/ year';
     primaryInterval = 'year';
-    $('buy-year').hidden = true;
+    setPrices(prices.year.amount, prices.year.currency, 'yr');
   }
 }
 
 async function render() {
-  $('buy-month').addEventListener('click', (e) => startCheckout(primaryInterval, e.currentTarget));
-  $('buy-year').addEventListener('click', (e) => startCheckout('year', e.currentTarget));
+  $('pay-card').addEventListener('click', (e) => startCheckout(primaryInterval, e.currentTarget));
+  $('pay-crypto').addEventListener('click', () => {
+    // Crypto checkout (self-hosted ETH/XMR/LTC/BCH) isn't live yet — graceful note.
+    showBanner('🚀 GigaChad crypto checkout (ETH · XMR · LTC · BCH) is landing soon — 20% off when it goes live. Card works now.', 'ok');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
   $('manage-btn').addEventListener('click', (e) => openPortal(e.currentTarget));
 
   const status = params.get('status');
