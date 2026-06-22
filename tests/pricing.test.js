@@ -52,6 +52,14 @@ describe('pricing store', () => {
     expect(c.monthly.amount).toBe(100);
   });
 
+  it('seedFrom disables yearly when the legacy env had no yearly price', () => {
+    pricing.seedFrom({ month: 100, year: null }); // monthly-only prod
+    const c = pricing.getConfig();
+    expect(c.monthly.amount).toBe(100);
+    expect(c.yearly.enabled).toBe(false);
+    expect(pricing.publicConfig().intervals.year).toBe(false);
+  });
+
   it('publicConfig keeps the legacy shape and adds intro when set', () => {
     pricing.update({ monthly: { amount: 1700, introAmount: 4700 }, yearly: { enabled: true, amount: 12000 } });
     const pub = pricing.publicConfig();
