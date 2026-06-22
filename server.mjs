@@ -87,13 +87,18 @@ const commentBlocklist = (() => {
 })();
 const commentGuard = createCommentGuard({ banned: commentBlocklist });
 const recoverLimiter = createRateLimiter(60_000, 5); // 5 recovery attempts/min per IP
-const UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB cap
+// Max accepted upload size. Configurable so the grey-cloud upload host can take
+// large masters; default 25 GB. (Cloudflare still caps the main host at ~100 MB,
+// so large uploads go via the DNS-only upload subdomain — see deploy docs.)
+const UPLOAD_MAX_BYTES = Number(process.env.UPLOAD_MAX_BYTES) || 25 * 1024 * 1024 * 1024;
 const COMMENTS_FILE = path.join(__dirname, 'data', 'comments.json');
 const REACTIONS_FILE = path.join(__dirname, 'data', 'reactions.json');
 const ADMIN_FILE = path.join(__dirname, 'data', 'admin.json');
 const ADMIN_CREDS_FILE = path.join(__dirname, 'data', 'admin-credentials.txt');
 const adminAccount = createAdminAccount({ filePath: ADMIN_FILE, credentialsFile: ADMIN_CREDS_FILE });
 const COOKIE_SECURE = (process.env.BASE_URL || '').startsWith('https');
+const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || ''; // e.g. 'davidbondtv.com' → session shared with upload subdomain
+const uploadLimiter = createRateLimiter(60_000, 30); // 30 upload starts/min per IP
 
 // --- User accounts + geo ---
 // AUTH_SECRET signs session/verify/reset tokens. Set it to keep users logged in
@@ -132,6 +137,7 @@ const accounts = createAccounts({
   usersFile: USERS_FILE,
   mediaDir: MEDIA_DIR,
   isSecure: BASE_URL.startsWith('https'),
+  cookieDomain: COOKIE_DOMAIN,
   turnstile,
   providers: oauthProviders,
   turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || null,
@@ -722,9 +728,9 @@ async function handleApi(req, res, ctx) {
     }
     const jobId = url.searchParams.get('job');
     if (jobId) {
-      sendJson(res, 200, { job: getJob(jobId), ffmpeg: hasFfmpeg() });
+      sendJson(res, 200, { job: getJob(jobId), ffmpeg: hasFfmpeg(), maxUploadBytes: UPLOAD_MAX_BYTES });
     } else {
-      sendJson(res, 200, { jobs: listJobs(), ffmpeg: hasFfmpeg() });
+      sendJson(res, 200, { jobs: listJobs(), ffmpeg: hasFfmpeg(), maxUploadBytes: UPLOAD_MAX_BYTES });
     }
     return true;
   }
@@ -1097,6 +1103,10 @@ async function handleApi(req, res, ctx) {
   if (req.method === 'POST' && url.pathname === '/api/admin/upload') {
     if (!isAdminReq(req)) {
       sendJson(res, 401, { error: 'Unauthorized' });
+      return true;
+    }
+    if (!uploadLimiter.hit(clientIp(req)).allowed) {
+      sendJson(res, 429, { error: 'Too many uploads — wait a minute and try again.' });
       return true;
     }
     const name = url.searchParams.get('name') || '';
