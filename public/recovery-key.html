@@ -40,7 +40,7 @@
   </div>
 
   <script type="module">
-    import { fetchMe, postJSON, mountSecretReveal } from '/js/account.js';
+    import { fetchMe, postJSON, mountSecretReveal, consumeAfterAuth } from '/js/account.js';
     const $ = (id) => document.getElementById(id);
     function setMsg(t, kind) {
       const m = $('msg');
@@ -48,7 +48,7 @@
       m.hidden = false; m.textContent = t; m.className = `acc-msg ${kind || ''}`.trim();
     }
     $('ack').addEventListener('change', () => { $('continue').disabled = !$('ack').checked; });
-    $('continue').addEventListener('click', () => { window.location.href = '/'; });
+    $('continue').addEventListener('click', () => { window.location.href = consumeAfterAuth('/'); });
 
     (async function start() {
       const me = await fetchMe();

@@ -1,9 +1,11 @@
-// Paid-membership page (membership.html): shows plan choices to non-members
+// Paid-membership page (membership.html): shows the premium offer to non-members
 // (→ Stripe Checkout) and a "Manage billing" button to members (→ Stripe Customer
-// Portal). Distinct from js/subscribe.js, which is the FREE follow button. After
-// a successful checkout Stripe redirects back with ?status=success; since the
-// membership is written by the webhook (which may lag a beat), we poll
-// /api/auth/me briefly until it flips active.
+// Portal). Distinct from js/subscribe.js, which is the FREE follow button.
+//
+// Flow: the page may carry ?next=<video> so that after a successful checkout we
+// send the user straight back to the content they wanted. Stripe redirects to
+// ?status=success&next=…; since the webhook may lag, we poll /api/auth/me until
+// the membership flips active, then redirect to `next`.
 import { fetchMe, postJSON } from '/js/account.js';
 import { initTheme } from '/js/theme.js';
 
@@ -11,6 +13,9 @@ initTheme();
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
+const rawNext = params.get('next');
+const next = (rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')) ? rawNext : '';
+let primaryInterval = 'month';
 
 function setMsg(text, kind) {
   const m = $('msg');
@@ -32,17 +37,26 @@ function fmtDate(ms) {
   catch { return ''; }
 }
 
+function fmtMoney(amount, currency) {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency', currency: (currency || 'usd').toUpperCase(),
+      minimumFractionDigits: amount % 100 === 0 ? 0 : 2,
+    }).format(amount / 100);
+  } catch { return `$${(amount / 100).toFixed(2)}`; }
+}
+
 function showMember(me) {
   $('plans-view').hidden = true;
   $('member-view').hidden = false;
   const m = me.membership || {};
-  let status = 'You’re a member. Enjoy the exclusives!';
+  let status = 'You have full access to every exclusive video. Enjoy the show!';
   if (m.cancelAtPeriodEnd && m.currentPeriodEnd) {
-    status = `Your membership is set to end on ${fmtDate(m.currentPeriodEnd)}. You keep access until then.`;
+    status = `Your membership ends on ${fmtDate(m.currentPeriodEnd)} — you keep access until then.`;
   } else if (m.status === 'past_due') {
     status = 'Your last payment didn’t go through. Update your card to keep your membership active.';
   } else if (m.currentPeriodEnd) {
-    status = `You’re a member${m.interval ? ` (${m.interval}ly)` : ''}. Renews on ${fmtDate(m.currentPeriodEnd)}.`;
+    status = `Active${m.interval ? ` · billed ${m.interval}ly` : ''} · renews ${fmtDate(m.currentPeriodEnd)}.`;
   }
   $('member-status').textContent = status;
 }
@@ -55,10 +69,17 @@ function showPlans() {
 async function startCheckout(interval, btn) {
   setMsg('');
   btn.disabled = true;
-  const r = await postJSON('/api/pay/stripe/checkout', { interval });
+  const r = await postJSON('/api/pay/stripe/checkout', { interval, next });
   if (r.ok && r.data.url) { location.href = r.data.url; return; }
   if (r.status === 401) {
-    location.href = `/login.html?next=${encodeURIComponent('/membership.html')}`;
+    // Not signed in → sign up/in first, then return to this offer (with next intact).
+    const here = location.pathname + location.search;
+    try { localStorage.setItem('dbtv_after_auth', here); } catch { /* ignore */ }
+    location.href = `/signup.html?next=${encodeURIComponent(here)}`;
+    return;
+  }
+  if (r.status === 403) {
+    location.href = `/profile-setup.html`;
     return;
   }
   setMsg(r.data.error || 'Could not start checkout. Please try again.', 'error');
@@ -85,24 +106,34 @@ async function pollUntilActive(tries = 6) {
 }
 
 async function applyConfig() {
-  // Hide plan buttons that have no configured price; show a notice if payments
-  // aren't switched on yet.
   let cfg = null;
   try { cfg = await (await fetch('/api/pay/stripe/config')).json(); } catch { /* default below */ }
-  const monthCard = $('buy-month').closest('.plan');
-  const yearCard = $('buy-year').closest('.plan');
   if (!cfg || !cfg.enabled) {
-    if (monthCard) monthCard.hidden = true;
-    if (yearCard) yearCard.hidden = true;
+    $('buy-month').disabled = true;
+    $('buy-year').hidden = true;
     showBanner('Memberships aren’t available just yet — check back soon.', 'warn');
     return;
   }
-  if (monthCard) monthCard.hidden = !cfg.intervals.month;
-  if (yearCard) yearCard.hidden = !cfg.intervals.year;
+  const prices = cfg.prices || {};
+  // Headline price: prefer monthly; fall back to yearly if monthly isn't offered.
+  if (cfg.intervals.month && prices.month) {
+    $('price-amount').textContent = fmtMoney(prices.month.amount, prices.month.currency);
+    $('price-per').textContent = '/ month';
+    primaryInterval = 'month';
+    $('buy-year').hidden = !cfg.intervals.year;
+    if (cfg.intervals.year && prices.year) {
+      $('buy-year').textContent = `Or pay ${fmtMoney(prices.year.amount, prices.year.currency)}/year`;
+    }
+  } else if (cfg.intervals.year && prices.year) {
+    $('price-amount').textContent = fmtMoney(prices.year.amount, prices.year.currency);
+    $('price-per').textContent = '/ year';
+    primaryInterval = 'year';
+    $('buy-year').hidden = true;
+  }
 }
 
 async function render() {
-  $('buy-month').addEventListener('click', (e) => startCheckout('month', e.currentTarget));
+  $('buy-month').addEventListener('click', (e) => startCheckout(primaryInterval, e.currentTarget));
   $('buy-year').addEventListener('click', (e) => startCheckout('year', e.currentTarget));
   $('manage-btn').addEventListener('click', (e) => openPortal(e.currentTarget));
 
@@ -117,13 +148,25 @@ async function render() {
       showBanner('Payment received — activating your membership…', 'ok');
       me = await pollUntilActive();
     }
-    if (me && me.membership && me.membership.active) {
-      showBanner('You’re all set — welcome to David Bond TV membership!', 'ok');
-    }
   }
 
-  if (me && me.membership && me.membership.active) showMember(me);
-  else showPlans();
+  const active = !!(me && me.membership && me.membership.active);
+
+  // Already a member (or just became one) and we have somewhere to send them back
+  // to → go straight to the content they wanted.
+  if (active && next) {
+    showBanner('You’re all set — taking you to your video…', 'ok');
+    setTimeout(() => { location.href = next; }, 1000);
+    showMember(me);
+    return;
+  }
+
+  if (active) {
+    if (status === 'success') showBanner('You’re all set — welcome to David Bond TV membership!', 'ok');
+    showMember(me);
+  } else {
+    showPlans();
+  }
 }
 
 render();

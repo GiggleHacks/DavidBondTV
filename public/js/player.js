@@ -31,7 +31,31 @@ async function viewerCanWatchPremium() {
   }
 }
 
-/** Replace the player surface with a lock + subscribe prompt for premium clips. */
+// Polished gold padlock used on the premium teaser. `sfx` keeps gradient ids
+// unique when more than one instance can render on a page.
+const PREMIUM_LOCK = (sfx) => `<svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+  <defs><linearGradient id="lk-${sfx}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe7a3"/><stop offset="1" stop-color="#f4a300"/></linearGradient></defs>
+  <path d="M16 22v-5a8 8 0 0 1 16 0v5" stroke="url(#lk-${sfx})" stroke-width="3.6" stroke-linecap="round"/>
+  <rect x="9.5" y="21.5" width="29" height="20" rx="5.5" fill="url(#lk-${sfx})"/>
+  <circle cx="24" cy="29.5" r="3.2" fill="#3a2600"/><rect x="22.5" y="30.5" width="3" height="6.5" rx="1.5" fill="#3a2600"/>
+</svg>`;
+
+/**
+ * Route a viewer who wants to unlock premium content. Logged-in → straight to the
+ * membership offer; logged-out → sign up first, then land back on the offer (which
+ * carries `next` back to the original video). Stashes the post-auth destination so
+ * the email-verify / profile-setup onboarding chain returns here too.
+ */
+async function goToUnlock(videoUrl) {
+  const membershipUrl = `/membership.html?next=${encodeURIComponent(videoUrl)}`;
+  let me = null;
+  try { me = (await (await fetch('/api/auth/me')).json()).user; } catch { /* treat as logged out */ }
+  if (me) { location.href = membershipUrl; return; }
+  try { localStorage.setItem('dbtv_after_auth', membershipUrl); } catch { /* ignore */ }
+  location.href = `/signup.html?next=${encodeURIComponent(membershipUrl)}`;
+}
+
+/** Replace the player surface with a premium teaser + unlock prompt. */
 function showPremiumGate(container, entry) {
   const spinner = document.getElementById('spinner');
   const bigPlay = document.getElementById('big-play');
@@ -42,15 +66,20 @@ function showPremiumGate(container, entry) {
   if (entry.thumb) gate.style.backgroundImage = `url("${entry.thumb}")`;
   gate.innerHTML = `
     <div class="pg-inner">
-      <div class="pg-lock"><svg viewBox="0 0 24 24"><path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2v-9a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm3 8H9V6a3 3 0 016 0v3z"/></svg></div>
-      <h2>Exclusive video</h2>
-      <p>This video is available to David Bond TV members. Become a member to unlock premium content.</p>
-      <button class="pg-sub">Become a member</button>
+      <span class="pg-badge">★ Members only</span>
+      <div class="pg-lock">${PREMIUM_LOCK('pg')}</div>
+      <h2>You're one tap from the good stuff</h2>
+      <p>Unlock this video — and the entire David Bond TV exclusive library — the moment you join. New drops first, no ads, cancel anytime.</p>
+      <button class="pg-sub gold-cta">Unlock Now</button>
+      <a class="pg-alt" href="#">Already a member? Sign in</a>
     </div>`;
   container.appendChild(gate);
-  const next = encodeURIComponent(location.pathname + location.search);
-  gate.querySelector('.pg-sub').addEventListener('click', () => {
-    location.href = `/membership.html?next=${next}`;
+  const videoUrl = location.pathname + location.search;
+  const membershipUrl = `/membership.html?next=${encodeURIComponent(videoUrl)}`;
+  gate.querySelector('.pg-sub').addEventListener('click', () => goToUnlock(videoUrl));
+  gate.querySelector('.pg-alt').addEventListener('click', (e) => {
+    e.preventDefault();
+    location.href = `/login.html?next=${encodeURIComponent(membershipUrl)}`;
   });
 }
 

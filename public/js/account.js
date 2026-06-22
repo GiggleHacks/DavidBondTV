@@ -63,6 +63,18 @@ export async function fetchMe() {
   return data ? data.user : null;
 }
 
+/**
+ * Read + clear the "where to go after auth" destination stashed when a logged-out
+ * user clicked Unlock on premium content. Returns the stored relative path, or
+ * `fallback`. Only same-origin relative paths are honoured (open-redirect guard).
+ */
+export function consumeAfterAuth(fallback = '/') {
+  let v = null;
+  try { v = localStorage.getItem('dbtv_after_auth'); localStorage.removeItem('dbtv_after_auth'); } catch { /* ignore */ }
+  if (typeof v === 'string' && v.startsWith('/') && !v.startsWith('//')) return v;
+  return fallback;
+}
+
 /** Public auth config: { turnstileSiteKey, providers:{discord,google,github} }. */
 export async function fetchAuthConfig() {
   return (await getJSON('/api/auth/config')) || { turnstileSiteKey: null, providers: {} };

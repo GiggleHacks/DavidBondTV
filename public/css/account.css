@@ -75,6 +75,11 @@
 .acc-btn:hover { filter: brightness(1.08); }
 .acc-btn:active { transform: scale(.99); }
 .acc-btn:disabled { opacity: .55; cursor: not-allowed; }
+/* display:inline-flex above otherwise defeats the hidden attribute. */
+.acc-btn[hidden] { display: none; }
+/* Gold variant wins over the default blue .acc-btn regardless of source order. */
+.acc-btn.gold-cta { background: linear-gradient(135deg, #ffe08a, #f4a300); color: #1a1205; box-shadow: 0 8px 24px rgba(244,163,0,.42); }
+.acc-btn.gold-cta:hover { filter: brightness(1.05); }
 .acc-btn-ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
 
 .acc-msg { margin-top: 14px; font-size: 14px; font-weight: 600; }

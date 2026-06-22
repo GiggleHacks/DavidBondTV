@@ -46,7 +46,7 @@
   </div>
 
   <script type="module">
-    import { fetchMe, postJSON, initialAvatarDataUri } from '/js/account.js';
+    import { fetchMe, postJSON, initialAvatarDataUri, consumeAfterAuth } from '/js/account.js';
     const $ = (id) => document.getElementById(id);
     // null → no explicit photo: the account uses a generated initial avatar.
     let selected = null;
@@ -90,10 +90,11 @@
         avatar: selected,
       });
       if (r.ok && r.data.ok) {
-        // Password accounts get a one-time recovery-key step before the homepage.
+        // Password accounts get a one-time recovery-key step (which then honours
+        // any post-auth destination). Others go straight to where they were headed.
         const u = r.data.user;
         window.location.href = (u && u.hasPassword && !u.hasRecoveryKey)
-          ? '/recovery-key.html' : '/';
+          ? '/recovery-key.html' : consumeAfterAuth('/');
       } else {
         setMsg(r.data.error || 'Could not save your profile.', 'error');
         $('submit').disabled = false;

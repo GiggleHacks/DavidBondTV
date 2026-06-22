@@ -4,7 +4,7 @@
 // each linking to its watch page, with per-item dismiss and a "Clear all".
 // Read/dismiss state is server-tracked per account (see lib/notifications-store.js).
 (() => {
-  const BELL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a6 6 0 00-6 6v3.1c0 .5-.2 1-.6 1.4L4 15h16l-1.4-2.5c-.4-.4-.6-.9-.6-1.4V8a6 6 0 00-6-6zm0 20a3 3 0 002.8-2H9.2A3 3 0 0012 22z"/></svg>';
+  const BELL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.25a1.25 1.25 0 0 1 1.25 1.25v.61a6.5 6.5 0 0 1 5.25 6.38v2.27l1.36 2.72A1.1 1.1 0 0 1 19.13 17H4.87a1.1 1.1 0 0 1-.99-1.52l1.37-2.72v-2.27A6.5 6.5 0 0 1 10.75 4.1V3.5A1.25 1.25 0 0 1 12 2.25Z"/><path d="M9.5 18.5a2.5 2.5 0 0 0 5 0Z"/></svg>';
 
   function timeAgo(ts) {
     let s = Math.floor((Date.now() - ts) / 1000);

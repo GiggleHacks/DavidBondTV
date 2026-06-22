@@ -56,6 +56,13 @@
     } else if (err && err.startsWith('oauth')) {
       setMsg('Social sign-in didn’t complete. Please try again.', 'error');
     }
+    // Carry the post-auth destination through the signup switch + OAuth, and stash
+    // it so a brand-new OAuth account returns here after profile setup.
+    if (next) {
+      try { localStorage.setItem('dbtv_after_auth', next); } catch { /* ignore */ }
+      const su = document.querySelector('a[href="/signup.html"]');
+      if (su) su.href = `/signup.html?next=${encodeURIComponent(next)}`;
+    }
     fetchAuthConfig().then((cfg) => renderProviderButtons($('oauth'), cfg.providers, next));
     $('form').addEventListener('submit', async (e) => {
       e.preventDefault();

@@ -55,6 +55,13 @@
     import { postJSON, loadChallenge, fetchAuthConfig, renderProviderButtons, mountTurnstile, turnstileToken } from '/js/account.js';
     const $ = (id) => document.getElementById(id);
     const next = new URLSearchParams(location.search).get('next');
+    // Stash the post-auth destination so it survives the email-verify → profile
+    // setup hop, and carry it through the "Sign in" switch link.
+    if (next) {
+      try { localStorage.setItem('dbtv_after_auth', next); } catch { /* ignore */ }
+      const li = document.querySelector('a[href="/login.html"]');
+      if (li) li.href = `/login.html?next=${encodeURIComponent(next)}`;
+    }
     let token = null;       // math-challenge token (fallback)
     let useTurnstile = false;
     async function refresh() {

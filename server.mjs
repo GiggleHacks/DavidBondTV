@@ -857,7 +857,10 @@ async function handleApi(req, res, ctx) {
   if (url.pathname === '/api/notifications' && req.method === 'GET') {
     const u = accounts.currentUser(req);
     if (!u) { sendJson(res, 401, { error: 'Sign in to see notifications.' }); return true; }
-    sendJson(res, 200, listNotifications(u.id));
+    // Only count notifications for videos that still exist and are published, so
+    // deleted/unpublished videos can't inflate the badge.
+    const liveIds = new Set(listManifest().filter((v) => v.published !== false).map((v) => v.id));
+    sendJson(res, 200, listNotifications(u.id, liveIds));
     return true;
   }
   // POST /api/notifications/seen → mark all current notifications as read.
