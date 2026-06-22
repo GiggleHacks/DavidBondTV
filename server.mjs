@@ -16,6 +16,9 @@ import { hashPassword, verifyPassword } from './lib/password.js';
 import { createGeoip } from './lib/geoip.js';
 import { createAccounts } from './lib/accounts.js';
 import { adminUser } from './lib/users-store.js';
+import { createPaymentsStore } from './lib/payments-store.js';
+import { createStripePayments } from './lib/stripe-payments.js';
+import { hasActiveMembership } from './lib/membership.js';
 import { avatarUrl } from './lib/avatars.js';
 import {
   enqueue, getJob, listJobs, newUploadTarget, acceptableUpload, bootSweep, deleteVideo,
@@ -82,6 +85,23 @@ const accounts = createAccounts({
   usersFile: USERS_FILE,
   mediaDir: MEDIA_DIR,
   isSecure: BASE_URL.startsWith('https'),
+});
+
+// --- Payments (Stripe membership) ---
+// All keys come from the environment; without them checkout/portal return 503
+// and the rest of the app runs unchanged. The webhook must be publicly reachable
+// at BASE_URL/api/pay/stripe/webhook (it is, behind nginx/Cloudflare in prod).
+const PAYMENTS_FILE = path.join(__dirname, 'data', 'payments.json');
+const paymentsStore = createPaymentsStore(PAYMENTS_FILE);
+const stripePayments = createStripePayments({
+  store: accounts.store,
+  currentUser: accounts.currentUser,
+  paymentsStore,
+  baseUrl: BASE_URL,
+  secretKey: process.env.STRIPE_SECRET_KEY,
+  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+  priceMonthly: process.env.STRIPE_PRICE_MONTHLY,
+  priceYearly: process.env.STRIPE_PRICE_YEARLY,
 });
 
 // --- analytics + per-request context ---
@@ -619,7 +639,7 @@ async function handleApi(req, res, ctx) {
     const ustats = analytics.getAllUserStats();
     const subscribers = {};
     for (const u of accounts.store.listAll()) {
-      if (u.hasPurchased || (u.purchases && u.purchases.length)) {
+      if (hasActiveMembership(u)) {
         const cc = ustats[u.id] && ustats[u.id].lastCountry;
         if (cc) subscribers[cc] = (subscribers[cc] || 0) + 1;
       }
@@ -647,7 +667,7 @@ async function handleApi(req, res, ctx) {
         return {
           id: u.id, username: u.username, email: u.email,
           country: s.lastCountry || null,
-          subscribed: !!(u.hasPurchased || (u.purchases && u.purchases.length)),
+          subscribed: hasActiveMembership(u),
           videosWatched: s.byVideo ? Object.keys(s.byVideo).length : 0,
           minutesWatched: Math.round((s.totalSeconds || 0) / 60),
           blocked: blockedIds.has(u.id),
@@ -670,6 +690,7 @@ async function handleApi(req, res, ctx) {
         .sort((a, b) => b.seconds - a.seconds);
       sendJson(res, 200, {
         user: { ...adminUser(u), avatarUrl: avatarUrl(u.avatar, u.username || u.email) },
+        subscribed: hasActiveMembership(u),
         stats: {
           minutes: Math.round((s.totalSeconds || 0) / 60),
           hours: Math.round((s.totalSeconds || 0) / 360) / 10,
@@ -702,6 +723,32 @@ async function handleApi(req, res, ctx) {
     if (req.method === 'POST' && (action === 'block' || action === 'unblock')) {
       await (action === 'block' ? geoGate.blockUser(userId) : geoGate.unblockUser(userId));
       sendJson(res, 200, { ok: true, blocked: action === 'block' });
+      return true;
+    }
+
+    // POST grant / revoke — manual comp membership (admin override, no payment).
+    if (req.method === 'POST' && (action === 'grant' || action === 'revoke')) {
+      const admin = accounts.currentUser(req);
+      if (action === 'grant') {
+        const membership = {
+          provider: 'admin', status: 'active', interval: null,
+          currentPeriodEnd: null, cancelAtPeriodEnd: false,
+          grantedBy: admin ? admin.id : null, updatedAt: Date.now(),
+        };
+        await accounts.store.updateUser(userId, { membership, hasPurchased: true });
+        await paymentsStore.addTxn(userId, { kind: 'admin.grant', ts: Date.now(), by: admin ? admin.id : null });
+        sendJson(res, 200, { ok: true, subscribed: true });
+        return true;
+      }
+      // revoke: only clear admin comps here; Stripe subscriptions are cancelled
+      // through the billing portal so local + Stripe state can't drift.
+      if (u.membership && u.membership.provider === 'stripe') {
+        sendJson(res, 400, { error: 'This is a Stripe subscription — cancel it from the billing portal.' });
+        return true;
+      }
+      await accounts.store.updateUser(userId, { membership: null, hasPurchased: false });
+      await paymentsStore.addTxn(userId, { kind: 'admin.revoke', ts: Date.now(), by: admin ? admin.id : null });
+      sendJson(res, 200, { ok: true, subscribed: false });
       return true;
     }
 
@@ -821,6 +868,10 @@ async function handleApi(req, res, ctx) {
     return true;
   }
 
+  // Payments (/api/pay/stripe/*). Before accounts so the public webhook (no
+  // session) is reached; the webhook reads the raw body for signature checking.
+  if (await stripePayments.handle(req, res, url)) return true;
+
   // User accounts + profiles (/api/auth/*, /api/profile/*, /api/users/*)
   if (await accounts.handle(req, res, url)) return true;
 
@@ -923,14 +974,16 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // Premium backstop: a premium video's renditions are admin-only. Non-admins
-    // get 403 even with a direct /videos/<id>/* URL (the player gate is the UX;
-    // this is the enforcement). A scheduled/unpublished video's renditions are
-    // likewise off-limits so a drip can't be pulled early. Free, live videos and
-    // other assets are unaffected.
+    // Premium backstop: a premium video's renditions require an active member
+    // (admins count — see ctx.isMember). Non-members get 403 even with a direct
+    // /videos/<id>/* URL (the player gate is the UX; this is the enforcement). A
+    // scheduled/unpublished video's renditions stay admin-only so a member can't
+    // pull a drip early. Free, live videos and other assets are unaffected.
     const vmatch = pathname.match(/^\/videos\/([^/]+)\//); // pathname is already decoded
-    if (vmatch && !ctx.isAdmin
-        && (videoVisibility(vmatch[1]) === 'premium' || !videoPublic(vmatch[1]))) {
+    if (vmatch && (
+      (videoVisibility(vmatch[1]) === 'premium' && !ctx.isMember)
+      || (!videoPublic(vmatch[1]) && !ctx.isAdmin)
+    )) {
       res.writeHead(403);
       return res.end('Forbidden');
     }

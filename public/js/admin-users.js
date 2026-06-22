@@ -58,7 +58,7 @@ async function showDetail(id) {
       <b>Email</b><span>${esc(u.email || '—')}</span>
       <b>Country</b><span>${s.lastCountry ? flagEmoji(s.lastCountry) + ' ' + s.lastCountry : '—'}</span>
       <b>IP addresses</b><span class="mono">${(s.ips || []).map(esc).join(', ') || '—'}</span>
-      <b>Subscription</b><span>${u.hasPurchased || (u.purchases && u.purchases.length) ? 'Subscriber' : 'Free'}</span>
+      <b>Membership</b><span>${membershipLabel(d.subscribed, u.membership)}</span>
       <b>Verified</b><span>${u.verified ? 'Yes' : 'No'}</span>
       <b>Joined</b><span>${fmtDate(u.createdAt)}</span>
       <b>Last seen</b><span>${fmtDate(s.lastSeen)}</span>
@@ -83,6 +83,7 @@ async function showDetail(id) {
       <span id="pw-msg" class="muted"></span>
     </div>
     <button id="toggle-block" class="btn sm ghost">${d.blocked ? 'Unblock user' : 'Block user'}</button>
+    ${membershipButton(d.subscribed, u.membership)}
   `;
 
   $('reset-pw').addEventListener('click', async () => {
@@ -99,6 +100,35 @@ async function showDetail(id) {
     await loadList();
     showDetail(id);
   });
+  const memBtn = $('toggle-member');
+  if (memBtn) {
+    memBtn.addEventListener('click', async () => {
+      const action = d.subscribed ? 'revoke' : 'grant';
+      const r = await api(`/api/admin/users/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: '{}' });
+      if (r && r.error) { alert(r.error); return; }
+      await loadList();
+      showDetail(id);
+    });
+  }
+}
+
+/** Human-readable membership state for the detail view. */
+function membershipLabel(active, m) {
+  if (!active) return 'Free';
+  const provider = m && m.provider;
+  if (provider === 'admin') return 'Member (comped)';
+  if (provider === 'stripe') return `Member (Stripe${m.cancelAtPeriodEnd ? ', ending' : ''})`;
+  return 'Member';
+}
+
+/**
+ * Grant/revoke button. Stripe members can't be revoked here (do it via the
+ * billing portal), so only show a button for comps and free users.
+ */
+function membershipButton(active, m) {
+  if (active && m && m.provider === 'stripe') return '';
+  const label = active ? 'Revoke membership' : 'Grant membership';
+  return `<button id="toggle-member" class="btn sm ghost">${label}</button>`;
 }
 
 async function loadList() {

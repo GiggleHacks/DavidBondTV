@@ -14,7 +14,7 @@ let hoverTimer = null;
 
 // View state. sort: 'recent' (default) | 'all'. section: 'all' | 'exclusive'.
 // category: '' (all) | <slug>.
-const state = { videos: [], sort: 'recent', section: 'all', category: '', isAdmin: false };
+const state = { videos: [], sort: 'recent', section: 'all', category: '', isAdmin: false, isMember: false };
 
 // Windowed rendering: only ~BATCH cards in the DOM up front; more append as the
 // sentinel scrolls into view (YouTube-style infinite scroll, no DOM bloat).
@@ -61,8 +61,9 @@ const isNew = (v) => typeof v.uploadedAt === 'number' && (Date.now() - v.uploade
 
 function card(v) {
   const status = v.status || 'ready';
-  // Premium clips are watchable by admins; everyone else gets the lock layer.
-  const locked = v.visibility === 'premium' && !state.isAdmin;
+  // Premium clips are watchable by admins + active members; everyone else gets
+  // the lock layer.
+  const locked = v.visibility === 'premium' && !state.isAdmin && !state.isMember;
   // Per-video thumbnail blur level (admin-configured). Default medium for premium.
   const blur = ['strong', 'medium', 'off'].includes(v.blur) ? v.blur
     : (v.visibility === 'premium' ? 'medium' : 'off');
@@ -182,7 +183,7 @@ function render() {
 const sortTs = (v) => (typeof v.uploadedAt === 'number' ? v.uploadedAt
   : (Date.parse(v.uploaded) || 0));
 
-// --- Premium subscribe modal (design-only; no payments) ---------------------
+// --- Premium subscribe modal -------------------------------------------------
 
 function openPremiumModal(v) {
   let modal = document.getElementById('premium-modal');
@@ -196,20 +197,19 @@ function openPremiumModal(v) {
         <div class="pm-lock">${LOCK}</div>
         <h2 id="pm-title">Exclusive video</h2>
         <p class="pm-body"></p>
-        <button class="pm-sub">Subscribe to unlock</button>
-        <p class="pm-note">Subscriptions are coming soon.</p>
+        <button class="pm-sub">Become a member</button>
       </div>`;
     document.body.appendChild(modal);
     const close = () => modal.classList.remove('show');
     modal.querySelector('.pm-close').addEventListener('click', close);
-    modal.querySelector('.pm-sub').addEventListener('click', close);
+    modal.querySelector('.pm-sub').addEventListener('click', () => { window.location.href = '/membership.html'; });
     modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && modal.classList.contains('show')) close();
     });
   }
   modal.querySelector('.pm-body').textContent =
-    `"${v.title || 'This video'}" is exclusive to David Bond TV subscribers. Subscribe to unlock premium content.`;
+    `"${v.title || 'This video'}" is exclusive to David Bond TV members. Become a member to unlock premium content.`;
   modal.classList.add('show');
 }
 
@@ -239,10 +239,11 @@ window.addEventListener('dbtv:nav', (e) => {
 async function init() {
   const grid = document.getElementById('grid');
   wireChips();
-  // Know whether the viewer is an admin (premium plays for admins only).
+  // Know whether the viewer can see premium (admin or active member).
   try {
     const me = (await (await fetch('/api/auth/me')).json()).user;
     state.isAdmin = !!(me && Array.isArray(me.roles) && me.roles.includes('admin'));
+    state.isMember = !!(me && me.membership && me.membership.active);
   } catch { /* anonymous */ }
   try {
     const res = await fetch('/thumbs/videos.json');

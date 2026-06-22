@@ -19,11 +19,13 @@ function getVideoId() {
   return new URLSearchParams(window.location.search).get('v') || '';
 }
 
-/** True if the signed-in viewer has the admin role. */
-async function viewerIsAdmin() {
+/** True if the signed-in viewer may watch premium content (admin OR active member). */
+async function viewerCanWatchPremium() {
   try {
     const me = (await (await fetch('/api/auth/me')).json()).user;
-    return !!(me && Array.isArray(me.roles) && me.roles.includes('admin'));
+    if (!me) return false;
+    if (Array.isArray(me.roles) && me.roles.includes('admin')) return true;
+    return !!(me.membership && me.membership.active);
   } catch {
     return false;
   }
@@ -42,11 +44,14 @@ function showPremiumGate(container, entry) {
     <div class="pg-inner">
       <div class="pg-lock"><svg viewBox="0 0 24 24"><path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2v-9a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm3 8H9V6a3 3 0 016 0v3z"/></svg></div>
       <h2>Exclusive video</h2>
-      <p>This video is available to David Bond TV subscribers. Subscribe to unlock premium content.</p>
-      <button class="pg-sub">Subscribe to unlock</button>
-      <p class="pg-note">Subscriptions are coming soon.</p>
+      <p>This video is available to David Bond TV members. Become a member to unlock premium content.</p>
+      <button class="pg-sub">Become a member</button>
     </div>`;
   container.appendChild(gate);
+  const next = encodeURIComponent(location.pathname + location.search);
+  gate.querySelector('.pg-sub').addEventListener('click', () => {
+    location.href = `/membership.html?next=${next}`;
+  });
 }
 
 /** Look up a video's manifest entry by id. */
@@ -113,7 +118,7 @@ async function init() {
 
   // Premium gate: exclusive videos play for admins only; everyone else sees a
   // lock + subscribe prompt instead of the stream (the server 403s the media too).
-  if (entry && entry.visibility === 'premium' && !(await viewerIsAdmin())) {
+  if (entry && entry.visibility === 'premium' && !(await viewerCanWatchPremium())) {
     showPremiumGate(container, entry);
     initReactions(commentVideo);
     initComments(commentVideo);

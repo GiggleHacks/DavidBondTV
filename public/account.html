@@ -56,6 +56,12 @@
       </form>
       <p class="acc-foot"><a id="view-profile" href="#">View my public profile</a></p>
     </div>
+
+    <div class="acc-card" id="billing-card" style="margin-top:16px">
+      <h2 style="margin-top:0">Membership</h2>
+      <p class="acc-sub" id="billing-status">&nbsp;</p>
+      <button class="acc-btn" id="billing-action" type="button" hidden></button>
+    </div>
   </div>
 
   <script type="module">
@@ -114,6 +120,38 @@
       $('submit').disabled = false;
     });
 
+    function fmtDate(ms) {
+      try { return new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }); }
+      catch { return ''; }
+    }
+
+    function renderBilling(user) {
+      const m = user.membership;
+      const status = $('billing-status');
+      const action = $('billing-action');
+      if (m && m.active) {
+        let txt = 'Active member.';
+        if (m.cancelAtPeriodEnd && m.currentPeriodEnd) txt = `Membership ends ${fmtDate(m.currentPeriodEnd)} — you keep access until then.`;
+        else if (m.status === 'past_due') txt = 'Payment failed — please update your card to keep your membership.';
+        else if (m.currentPeriodEnd) txt = `Active${m.interval ? ` · billed ${m.interval}ly` : ''} · renews ${fmtDate(m.currentPeriodEnd)}.`;
+        status.textContent = txt;
+        action.textContent = 'Manage billing';
+        action.hidden = false;
+        action.onclick = async () => {
+          action.disabled = true;
+          const r = await postJSON('/api/pay/stripe/portal', {});
+          if (r.ok && r.data.url) { window.location.href = r.data.url; return; }
+          action.disabled = false;
+          setMsg(r.data.error || 'Could not open the billing portal.', 'error');
+        };
+      } else {
+        status.textContent = 'You’re not a member yet. Unlock all exclusive videos.';
+        action.textContent = 'Become a member';
+        action.hidden = false;
+        action.onclick = () => { window.location.href = '/membership.html'; };
+      }
+    }
+
     (async function start() {
       me = await fetchMe();
       if (!me) { window.location.href = '/login.html'; return; }
@@ -124,6 +162,7 @@
       $('link').value = me.link || '';
       $('current').src = me.avatarUrl || initialAvatarDataUri(me.username);
       $('view-profile').href = `/u/${encodeURIComponent(me.username)}`;
+      renderBilling(me);
     }());
   </script>
   <script type="module" src="/js/auth-widget.js"></script>

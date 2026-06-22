@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Become a member — David Bond TV</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/account.css" />
+  <style>
+    .sub-plans { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0 8px; }
+    @media (max-width: 520px) { .sub-plans { grid-template-columns: 1fr; } }
+    .plan { border: 1px solid var(--border, #2a2a32); border-radius: 12px; padding: 18px; text-align: left; }
+    .plan h3 { margin: 0 0 4px; font-size: 16px; }
+    .plan p { margin: 0 0 14px; color: var(--text-dim); font-size: 13px; }
+    .plan .acc-btn { width: 100%; }
+    .sub-banner { border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; font-size: 14px; }
+    .sub-banner.ok { background: rgba(16,185,129,.12); color: #34d399; }
+    .sub-banner.warn { background: rgba(245,158,11,.12); color: #fbbf24; }
+    .sub-perks { margin: 6px 0 0; padding-left: 18px; color: var(--text-dim); font-size: 13px; }
+    .sub-perks li { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="/" aria-label="David Bond TV — home" style="text-decoration:none">
+      <span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span>
+    </a>
+    <div class="auth-widget" id="auth-widget"></div>
+  </header>
+
+  <div class="acc-page">
+    <div class="acc-card">
+      <div id="banner" class="sub-banner" hidden></div>
+
+      <h1>David Bond TV Membership</h1>
+      <p class="acc-sub">Unlock every exclusive video. Cancel anytime.</p>
+
+      <!-- Active member -->
+      <div id="member-view" hidden>
+        <p id="member-status"></p>
+        <button class="acc-btn" id="manage-btn" type="button">Manage billing</button>
+        <p class="acc-foot"><a href="/">Browse exclusive videos →</a></p>
+      </div>
+
+      <!-- Plans (non-members) -->
+      <div id="plans-view" hidden>
+        <ul class="sub-perks">
+          <li>Full access to all exclusive (premium) videos</li>
+          <li>New drops as soon as they’re released</li>
+          <li>Cancel anytime — access lasts to the end of your billing period</li>
+        </ul>
+        <div class="sub-plans">
+          <div class="plan">
+            <h3>Monthly</h3>
+            <p>Billed every month.</p>
+            <button class="acc-btn" id="buy-month" type="button">Choose monthly</button>
+          </div>
+          <div class="plan">
+            <h3>Yearly</h3>
+            <p>Billed once a year.</p>
+            <button class="acc-btn" id="buy-year" type="button">Choose yearly</button>
+          </div>
+        </div>
+        <p style="color:var(--text-dim);font-size:12px;margin:10px 0 0">
+          Payments are processed securely by Stripe. You’ll be redirected to complete checkout.
+        </p>
+      </div>
+
+      <p class="acc-msg" id="msg" hidden></p>
+    </div>
+  </div>
+
+  <script type="module" src="/js/membership.js"></script>
+  <script type="module" src="/js/auth-widget.js"></script>
+</body>
+</html>
