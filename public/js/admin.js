@@ -3,6 +3,31 @@
 // batch (up to 30), 3 uploads in parallel, with live %/MB/s/ETA on a retro bar.
 import { requireAdmin } from './god-auth.js';
 
+// Large uploads must skip Cloudflare's ~100MB proxy cap, so the upload page is
+// served from a DNS-only subdomain. If we're on the main (proxied) host, hand off
+// before doing any work. (No effect on localhost or the upload host itself.)
+const UPLOAD_HOST = 'upload.davidbondtv.com';
+const MAIN_HOSTS = ['davidbondtv.com', 'www.davidbondtv.com'];
+if (MAIN_HOSTS.includes(location.hostname)) {
+  location.replace(`https://${UPLOAD_HOST}/god-upload.html${location.search}`);
+}
+
+// Upload size limit (overwritten from /api/admin/status on load). 25 GB fallback.
+let maxUploadBytes = 25 * 1024 * 1024 * 1024;
+
+function fmtSize(bytes) {
+  const gb = bytes / 1e9;
+  if (gb >= 1) return `${gb.toFixed(gb < 10 ? 1 : 0)} GB`;
+  return `${Math.max(1, Math.round(bytes / 1e6))} MB`;
+}
+
+function uploadErrorFor(status) {
+  if (status === 413) return `File too large (max ${fmtSize(maxUploadBytes)}).`;
+  if (status === 415) return 'Only .mp4/.mov/.m4v video files are accepted.';
+  if (status === 429) return 'Too many uploads — wait a minute and try again.';
+  return `Upload failed (${status || 'no response from server'}).`;
+}
+
 const $ = (id) => document.getElementById(id);
 const jobsCard = $('jobs-card');
 const jobsEl = $('jobs');
@@ -146,6 +171,10 @@ function enqueueFiles(files) {
     const tag = visibility === 'premium' ? '  · Premium' : '';
     const when = publishAt ? `  · ⏱ ${new Date(publishAt).toLocaleString()}` : '';
     renderJob(rowId, `${file.name}${tag}${when}`);
+    if (file.size > maxUploadBytes) {
+      setState(rowId, 'failed', { title: `Too large — ${fmtSize(file.size)} exceeds the ${fmtSize(maxUploadBytes)} upload limit.` });
+      return; // never even attempt the upload
+    }
     setStats(rowId, 'Waiting…');
     uploadQueue.push({ file, rowId, visibility, blur, category, publishAt });
   });
@@ -177,22 +206,30 @@ function startUpload({ file, rowId, visibility, blur, category, publishAt }) {
     const eta = speed > 0 ? (e.total - e.loaded) / speed : Infinity;
     setStats(rowId, `${pct.toFixed(0)}% · ${(speed / 1e6).toFixed(1)} MB/s · ETA ${fmtEta(eta)}`);
   };
-  const done = () => { inFlight--; pump(); };
+  let finished = false;
+  const done = () => { if (finished) return; finished = true; inFlight--; pump(); };
   xhr.onload = () => {
     done();
     if (xhr.status === 401) { location.reload(); return; }
     let data = {};
-    try { data = JSON.parse(xhr.responseText); } catch { /* ignore */ }
+    try { data = JSON.parse(xhr.responseText); } catch { /* non-JSON (e.g. gateway error) */ }
     if (xhr.status === 202 && data.jobId) {
       setProgress(rowId, 100);
       setStats(rowId, 'Uploaded · processing on server');
       setState(rowId, 'processing', { title: 'Processing…' });
       pollJob(rowId, data.jobId, publishAt);
     } else {
-      setState(rowId, 'failed', { title: data.error || `Upload failed (${xhr.status})` });
+      setState(rowId, 'failed', { title: data.error || uploadErrorFor(xhr.status) });
     }
   };
-  xhr.onerror = () => { done(); setState(rowId, 'failed', { title: 'Network error during upload' }); };
+  const failNetwork = () => {
+    done();
+    setState(rowId, 'failed', { title: 'Upload interrupted — check your connection (or the file may be too large).' });
+  };
+  xhr.onerror = failNetwork;
+  xhr.upload.onerror = failNetwork;
+  xhr.ontimeout = failNetwork;
+  xhr.onabort = () => { done(); setState(rowId, 'failed', { title: 'Upload canceled.' }); };
   xhr.send(file);
 }
 async function pollJob(rowId, jobId, publishAt = 0) {
@@ -248,6 +285,7 @@ async function main() {
   try {
     const data = await (await fetch('/api/admin/status')).json();
     $('ffmpeg-banner').classList.toggle('hidden', data.ffmpeg !== false);
+    if (typeof data.maxUploadBytes === 'number' && data.maxUploadBytes > 0) maxUploadBytes = data.maxUploadBytes;
   } catch { /* ignore */ }
 }
 main();
