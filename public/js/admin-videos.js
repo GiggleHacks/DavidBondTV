@@ -48,7 +48,7 @@ async function load() {
     cats = (await (await fetch('/api/categories')).json()).categories || [];
   } catch { cats = []; }
   renderCatFilter();
-  renderBulkCatSelect();
+  renderCategoryMenu();
   applyFilter();
 }
 
@@ -70,7 +70,16 @@ function applyFilter() {
     return true;
   });
   page = 0;
+  syncFiltersBadge();
   render();
+}
+
+function syncFiltersBadge() {
+  const n = ['state-filter', 'access-filter', 'cat-filter'].filter((id) => $(id) && $(id).value).length;
+  const badge = $('filters-badge');
+  if (!badge) return;
+  badge.textContent = n;
+  badge.hidden = n === 0;
 }
 
 // (Re)build the category filter dropdown from the loaded categories, preserving
@@ -87,16 +96,26 @@ function renderCatFilter() {
   sel.value = [...sel.options].some((o) => o.value === cur) ? cur : '';
 }
 
-function renderBulkCatSelect() {
-  const sel = $('bulk-cat-select');
-  if (!sel) return;
-  const opts = ['<option value="">— category —</option>', '<option value="__none__">Uncategorized</option>']
-    .concat(cats.map((c) => `<option value="${esc(c.slug)}">${esc(c.name)}</option>`));
-  sel.innerHTML = opts.join('');
+function renderCategoryMenu() {
+  const panel = $('category-menu-panel');
+  if (!panel) return;
+  const items = [{ slug: '__none__', name: 'Uncategorized' }]
+    .concat(cats.map((c) => ({ slug: c.slug, name: c.name })));
+  panel.replaceChildren(...items.map((it) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'menu-item';
+    b.dataset.cat = it.slug;
+    b.textContent = it.name;
+    b.addEventListener('click', () => { closeAllPopovers(); runBulkSetCategory(it.slug); });
+    return b;
+  }));
 }
 
 function render() {
   $('vcount').textContent = `(${filtered.length})`;
+  const lc = $('lib-count');
+  if (lc) lc.textContent = `${filtered.length} video${filtered.length === 1 ? '' : 's'}`;
   const slice = filtered.slice(page * PAGE, page * PAGE + PAGE);
   const lib = $('library');
   lib.replaceChildren(...slice.map(libRow));
@@ -136,8 +155,12 @@ function badges(v) {
 function updateReviewCounts() {
   const un = all.filter(isUnapprovedDraft).length;
   const ap = all.filter(isApprovedDraft).length;
-  if ($('unapproved-count')) $('unapproved-count').textContent = un ? `(${un})` : '';
-  if ($('approved-count')) $('approved-count').textContent = ap ? `(${ap})` : '';
+  const ra = $('review-all');
+  const pa = $('publish-approved');
+  const strip = $('review-strip');
+  if (ra) { ra.hidden = un === 0; $('unapproved-count').textContent = un; }
+  if (pa) { pa.hidden = ap === 0; $('approved-count').textContent = ap; }
+  if (strip) strip.hidden = un === 0 && ap === 0;
 }
 
 // Inline "Quick edit" for a video's title — no full editor needed. Swaps the
@@ -204,19 +227,27 @@ function libRow(v) {
     <img alt="" ${v.thumb ? `src="${v.thumb}?_=${Date.now()}"` : ''} />
     <div class="lt"><b></b><span class="meta"></span></div>
     <div class="lib-actions">
-      <button class="btn-quick" type="button">Quick edit</button>
       <a class="btn-edit" href="${ADMIN_PATHS.edit}?v=${encodeURIComponent(v.id)}">Edit</a>
-      <button class="btn-del" type="button">Delete</button>
+      <div class="row-menu">
+        <button class="row-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="More actions">⋯</button>
+        <div class="row-menu-panel" hidden>
+          <button class="menu-item row-quick" type="button">Quick edit</button>
+          <button class="menu-item row-del" type="button">Delete</button>
+        </div>
+      </div>
     </div>`;
   row.querySelector('b').textContent = v.title || v.id;
   row.querySelector('.meta').innerHTML = `${esc(v.durLabel || '')} · ${esc(v.uploaded || '')} ${badges(v)}`.trim();
 
-  row.querySelector('.btn-quick').addEventListener('click', () => startQuickEdit(row, v));
+  const rmBtn = row.querySelector('.row-menu-btn');
+  rmBtn.addEventListener('click', () => togglePanel(rmBtn, row.querySelector('.row-menu-panel')));
+  row.querySelector('.row-quick').addEventListener('click', () => { closeAllPopovers(); startQuickEdit(row, v); });
 
   const check = row.querySelector('.row-check');
   check.addEventListener('change', () => { if (check.checked) selected.add(v.id); else selected.delete(v.id); updateSel(); });
 
-  row.querySelector('.btn-del').addEventListener('click', async () => {
+  row.querySelector('.row-del').addEventListener('click', async () => {
+    closeAllPopovers();
     if (!confirm(`Delete "${v.title || v.id}"? This removes it and its files.`)) return;
     const res = await fetch('/api/admin/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: v.id }) });
     if (res.status === 401) { location.reload(); return; }
@@ -228,10 +259,12 @@ function libRow(v) {
 }
 
 function updateSel() {
-  $('selcount').textContent = `${selected.size} selected`;
+  $('selcount').textContent = selected.size;
   const sa = $('select-all');
   const pageIds = filtered.map((v) => v.id);
   sa.checked = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const bar = $('selection-bar');
+  if (bar) bar.hidden = selected.size === 0;
 }
 
 // Apply a bulk action to ids in ≤500-id batches (the /api/admin/bulk route caps
@@ -257,11 +290,7 @@ async function runBulk(action) {
   await load();
 }
 
-async function runBulkSetCategory() {
-  const sel = $('bulk-cat-select');
-  if (!sel) return;
-  const slug = sel.value;
-  if (!slug) { alert('Choose a category first.'); return; }
+async function runBulkSetCategory(slug) {
   const ids = [...selected];
   if (!ids.length) { alert('Select at least one video.'); return; }
   const catSlug = slug === '__none__' ? '' : slug;
@@ -360,22 +389,78 @@ function wireCats() {
   if (emo) attachEmojiPicker($('cat-new'), emo); // pick emoji into the new-category name
 }
 
+// --- popover / dropdown-menu infrastructure -----------------------------------
+// Close every open popover (selection-bar menus, row ⋯ menus, filters popover),
+// optionally leaving `except` open. Resets the matching trigger's aria-expanded.
+function closeAllPopovers(except) {
+  document.querySelectorAll('.menu-panel:not([hidden]), .row-menu-panel:not([hidden])').forEach((p) => {
+    if (p === except) return;
+    p.hidden = true;
+    const btn = p.parentElement.querySelector('[aria-haspopup]');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  });
+  const fp = $('filters-popover');
+  if (fp && fp !== except && !fp.hidden) {
+    fp.hidden = true;
+    $('filters-btn')?.setAttribute('aria-expanded', 'false');
+  }
+}
+
+// Toggle one panel: close the others, flip this one, sync aria-expanded.
+function togglePanel(btn, panel) {
+  if (!panel) return;
+  const willOpen = panel.hidden;
+  closeAllPopovers(willOpen ? panel : null);
+  panel.hidden = !willOpen;
+  btn.setAttribute('aria-expanded', String(willOpen));
+}
+
 function wire() {
   $('search').addEventListener('input', applyFilter);
   $('cat-filter')?.addEventListener('change', applyFilter);
   $('state-filter')?.addEventListener('change', applyFilter);
   $('access-filter')?.addEventListener('change', applyFilter);
+
+  // Filters popover
+  const fb = $('filters-btn');
+  fb?.addEventListener('click', () => togglePanel(fb, $('filters-popover')));
+  $('filters-clear')?.addEventListener('click', () => {
+    ['state-filter', 'access-filter', 'cat-filter'].forEach((id) => { if ($(id)) $(id).value = ''; });
+    applyFilter();
+  });
+
+  // Review strip
   $('review-all')?.addEventListener('click', () => startReview(all.filter(isUnapprovedDraft).map((v) => v.id)));
-  $('review-selected')?.addEventListener('click', () => startReview([...selected]));
   $('publish-approved')?.addEventListener('click', publishApproved);
+  $('more-review-selected')?.addEventListener('click', () => { closeAllPopovers(); startReview([...selected]); });
+
+  // Selection
   $('select-all').addEventListener('change', (e) => {
     if (e.target.checked) filtered.forEach((v) => selected.add(v.id));
     else filtered.forEach((v) => selected.delete(v.id));
     render();
   });
-  document.querySelectorAll('[data-bulk]').forEach((b) => b.addEventListener('click', () => runBulk(b.dataset.bulk)));
-  $('bulk-blur-apply')?.addEventListener('click', () => runBulk(`blur-${$('bulk-blur-level').value}`));
-  $('bulk-cat-apply')?.addEventListener('click', runBulkSetCategory);
+  $('clear-selection')?.addEventListener('click', () => { selected.clear(); render(); });
+
+  // Selection-bar dropdown menus
+  document.querySelectorAll('.selection-bar .menu-btn').forEach((btn) => {
+    btn.addEventListener('click', () => togglePanel(btn, btn.nextElementSibling));
+  });
+
+  // Bulk actions (publish/approve/premium/free/unapprove/unpublish/delete)
+  document.querySelectorAll('[data-bulk]').forEach((b) =>
+    b.addEventListener('click', () => { closeAllPopovers(); runBulk(b.dataset.bulk); }));
+  // Thumbnail blur levels
+  document.querySelectorAll('[data-blur]').forEach((b) =>
+    b.addEventListener('click', () => { closeAllPopovers(); runBulk(`blur-${b.dataset.blur}`); }));
+
+  // Global popover dismissal (pointerdown covers both mouse click and touch tap)
+  document.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.menu') || e.target.closest('.row-menu') || e.target.closest('.filters-wrap')) return;
+    closeAllPopovers();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAllPopovers(); });
+
   wireRubberBand();
 }
 

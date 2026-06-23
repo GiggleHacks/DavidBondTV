@@ -49,61 +49,87 @@
       </section>
 
       <section class="card">
-        <div class="card-head">
-          <h2>Manage videos <span id="vcount" class="muted"></span></h2>
-          <div class="mv-filters">
-            <select id="state-filter" aria-label="Filter by state" title="Filter by state">
-              <option value="">All states</option>
-              <option value="draft-unapproved">Draft · Unapproved</option>
-              <option value="draft-approved">Draft · Approved</option>
-              <option value="published">Published (live)</option>
-              <option value="processing">Processing</option>
-              <option value="failed">Failed</option>
-            </select>
-            <select id="access-filter" aria-label="Filter by access type" title="Filter by access type">
-              <option value="">All access</option>
-              <option value="free">Free</option>
-              <option value="premium">Premium</option>
-            </select>
-            <select id="cat-filter" aria-label="Filter by category" title="Filter by category"></select>
-            <input id="search" placeholder="Search title" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:13px" />
-            <a class="btn sm ghost" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-categories.html">Manage categories</a>
+        <div class="mv-head">
+          <h2 class="mv-title">Manage videos <span id="vcount" class="muted"></span></h2>
+          <div class="mv-tools">
+            <div class="filters-wrap">
+              <button id="filters-btn" class="btn sm ghost filters-btn" type="button" aria-haspopup="true" aria-expanded="false">
+                <span aria-hidden="true">⚲</span> Filters <span id="filters-badge" class="filters-badge" hidden>0</span>
+              </button>
+              <div id="filters-popover" class="filters-popover" hidden role="dialog" aria-label="Filter videos">
+                <label class="ff-label">State
+                  <select id="state-filter">
+                    <option value="">All states</option>
+                    <option value="draft-unapproved">Draft · Unapproved</option>
+                    <option value="draft-approved">Draft · Approved</option>
+                    <option value="published">Published (live)</option>
+                    <option value="processing">Processing</option>
+                    <option value="failed">Failed</option>
+                  </select>
+                </label>
+                <label class="ff-label">Access
+                  <select id="access-filter">
+                    <option value="">All access</option>
+                    <option value="free">Free</option>
+                    <option value="premium">Premium</option>
+                  </select>
+                </label>
+                <label class="ff-label">Category
+                  <select id="cat-filter"></select>
+                </label>
+                <div class="ff-foot">
+                  <button id="filters-clear" class="ff-clear" type="button">Clear all</button>
+                  <a class="ff-manage" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-categories.html">Manage categories →</a>
+                </div>
+              </div>
+            </div>
+            <input id="search" class="mv-search" placeholder="Search title" />
           </div>
         </div>
 
-        <div class="reviewbar">
-          <button class="btn sm" id="review-all" type="button">▶ Review all unapproved <span id="unapproved-count" class="muted"></span></button>
-          <button class="btn sm ghost" id="review-selected" type="button">▶ Review selected</button>
-          <span style="flex:1"></span>
-          <button class="btn sm" id="publish-approved" type="button">⬆ Publish approved <span id="approved-count" class="muted"></span></button>
+        <div id="review-strip" class="review-strip" hidden>
+          <span class="rs-label">Review queue</span>
+          <button id="review-all" class="rs-link" type="button" hidden><span id="unapproved-count">0</span> unapproved →</button>
+          <button id="publish-approved" class="rs-link" type="button" hidden><span id="approved-count">0</span> approved ready to publish →</button>
         </div>
 
-        <div class="bulkbar">
+        <div class="lib-head">
           <label class="selall"><input type="checkbox" id="select-all" /> Select all</label>
-          <span id="selcount" class="muted">0 selected</span>
-          <span style="flex:1"></span>
-          <button class="btn sm ghost" data-bulk="approve" title="Mark as approved — stays hidden until manually published">Approve</button>
-          <button class="btn sm ghost" data-bulk="unapprove" title="Return to unapproved draft — requires re-approval before publishing">Unapprove</button>
-          <button class="btn sm ghost" data-bulk="publish" title="Make live immediately — visible to eligible viewers">Publish</button>
-          <button class="btn sm ghost" data-bulk="unpublish" title="Take offline — hides from viewers but stays in your library">Unpublish</button>
-          <button class="btn sm ghost" data-bulk="premium" title="Restrict to premium (paid) members only">Make Premium</button>
-          <button class="btn sm ghost" data-bulk="free" title="Make available to all visitors for free">Make Free</button>
-          <span class="bulk-cat">
-            <select id="bulk-cat-select" aria-label="Set category">
-              <option value="">— category —</option>
-            </select>
-            <button class="btn sm ghost" id="bulk-cat-apply" title="Assign selected videos to this category">Set category</button>
-          </span>
-          <span class="bulk-blur">
-            <select id="bulk-blur-level" aria-label="Thumbnail blur level">
-              <option value="off">No blur</option>
-              <option value="medium">Medium blur</option>
-              <option value="strong">Strong blur</option>
-              <option value="strongest">Strongest blur</option>
-            </select>
-            <button class="btn sm ghost" id="bulk-blur-apply">Apply blur</button>
-          </span>
+          <span class="muted" id="lib-count"></span>
+        </div>
+
+        <div id="selection-bar" class="selection-bar" hidden>
+          <span class="sel-count"><b id="selcount">0</b> selected</span>
+          <button class="btn sm" data-bulk="publish" title="Make live immediately — visible to eligible viewers">Publish</button>
+          <button class="btn sm ghost" data-bulk="approve" title="Mark as approved — stays hidden until published">Approve</button>
+          <div class="menu" data-menu="access">
+            <button class="btn sm ghost menu-btn" type="button" aria-haspopup="true" aria-expanded="false">Access ▾</button>
+            <div class="menu-panel" hidden>
+              <button class="menu-item" data-bulk="premium" type="button">Make premium</button>
+              <button class="menu-item" data-bulk="free" type="button">Make free</button>
+            </div>
+          </div>
+          <div class="menu" data-menu="category">
+            <button class="btn sm ghost menu-btn" type="button" aria-haspopup="true" aria-expanded="false">Category ▾</button>
+            <div class="menu-panel" id="category-menu-panel" hidden></div>
+          </div>
+          <div class="menu" data-menu="more">
+            <button class="btn sm ghost menu-btn" type="button" aria-haspopup="true" aria-expanded="false">More ▾</button>
+            <div class="menu-panel" hidden>
+              <button class="menu-item" data-bulk="unapprove" type="button">Unapprove</button>
+              <button class="menu-item" data-bulk="unpublish" type="button">Unpublish</button>
+              <button class="menu-item" id="more-review-selected" type="button">Review selected</button>
+              <div class="menu-sep"></div>
+              <span class="menu-head">Thumbnail blur</span>
+              <button class="menu-item" data-blur="off" type="button">Off</button>
+              <button class="menu-item" data-blur="medium" type="button">Medium</button>
+              <button class="menu-item" data-blur="strong" type="button">Strong</button>
+              <button class="menu-item" data-blur="strongest" type="button">Strongest</button>
+            </div>
+          </div>
+          <span class="sel-spacer"></span>
           <button class="btn sm danger" data-bulk="delete">Delete</button>
+          <button id="clear-selection" class="sel-clear" type="button" aria-label="Clear selection">✕</button>
         </div>
 
         <div id="library"></div>
