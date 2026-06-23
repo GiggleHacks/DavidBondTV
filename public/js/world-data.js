@@ -19,12 +19,9 @@ export const CENTROIDS = {
   GH: [8, -1], ET: [8, 38], TZ: [-6, 35], UG: [1, 32], AO: [-12, 18], SN: [14, -14],
 };
 
-/** ISO-2 country code → flag emoji (regional indicator symbols). */
-export function flagEmoji(cc) {
-  if (typeof cc !== 'string' || !/^[A-Za-z]{2}$/.test(cc)) return '🏳️';
-  const A = 0x1f1e6;
-  return String.fromCodePoint(A + cc.toUpperCase().charCodeAt(0) - 65, A + cc.toUpperCase().charCodeAt(1) - 65);
-}
+// NOTE: emoji flags (regional-indicator pairs) are deliberately NOT used —
+// they don't render on Windows or most Android browsers. Use flagIcon() below,
+// which serves self-hosted SVGs that render identically on every platform.
 
 /**
  * ISO-2 country code → HTML markup for a self-hosted SVG flag icon.
