@@ -1,7 +1,10 @@
-// Upload page (/god-upload.html). Cookie-authenticated (no bearer tokens) — the
-// session cookie is sent automatically with same-origin requests. Drag-drop a
-// batch (up to 50), one upload at a time, with live %/MB/s/ETA on the progress bar.
-// Active/queued uploads are cancellable; a sound plays when each finishes.
+// Upload studio controller (/god-upload.html). Cookie-authenticated — the session
+// cookie rides along automatically on same-origin requests. Drag-drop a batch (up
+// to 50 files), uploaded ONE AT A TIME with live %/MB·s/ETA. Active and queued
+// uploads are cancellable without a page refresh; failed uploads resume from the
+// server's last good byte via Retry. Once an upload finishes, the server transcodes
+// it and reports granular per-task progress (exact task name + % + ETA) which this
+// page renders on the same bar. A notification sound plays when each job completes.
 import { requireAdmin } from './god-auth.js';
 import { listSounds, playSound, getSelected, setSelected, isEnabled, setEnabled, primeAudio } from './upload-sounds.js';
 
@@ -17,10 +20,24 @@ if (MAIN_HOSTS.includes(location.hostname)) {
 // Upload size limit (overwritten from /api/admin/status on load). 25 GB fallback.
 let maxUploadBytes = 25 * 1024 * 1024 * 1024;
 
+const $ = (id) => document.getElementById(id);
+const jobsCard = $('jobs-card');
+const jobsEl = $('jobs');
+
+// --- formatting helpers ---
 function fmtSize(bytes) {
   const gb = bytes / 1e9;
   if (gb >= 1) return `${gb.toFixed(gb < 10 ? 1 : 0)} GB`;
   return `${Math.max(1, Math.round(bytes / 1e6))} MB`;
+}
+function fmtEta(sec) {
+  if (sec == null || !isFinite(sec) || sec < 0) return '—';
+  sec = Math.round(sec);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+  return m > 0 ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`;
 }
 
 // Turn a raw HTTP status (or 0 for a network drop) into a clear, actionable
@@ -39,33 +56,30 @@ function describeUploadError(status, detail) {
   return detail || `Upload failed (${status}).`;
 }
 
-const $ = (id) => document.getElementById(id);
-const jobsCard = $('jobs-card');
-const jobsEl = $('jobs');
-
+// --- settings readers ---
 function currentVisibility() {
   const el = document.querySelector('input[name="vis"]:checked');
   return el ? el.value : 'free';
 }
 function currentBlur() {
-  const el = document.getElementById('blur');
+  const el = $('blur');
   return el ? el.value : 'medium';
 }
 function currentCategory() {
-  const el = document.getElementById('category');
+  const el = $('category');
   return el ? el.value : '';
 }
 // Drip schedule: { interval } in ms when scheduling is on, else null.
 function currentSchedule() {
   const on = document.querySelector('input[name="sched"]:checked');
   if (!on || on.value !== 'drip') return null;
-  const sel = document.getElementById('drip-interval');
+  const sel = $('drip-interval');
   const interval = sel ? Number(sel.value) : 0;
   return interval > 0 ? { interval } : null;
 }
 // Populate the category dropdown from the registry.
 async function loadCategories() {
-  const sel = document.getElementById('category');
+  const sel = $('category');
   if (!sel) return;
   try {
     const { categories } = await (await fetch('/api/categories')).json();
@@ -80,7 +94,6 @@ async function loadCategories() {
 // --- jobs UI ---
 const jobNodes = new Map();
 // Per-row controls so a job can be canceled while queued or uploading.
-// { xhr } once uploading; the queued entry is found in uploadQueue by rowId.
 const jobControls = new Map();
 
 function renderJob(rowId, name) {
@@ -135,13 +148,15 @@ function setState(rowId, state, { title, desc } = {}) {
   const el = jobNodes.get(rowId);
   if (!el) return;
   el.className = `job ${state}`;
-  if (title) el.querySelector('.jtitle').textContent = title;
+  if (title !== undefined) el.querySelector('.jtitle').textContent = title;
   // Cancel is only meaningful while queued or actively uploading.
   const cancelBtn = el.querySelector('.job-cancel');
   if (cancelBtn) cancelBtn.classList.toggle('hidden', state !== 'queued' && state !== 'uploading');
   if (state === 'ready' || state === 'failed' || state === 'canceled') {
     el.querySelector('.bar').classList.add('hidden');
     if (state === 'ready' || state === 'canceled') el.querySelector('.jstats').textContent = '';
+  } else {
+    el.querySelector('.bar').classList.remove('hidden');
   }
   if (desc !== undefined) el.querySelector('.jdesc').textContent = desc || '';
 }
@@ -181,13 +196,6 @@ const MAX_CONCURRENT = 1;
 const MAX_BATCH = 50;
 const uploadQueue = [];
 let inFlight = 0;
-
-function fmtEta(sec) {
-  if (!isFinite(sec) || sec <= 0) return '—';
-  sec = Math.round(sec);
-  const m = Math.floor(sec / 60); const s = sec % 60;
-  return m > 0 ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`;
-}
 
 function enqueueFiles(files) {
   primeAudio(); // unlock Web Audio within this user gesture so the done-chime can play
@@ -303,11 +311,12 @@ async function runUpload(item) {
 
     // Upload chunks sequentially, with smoothed MB/s + ETA over the whole file.
     let speed = 0;
-    let last = { t: performance.now(), loaded: item.offset };
+    const last = { t: performance.now(), loaded: item.offset };
     while (item.offset < file.size) {
       if (ctrl.canceled) return;
       const end = Math.min(item.offset + chunkSize, file.size);
       const blob = file.slice(item.offset, end);
+      // eslint-disable-next-line no-await-in-loop, no-loop-func
       const res = await sendChunk(item.uploadId, item.offset, blob, ctrl, (loadedInChunk) => {
         const loaded = item.offset + loadedInChunk;
         const now = performance.now();
@@ -319,7 +328,7 @@ async function runUpload(item) {
         }
         setProgress(rowId, (loaded / file.size) * 100);
         const eta = speed > 0 ? (file.size - loaded) / speed : Infinity;
-        setStats(rowId, `${((loaded / file.size) * 100).toFixed(0)}% · ${(speed / 1e6).toFixed(1)} MB/s · ETA ${fmtEta(eta)}`);
+        setStats(rowId, `⬆️ ${((loaded / file.size) * 100).toFixed(0)}% · ${(speed / 1e6).toFixed(1)} MB/s · ETA ${fmtEta(eta)}`);
       });
       if (ctrl.canceled) return;
       if (res.status === 401) { location.reload(); return; }
@@ -329,15 +338,15 @@ async function runUpload(item) {
       item.offset = typeof res.data.offset === 'number' ? res.data.offset : end;
     }
 
-    // Finalize → server transcodes; hand off to the existing poller.
+    // Finalize → server transcodes; hand off to the granular processing poller.
     setStats(rowId, 'Finalizing…');
     const comp = await jsonReq('POST', `/api/admin/upload/complete?id=${encodeURIComponent(item.uploadId)}`, null, ctrl);
     if (ctrl.canceled) return;
     if (comp.status === 401) { location.reload(); return; }
     if (!comp.ok || !comp.data.jobId) { bail(comp.status, comp.data.error); return; }
-    setProgress(rowId, 100);
-    setStats(rowId, 'Uploaded · processing on server');
-    setState(rowId, 'processing', { title: '⚙️ Processing…' });
+    setProgress(rowId, 0);
+    setState(rowId, 'processing', { title: '⚙️ Processing…', desc: 'Uploaded ✓ — now processing on the server' });
+    setStats(rowId, 'Starting processing…');
     pollJob(rowId, comp.data.jobId, item.publishAt);
   } catch {
     if (!ctrl.canceled) bail(0, null);
@@ -358,16 +367,19 @@ function failWithRetry(rowId, item, message) {
   btn.textContent = item.uploadId ? '🔁 Retry (resume)' : '🔁 Retry';
   btn.addEventListener('click', () => {
     btn.remove();
-    el.querySelector('.bar')?.classList.remove('hidden');
     setState(rowId, 'queued', { title: '⏳ Queued…' });
     uploadQueue.unshift(item); // same item object → keeps uploadId/offset to resume
     pump();
   });
   el.querySelector('.jbody').appendChild(btn);
 }
+
+// Poll server processing status and render GRANULAR telemetry: the exact task
+// name + sub-detail, an overall %, and a live ETA — driving the same bar that the
+// upload used (now in its amber "processing" treatment).
 async function pollJob(rowId, jobId, publishAt = 0) {
-  for (let i = 0; i < 600; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
+  for (let i = 0; i < 1200; i++) {
+    await new Promise((r) => setTimeout(r, 1500));
     let data;
     try {
       const res = await fetch(`/api/admin/status?job=${encodeURIComponent(jobId)}`);
@@ -376,7 +388,16 @@ async function pollJob(rowId, jobId, publishAt = 0) {
     } catch { continue; }
     const job = data.job;
     if (!job) continue;
-    if (job.phase && job.status === 'processing') setStats(rowId, `Processing · ${job.phase}`);
+
+    if (job.status === 'processing') {
+      if (typeof job.pct === 'number') setProgress(rowId, job.pct);
+      const label = job.label || 'Processing…';
+      const stepTag = job.steps ? `step ${job.step}/${job.steps} · ` : '';
+      const detailTag = job.detail ? `${job.detail} · ` : '';
+      const etaTag = job.etaSec != null ? ` · ETA ${fmtEta(job.etaSec)}` : '';
+      setState(rowId, 'processing', { title: `⚙️ ${label}` });
+      setStats(rowId, `${stepTag}${detailTag}${typeof job.pct === 'number' ? Math.round(job.pct) + '%' : ''}${etaTag}`.replace(/^ · /, ''));
+    }
     if (job.status === 'ready') {
       const desc = publishAt ? `⏱ Scheduled for ${new Date(publishAt).toLocaleString()}` : '✓ Published';
       setState(rowId, 'ready', { title: `✅ ${job.title}`, desc });
@@ -384,7 +405,10 @@ async function pollJob(rowId, jobId, publishAt = 0) {
       if (isEnabled()) playSound(getSelected()); // 🔊 completion chime
       return;
     }
-    if (job.status === 'failed') { setState(rowId, 'failed', { title: '❌ Processing failed', desc: job.error || '' }); return; }
+    if (job.status === 'failed') {
+      setState(rowId, 'failed', { title: '❌ Processing failed', desc: job.detail || job.error || '' });
+      return;
+    }
   }
   setState(rowId, 'failed', { title: '❌ Timed out waiting for processing' });
 }

@@ -93,8 +93,10 @@
         // Password accounts get a one-time recovery-key step (which then honours
         // any post-auth destination). Others go straight to where they were headed.
         const u = r.data.user;
+        // Flag a first-time user so the feed shows the onboarding overlay once.
+        try { localStorage.setItem('dbtv_onboard', '1'); } catch { /* ignore */ }
         window.location.href = (u && u.hasPassword && !u.hasRecoveryKey)
-          ? '/recovery-key.html' : consumeAfterAuth('/');
+          ? '/recovery-key.html' : consumeAfterAuth('/videos');
       } else {
         setMsg(r.data.error || 'Could not save your profile.', 'error');
         $('submit').disabled = false;
@@ -104,7 +106,7 @@
     (async function start() {
       const me = await fetchMe();
       if (!me) { window.location.href = '/login.html'; return; }
-      if (me.profileComplete) { window.location.href = '/account.html'; return; }
+      if (me.profileComplete) { window.location.href = '/videos'; return; }
       refreshInitial();
     }());
   </script>

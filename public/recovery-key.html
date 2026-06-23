@@ -48,7 +48,7 @@
       m.hidden = false; m.textContent = t; m.className = `acc-msg ${kind || ''}`.trim();
     }
     $('ack').addEventListener('change', () => { $('continue').disabled = !$('ack').checked; });
-    $('continue').addEventListener('click', () => { window.location.href = consumeAfterAuth('/'); });
+    $('continue').addEventListener('click', () => { window.location.href = consumeAfterAuth('/videos'); });
 
     (async function start() {
       const me = await fetchMe();

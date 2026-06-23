@@ -257,6 +257,7 @@ function manifestTitleMap() {
 function resolveFile(urlPath) {
   let pathname = decodeURIComponent(urlPath.split('?')[0]);
   if (pathname === '/') pathname = '/browse.html'; // homepage = the video grid
+  if (pathname === '/videos') pathname = '/browse.html'; // canonical feed URL (post-login landing)
   if (pathname === '/watch') pathname = '/index.html'; // per-video watch page (?v=<id>)
   if (pathname === '/god') pathname = '/god.html'; // the admin backend lives at /god
   // Pretty URLs for the legal / policy pages (linked from the site footer).
@@ -341,7 +342,7 @@ function injectMetaTags(html, reqUrl) {
   let ogUrl = `${BASE_URL}${urlObj.pathname}${urlObj.search}`;
   let ogType = 'website';
 
-  if (pathname === '/' || pathname === '/browse.html') {
+  if (pathname === '/' || pathname === '/videos' || pathname === '/browse.html') {
     title = 'David Bond TV — Browse';
     description = 'Watch David Bond TV — Exclusive travel videos, documentaries, vlogs, and community updates.';
     ogImage = `${BASE_URL}/logo.jpg`;

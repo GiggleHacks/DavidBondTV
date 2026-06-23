@@ -74,7 +74,7 @@
       });
       if (r.ok && r.data.ok) {
         const u = r.data.user;
-        const dest = u && u.profileComplete ? (next || '/') : '/profile-setup.html';
+        const dest = u && u.profileComplete ? (next || '/videos') : '/profile-setup.html';
         window.location.href = dest;
       } else {
         setMsg(r.data.error || 'Could not sign you in.', 'error');
