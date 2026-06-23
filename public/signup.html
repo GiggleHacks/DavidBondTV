@@ -53,6 +53,30 @@
     </div>
   </div>
 
+  <div class="verify-shell" id="verify-shell" hidden>
+    <div class="verify-card" role="dialog" aria-modal="true" aria-labelledby="verify-title">
+      <a class="verify-back" href="/login.html" id="verify-back">← Back to sign in</a>
+      <div class="verify-icon" aria-hidden="true">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-5"/></svg>
+      </div>
+      <h2 id="verify-title">Verify your email</h2>
+      <p>We've sent a 6-digit code to<br><strong id="verify-email">your email</strong></p>
+      <div class="code-row" id="code-row" aria-label="Verification code">
+        <input class="code-box" inputmode="numeric" maxlength="1" autocomplete="one-time-code" />
+        <input class="code-box" inputmode="numeric" maxlength="1" />
+        <input class="code-box" inputmode="numeric" maxlength="1" />
+        <input class="code-box" inputmode="numeric" maxlength="1" />
+        <input class="code-box" inputmode="numeric" maxlength="1" />
+        <input class="code-box" inputmode="numeric" maxlength="1" />
+      </div>
+      <div class="verify-help">Enter the verification code sent to your email</div>
+      <button class="acc-btn" id="verify-submit" type="button">Verify email</button>
+      <div class="verify-resend">Didn't receive the code? <button id="verify-resend" type="button">Resend</button></div>
+      <div class="verify-dev" id="verify-dev" hidden></div>
+      <p class="acc-msg" id="verify-msg" hidden></p>
+    </div>
+  </div>
+
   <script type="module">
     import { postJSON, loadChallenge, fetchAuthConfig, renderProviderButtons, mountTurnstile, turnstileToken } from '/js/account.js';
     const $ = (id) => document.getElementById(id);
@@ -87,17 +111,73 @@
         await refresh();
       }
     }
+    let pendingEmail = '';
+    const codeInputs = [...document.querySelectorAll('.code-box')];
+    function setVerifyMsg(t, kind) {
+      const m = $('verify-msg');
+      if (!t) { m.hidden = true; return; }
+      m.hidden = false; m.textContent = t; m.className = `acc-msg ${kind || ''}`.trim();
+    }
+    function codeValue() { return codeInputs.map((i) => i.value).join(''); }
+    function showVerify(email, data = {}) {
+      pendingEmail = email;
+      $('verify-email').textContent = email;
+      $('verify-shell').hidden = false;
+      setVerifyMsg('');
+      codeInputs.forEach((i) => { i.value = ''; });
+      if (data.devCode) { $('verify-dev').hidden = false; $('verify-dev').textContent = `Local dev code: ${data.devCode}`; }
+      else $('verify-dev').hidden = true;
+      setTimeout(() => codeInputs[0].focus(), 40);
+    }
+    codeInputs.forEach((input, idx) => {
+      input.addEventListener('input', () => {
+        input.value = input.value.replace(/\D/g, '').slice(0, 1);
+        if (input.value && idx < codeInputs.length - 1) codeInputs[idx + 1].focus();
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !input.value && idx > 0) codeInputs[idx - 1].focus();
+        if (e.key === 'Enter') $('verify-submit').click();
+      });
+      input.addEventListener('paste', (e) => {
+        const text = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, 6);
+        if (!text) return;
+        e.preventDefault();
+        codeInputs.forEach((box, n) => { box.value = text[n] || ''; });
+        codeInputs[Math.min(text.length, 6) - 1]?.focus();
+      });
+    });
+    $('verify-submit').addEventListener('click', async () => {
+      const code = codeValue();
+      if (code.length !== 6) { setVerifyMsg('Enter the 6-digit code.', 'error'); return; }
+      $('verify-submit').disabled = true;
+      const r = await postJSON('/api/auth/verify-code', { email: pendingEmail, code });
+      if (r.ok && r.data.ok) {
+        window.location.href = '/profile-setup.html';
+        return;
+      }
+      setVerifyMsg(r.data.error || 'That code did not work.', 'error');
+      $('verify-submit').disabled = false;
+    });
+    $('verify-resend').addEventListener('click', async () => {
+      $('verify-resend').disabled = true;
+      const r = await postJSON('/api/auth/resend-code', { email: pendingEmail });
+      if (r.ok && r.data.ok) {
+        setVerifyMsg('A new code is on its way.', 'ok');
+        if (r.data.devCode) { $('verify-dev').hidden = false; $('verify-dev').textContent = `Local dev code: ${r.data.devCode}`; }
+      } else setVerifyMsg(r.data.error || 'Could not resend the code.', 'error');
+      $('verify-resend').disabled = false;
+    });
     $('form').addEventListener('submit', async (e) => {
       e.preventDefault();
       $('submit').disabled = true;
       setMsg('');
-      const payload = { email: $('email').value.trim(), password: $('password').value, hp: $('hp').value };
+      const email = $('email').value.trim();
+      const payload = { email, password: $('password').value, hp: $('hp').value };
       if (useTurnstile) payload.turnstileToken = turnstileToken($('turnstile'));
       else { payload.answer = $('answer').value.trim(); payload.token = token; }
       const r = await postJSON('/api/auth/signup', payload);
       if (r.ok && r.data.ok) {
-        $('form').reset();
-        setMsg(r.data.message || 'Check your email to confirm your account. Be sure to check your spam folder.', 'ok');
+        showVerify((r.data.email || email).toLowerCase(), r.data);
       } else {
         setMsg(r.data.error || 'Could not sign you up.', 'error');
       }
@@ -107,7 +187,7 @@
     });
     init();
   </script>
-  <script src="/js/age-gate.js"></script>
+
   <script src="/js/footer.js"></script>
 </body>
 </html>

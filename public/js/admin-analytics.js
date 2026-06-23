@@ -2,11 +2,16 @@
 // and renders KPI cards, hand-rolled SVG charts (no chart library — keeps the
 // zero-dependency build), a live visitor feed, the viewer world map, and the
 // geo-restriction panel, organised into tabs. Every panel cites its data source.
+//
+// The Overview tab supports swappable *layouts* (Command Center, Mission Control,
+// Analytics Grid, Executive Brief) — each a different visualization philosophy
+// showing the same underlying data. See dashboard-layouts.js for the builders.
 import { renderMap } from './admin-map.js';
 import { flagIcon } from './world-data.js';
 import { COUNTRIES } from './countries.js';
 import { requireAdmin } from './god-auth.js';
 import { ADMIN_PATHS } from './admin-paths.js';
+import { LAYOUTS, DEFAULT_LAYOUT } from './dashboard-layouts.js';
 
 const $ = (id) => document.getElementById(id);
 const COUNTRY_NAME = Object.fromEntries(COUNTRIES.map((c) => [c.code, c.name]));
@@ -14,13 +19,57 @@ const ccLabel = (cc) => `${flagIcon(cc)} ${COUNTRY_NAME[cc] ? `${COUNTRY_NAME[cc
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const nf = (n) => Number(n || 0).toLocaleString();
 
+// ---------- layout system ----------
+let currentLayout = localStorage.getItem('deck-layout') || DEFAULT_LAYOUT;
+if (!LAYOUTS[currentLayout]) currentLayout = DEFAULT_LAYOUT;
+let rawMetrics = null;
+
+function buildLayoutPicker() {
+  const wrap = document.createElement('div');
+  wrap.className = 'layout-picker';
+  wrap.id = 'layout-picker';
+  for (const [id, layout] of Object.entries(LAYOUTS)) {
+    const btn = document.createElement('button');
+    btn.className = 'layout-opt' + (id === currentLayout ? ' on' : '');
+    btn.dataset.layout = id;
+    btn.title = layout.label;
+    btn.innerHTML = `<span class="layout-icon">${layout.icon}</span><span class="layout-name">${layout.label}</span>`;
+    btn.addEventListener('click', () => switchLayout(id));
+    wrap.appendChild(btn);
+  }
+  return wrap;
+}
+
+function switchLayout(id) {
+  if (!LAYOUTS[id]) return;
+  currentLayout = id;
+  try { localStorage.setItem('deck-layout', id); } catch { /* ignore */ }
+  const sec = document.querySelector('[data-panel="overview"]');
+  if (sec) {
+    sec.innerHTML = LAYOUTS[id].build();
+    sec.dataset.layout = id;
+  }
+  document.querySelectorAll('.layout-opt').forEach((b) => b.classList.toggle('on', b.dataset.layout === id));
+  // Re-populate with cached data.
+  refreshAll();
+}
+
+async function refreshAll() {
+  try { await Promise.all([loadOverview(), loadCountries('viewers'), loadExtras(), loadVisitors(), loadMetrics()]); } catch { /* ignore */ }
+}
+
+function applyLayoutHook() {
+  const hook = LAYOUTS[currentLayout]?.postUpdate;
+  if (hook) hook(null, rawMetrics);
+}
+
 function updateValue(id, newValue) {
   const el = $(id);
   if (!el) return;
   if (el.textContent !== newValue) {
     el.textContent = newValue;
     el.classList.remove('update-pulse');
-    void el.offsetWidth; // trigger reflow
+    void el.offsetWidth;
     el.classList.add('update-pulse');
   }
 }
@@ -52,7 +101,6 @@ function wireTabs() {
 }
 
 // ---------- charts (pure SVG) ----------
-// Trend % for a numeric series: last 7 days vs the previous 7.
 function trendPct(arr) {
   if (!arr || arr.length < 2) return null;
   const last = arr.slice(-7).reduce((a, b) => a + b, 0);
@@ -68,7 +116,6 @@ function setTrend(id, pct) {
   el.className = 'ktrend ' + (pct === 0 ? 'flat' : up ? 'up' : 'down');
   el.textContent = `${up ? '▲' : '▼'} ${Math.abs(pct)}% vs prev 7d`;
 }
-// Sparkline polyline into a 120x28 viewBox.
 function sparkline(svg, values, color) {
   if (!svg) return;
   const v = values && values.length ? values : [0, 0];
@@ -78,7 +125,6 @@ function sparkline(svg, values, color) {
   const pts = v.map((n, i) => `${(i * step).toFixed(1)},${(26 - ((n - min) / span) * 24).toFixed(1)}`).join(' ');
   svg.innerHTML = `<polyline fill="none" stroke="${color}" stroke-width="2" points="${pts}"/>`;
 }
-// Dual-line trend chart into a 640x200 viewBox (each line scaled to its own max).
 function drawTrend(svg, series) {
   if (!svg) return;
   const W = 640, H = 200, pad = 6;
@@ -98,7 +144,6 @@ function drawTrend(svg, series) {
   for (let i = 1; i < 4; i++) grid += `<line x1="0" y1="${(H / 4) * i}" x2="${W}" y2="${(H / 4) * i}" stroke="#1e2030" stroke-width="0.5"/>`;
   svg.innerHTML = grid + line('views', '#818cf8', false, true) + line('minutes', '#f59e0b', true, false);
 }
-// Donut of top countries into a 220x160 viewBox + a legend list.
 function drawDonut(svg, legendEl, countries) {
   const entries = Object.entries(countries || {})
     .map(([cc, s]) => [cc, s.views || 0]).filter(([, n]) => n > 0)
@@ -153,11 +198,12 @@ async function loadOverview() {
   drawTrend($('trend-chart'), series);
   const stamp = new Date(d.generatedAt || Date.now()).toUTCString().slice(17, 25) + ' UTC';
   ['upd-1', 'upd-2', 'upd-3', 'upd-4'].forEach((id) => { const el = $(id); if (el) el.textContent = 'UPDATED ' + stamp; });
-  // top videos (bars)
   const max = d.topVideos.length ? d.topVideos[0].views || 1 : 1;
-  $('top-videos').innerHTML = d.topVideos.length
+  const tvEl = $('top-videos');
+  if (tvEl) tvEl.innerHTML = d.topVideos.length
     ? d.topVideos.map((v) => `<div class="b"><div><a href="${ADMIN_PATHS.analytics}?v=${encodeURIComponent(v.id)}"><div class="lab">🎬 ${esc(v.title)}</div><div class="track"><div class="fill" style="width:${Math.max(3, Math.round((v.views / max) * 100))}%"></div></div></a></div><div class="n">${nf(v.views)}</div></div>`).join('')
     : '<p class="muted">No views recorded yet.</p>';
+  applyLayoutHook();
 }
 
 function mapCounts(mode) {
@@ -200,9 +246,9 @@ async function loadVisitors() {
   const d = await api('/api/admin/analytics/visitors?limit=200');
   const events = d.events || [];
   const head = '<div class="h"><span>When</span><span>IP</span><span>User · video</span><span>Watch</span></div>';
-  if (!events.length) { 
-    if (!box.innerHTML.includes('No visitor activity')) box.innerHTML = head + '<div class="row"><span class="ts">—</span><span></span><span class="who">No visitor activity recorded yet.</span><span></span></div>'; 
-    return; 
+  if (!events.length) {
+    if (!box.innerHTML.includes('No visitor activity')) box.innerHTML = head + '<div class="row"><span class="ts">—</span><span></span><span class="who">No visitor activity recorded yet.</span><span></span></div>';
+    return;
   }
   const newHTML = head + events.map((e) => {
     const loc = e.cc ? flagIcon(e.cc) : '';
@@ -215,9 +261,7 @@ async function loadVisitors() {
       <span class="sec">${e.seconds ? e.seconds + 's' : '—'}</span>
     </div>`;
   }).join('');
-  if (box.innerHTML !== newHTML) {
-    box.innerHTML = newHTML;
-  }
+  if (box.innerHTML !== newHTML) box.innerHTML = newHTML;
 }
 
 async function loadExtras() {
@@ -241,7 +285,7 @@ async function loadExtras() {
     : '<p class="muted">No users yet.</p>';
 }
 
-// ---------- geo-restriction panel (unchanged logic) ----------
+// ---------- geo-restriction panel ----------
 function chip(label, onRemove, { html = false } = {}) {
   const span = document.createElement('span');
   span.className = 'chip-x';
@@ -357,6 +401,7 @@ function fmtUptime(sec) {
 async function loadMetrics() {
   try {
     const m = await api('/api/admin/metrics');
+    rawMetrics = m;
     const s = (id, v) => { const el = $(id); if (el) el.textContent = v; };
     s('met-content', fmtBytes(m.disk?.content));
     s('met-media', fmtBytes(m.disk?.media));
@@ -371,11 +416,24 @@ async function loadMetrics() {
     s('met-platform', m.platform || '—');
     s('met-node', m.nodeVersion || '—');
     s('met-proccount', `${m.videos?.processing || 0} active · ${m.videos?.failed || 0} failed`);
+    applyLayoutHook();
   } catch { /* ignore */ }
 }
 
 async function main() {
   await requireAdmin();
+
+  // Build the initial overview layout.
+  const sec = document.querySelector('[data-panel="overview"]');
+  if (sec) {
+    sec.innerHTML = LAYOUTS[currentLayout].build();
+    sec.dataset.layout = currentLayout;
+  }
+
+  // Insert the layout picker into the deck-head.
+  const head = document.querySelector('.deck-head');
+  if (head) head.appendChild(buildLayoutPicker());
+
   wireTabs(); wireMapModes(); wireGeo();
   tickClock(); setInterval(tickClock, 1000);
   setInterval(() => { loadOverview().catch(() => {}); }, 10000);

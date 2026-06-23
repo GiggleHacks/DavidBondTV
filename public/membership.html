@@ -57,6 +57,13 @@
     .mb-per { color: var(--text-dim); font-size: 16px; font-weight: 600; }
     .mb-price-sub { color: var(--text-dim); font-size: 12.5px; margin: 7px 0 0; }
     .mb-price-sub[hidden] { display: none; }
+    .coupon-apply { margin: 0 0 14px; }
+    .coupon-apply input {
+      width: 100%; box-sizing: border-box; min-height: 44px; border-radius: 999px;
+      border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+      padding: 10px 16px; text-align: center; font-weight: 700; letter-spacing: .04em;
+    }
+    .coupon-apply input:focus { outline: none; border-color: #f4a300; box-shadow: 0 0 0 3px rgba(244,163,0,.16); }
 
     /* Primary CTA uses the shared .acc-btn.gold-cta helper; this only sizes it up. */
     .mb-cta { width: 100%; padding: 16px; font-size: 17px; }
@@ -159,6 +166,10 @@
         <p class="mb-price-sub" id="price-sub" hidden></p>
       </div>
 
+      <div class="coupon-apply">
+        <input id="coupon-code" maxlength="40" placeholder="Coupon code" aria-label="Coupon code" />
+      </div>
+
       <button class="acc-btn gold-cta mb-cta" id="pay-card" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2v-9a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm3 8H9V6a3 3 0 016 0z"/></svg>
         Get instant access
@@ -210,7 +221,7 @@
 
   <script type="module" src="/js/membership.js"></script>
   <script type="module" src="/js/auth-widget.js"></script>
-  <script src="/js/age-gate.js"></script>
+
   <script src="/js/footer.js"></script>
 </body>
 </html>

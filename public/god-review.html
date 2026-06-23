@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>David Bond TV — Review drafts</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+  <script>document.documentElement.classList.add('admin-auth-pending');</script>
+</head>
+<body>
+  <div class="admin-wrap wide admin-app-shell">
+    <header class="admin-bar">
+      <a class="logo" href="/" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
+      <nav class="admin-nav">
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789">Dashboard</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-upload.html">Upload</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-videos.html" class="active">Videos</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-products.html">Products</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-pricing.html">Pricing</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-users.html">Users</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-community.html">Community</a>
+        <a class="back" href="/">← Site</a>
+      </nav>
+    </header>
+
+    <main id="app">
+      <!-- Empty state: nothing queued for review -->
+      <section class="card rv-empty hidden" id="rv-empty">
+        <div class="card-head"><h2>Nothing to review</h2></div>
+        <p class="muted">No draft videos were queued for review. Pick drafts on the Videos page and start a review session.</p>
+        <a class="btn" id="rv-empty-back" href="#">← Back to Videos</a>
+      </section>
+
+      <!-- Active review stage -->
+      <section class="rv-stage hidden" id="rv-stage">
+        <div class="rv-top">
+          <div class="rv-counter" id="rv-counter">0 / 0</div>
+          <div class="rv-tally">
+            <span class="rv-tally-up" id="rv-tally-up">👍 0</span>
+            <span class="rv-tally-down" id="rv-tally-down">👎 0</span>
+          </div>
+          <button class="btn sm ghost" type="button" id="rv-finish">Finish →</button>
+        </div>
+
+        <div class="rv-video-wrap" id="rv-video-wrap">
+          <button class="rv-nav rv-prev" id="rv-prev" type="button" aria-label="Previous video">‹</button>
+          <video id="rv-video" controls autoplay playsinline preload="auto"></video>
+          <button class="rv-nav rv-next" id="rv-next" type="button" aria-label="Next video">›</button>
+        </div>
+
+        <div class="rv-meta">
+          <h2 class="rv-title" id="rv-title">—</h2>
+          <div class="rv-sub muted" id="rv-sub"></div>
+        </div>
+
+        <div class="rv-actions">
+          <button class="rv-btn rv-down" type="button" id="rv-down" title="Delete (←)">
+            <span class="rv-ico">👎</span><span class="rv-lbl">Delete</span>
+          </button>
+          <button class="btn sm ghost rv-undo" type="button" id="rv-undo" title="Undo last (Backspace)">↶ Undo</button>
+          <button class="rv-btn rv-up" type="button" id="rv-up" title="Approve (→)">
+            <span class="rv-ico">👍</span><span class="rv-lbl">Approve</span>
+          </button>
+        </div>
+        <p class="rv-hint muted">→ / F approve · ← / D delete · Space play-pause · Backspace undo</p>
+      </section>
+
+      <!-- End-of-session summary -->
+      <section class="card rv-summary hidden" id="rv-summary">
+        <div class="card-head"><h2>Review summary</h2></div>
+        <div class="rv-sum-grid">
+          <div class="rv-sum-stat rv-sum-up"><b id="rv-sum-up">0</b><span>to approve</span></div>
+          <div class="rv-sum-stat rv-sum-down"><b id="rv-sum-down">0</b><span>to delete</span></div>
+          <div class="rv-sum-stat"><b id="rv-sum-skip">0</b><span>skipped</span></div>
+        </div>
+        <p class="rv-sum-warn" id="rv-sum-warn"></p>
+        <div class="rv-sum-actions">
+          <button class="btn ghost" type="button" id="rv-sum-back">← Keep reviewing</button>
+          <button class="btn" type="button" id="rv-sum-confirm">Confirm — apply decisions</button>
+        </div>
+        <div class="rv-sum-msg muted" id="rv-sum-msg"></div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="/js/admin-review.js"></script>
+</body>
+</html>

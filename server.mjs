@@ -39,6 +39,7 @@ import {
 import { sendMembershipGrantedEmail, sendProductGrantedEmail } from './lib/mailer.js';
 import { hasFfmpeg } from './lib/media.mjs';
 import * as categories from './lib/categories.js';
+import * as coupons from './lib/coupons.js';
 import * as uploads from './lib/upload-sessions.mjs';
 import * as products from './lib/products.js';
 import * as pricing from './lib/pricing.js';
@@ -186,6 +187,7 @@ const stripePayments = createStripePayments({
   priceYearly: process.env.STRIPE_PRICE_YEARLY,
   products,
   pricing,
+  coupons,
   telegramNotifier,
 });
 
@@ -1580,10 +1582,60 @@ async function handleApi(req, res, ctx) {
         if (body.action === 'add') result = categories.add(body.name, body.flag);
         else if (body.action === 'rename') result = categories.rename(body.slug, body.name);
         else if (body.action === 'setflag') result = categories.setFlag(body.slug, body.flag);
+        else if (body.action === 'seticon') result = categories.setIcon(body.slug, body.icon);
         else if (body.action === 'remove') result = categories.remove(body.slug);
         else result = { ok: false, error: 'Unknown action.' };
         sendJson(res, result.ok ? 200 : 400, { ...result, categories: categories.list() });
       } catch { sendJson(res, 500, { error: 'Server error' }); }
+      return true;
+    }
+  }
+
+  // Admin coupon management: /api/admin/coupons[/<id>[/redemptions]]
+  if (url.pathname === '/api/admin/coupons' || url.pathname.startsWith('/api/admin/coupons/')) {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const rest = url.pathname.slice('/api/admin/coupons'.length).replace(/^\//, '');
+    const [couponId, action] = rest.split('/');
+
+    if (req.method === 'GET' && !couponId) {
+      sendJson(res, 200, { coupons: coupons.listWithStats() });
+      return true;
+    }
+    if (req.method === 'POST' && !couponId) {
+      try {
+        const raw = await readBody(req, 8192);
+        let body; try { body = JSON.parse(raw); } catch { body = null; }
+        if (!body) { sendJson(res, 400, { error: 'Invalid request' }); return true; }
+        const result = coupons.create(body);
+        sendJson(res, result.ok ? 200 : 400, { ...result, coupons: coupons.listWithStats() });
+      } catch { sendJson(res, 500, { error: 'Server error' }); }
+      return true;
+    }
+
+    const existing = couponId ? coupons.getById(couponId) : null;
+    if (!existing) { sendJson(res, 404, { error: 'Coupon not found' }); return true; }
+
+    if (req.method === 'GET' && action === 'redemptions') {
+      sendJson(res, 200, {
+        coupon: existing,
+        stats: coupons.usageStats(couponId),
+        redemptions: coupons.listRedemptions(couponId),
+      });
+      return true;
+    }
+    if ((req.method === 'PATCH' || req.method === 'POST') && !action) {
+      try {
+        const raw = await readBody(req, 8192);
+        let body; try { body = JSON.parse(raw); } catch { body = null; }
+        if (!body) { sendJson(res, 400, { error: 'Invalid request' }); return true; }
+        const result = coupons.update(couponId, body);
+        sendJson(res, result.ok ? 200 : 400, { ...result, coupons: coupons.listWithStats() });
+      } catch { sendJson(res, 500, { error: 'Server error' }); }
+      return true;
+    }
+    if (req.method === 'DELETE' && !action) {
+      const result = coupons.remove(couponId);
+      sendJson(res, result.ok ? 200 : 404, { ...result, coupons: coupons.listWithStats() });
       return true;
     }
   }

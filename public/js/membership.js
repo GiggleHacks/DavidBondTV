@@ -73,7 +73,8 @@ function showPlans() {
 async function startCheckout(interval, btn) {
   setMsg('');
   btn.disabled = true;
-  const r = await postJSON('/api/pay/stripe/checkout', { interval, next });
+  const couponCode = $('coupon-code') ? $('coupon-code').value.trim() : '';
+  const r = await postJSON('/api/pay/stripe/checkout', { interval, next, couponCode });
   if (r.ok && r.data.url) { location.href = r.data.url; return; }
   if (r.status === 401) {
     // Not signed in → sign up/in first, then return to this offer (with next intact).

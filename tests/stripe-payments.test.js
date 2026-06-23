@@ -120,6 +120,20 @@ function makeSP(store, paymentsStore) {
   });
 }
 
+function fakeCoupons(coupon = null) {
+  const redemptions = [];
+  return {
+    validate: (code) => (coupon && String(code || '').trim().toUpperCase() === coupon.code ? { ok: true, coupon } : { ok: false, error: 'That code isn’t valid.' }),
+    stripeCouponFresh: (c) => !!(c && c.stripeCouponId),
+    setStripeCoupon: (id, stripeCouponId) => {
+      if (coupon && coupon.id === id) coupon.stripeCouponId = stripeCouponId;
+      return { ok: true, coupon };
+    },
+    recordRedemption: (rec) => { redemptions.push(rec); return { ok: true }; },
+    _redemptions: redemptions,
+  };
+}
+
 // Genuinely-future (relative to the real clock) because applySubscription
 // derives the hasPurchased mirror from the live Date.now().
 const future = Math.floor((Date.now() + 30 * 86400 * 1000) / 1000); // unix seconds
@@ -242,6 +256,37 @@ describe('handleEvent → product entitlement (one-time course purchase)', () =>
     });
     expect(store._users.u1.products || []).toHaveLength(0);
   });
+
+  it('records coupon redemption metadata from a completed product checkout', async () => {
+    const store = fakeStore({ u1: { id: 'u1' } });
+    const couponApi = fakeCoupons();
+    const sp = createStripePayments({
+      store, paymentsStore: fakePayments(), currentUser: () => null,
+      baseUrl: 'http://x', secretKey: 'sk_test', webhookSecret: SECRET,
+      priceMonthly: 'price_m', priceYearly: 'price_y', coupons: couponApi,
+    });
+
+    await sp._test.handleEvent({
+      id: 'evt_coupon_product',
+      type: 'checkout.session.completed',
+      data: { object: paymentSession({
+        metadata: { uid: 'u1', productId: 'p1', couponId: 'cpn_1', couponCode: 'SAVE20' },
+        total_details: { amount_discount: 1200 },
+      }) },
+    });
+
+    expect(couponApi._redemptions).toHaveLength(1);
+    expect(couponApi._redemptions[0]).toMatchObject({
+      couponId: 'cpn_1',
+      code: 'SAVE20',
+      userId: 'u1',
+      sessionId: 'cs_1',
+      kind: 'product',
+      productId: 'p1',
+      amountDiscount: 1200,
+      currency: 'usd',
+    });
+  });
 });
 
 describe('checkout → dynamic subscription pricing', () => {
@@ -265,6 +310,31 @@ describe('checkout → dynamic subscription pricing', () => {
       },
     });
     const req = Readable.from([Buffer.from(JSON.stringify({ interval }))]);
+    const res = fakeRes();
+    await sp._test.checkout(req, res);
+    return { status: res.statusCode, body: captured };
+  }
+
+  async function checkoutBodyWithCoupon(config) {
+    let captured = null;
+    const coupon = {
+      id: 'cpn_local',
+      code: 'SAVE20',
+      percentOff: 20,
+      duration: 'once',
+      stripeCouponId: 'stripe_coupon_20',
+    };
+    const user = { id: 'u1', profileComplete: true, stripeCustomerId: 'cus_1', email: 'a@b.com' };
+    const sp = createStripePayments({
+      store: fakeStore({ u1: user }), paymentsStore: fakePayments(),
+      currentUser: () => user, baseUrl: 'http://x', secretKey: 'sk_test', webhookSecret: SECRET,
+      pricing: { getConfig: () => config }, coupons: fakeCoupons(coupon),
+      fetchImpl: async (url, opts) => {
+        if (url.endsWith('/checkout/sessions')) { captured = opts.body; return { ok: true, json: async () => ({ url: 'https://stripe' }) }; }
+        return { ok: true, json: async () => ({ id: 'cus_1' }) };
+      },
+    });
+    const req = Readable.from([Buffer.from(JSON.stringify({ interval: 'month', couponCode: 'save20' }))]);
     const res = fakeRes();
     await sp._test.checkout(req, res);
     return { status: res.statusCode, body: captured };
@@ -296,6 +366,15 @@ describe('checkout → dynamic subscription pricing', () => {
     expect(body).toContain('line_items%5B0%5D%5Bprice_data%5D%5Brecurring%5D%5Binterval%5D=year');
     expect(body).not.toContain('line_items%5B1%5D');
     expect(body).not.toContain('trial_period_days');
+  });
+
+  it('attaches a validated first-party coupon to the Stripe checkout session', async () => {
+    const { status, body } = await checkoutBodyWithCoupon(withIntro);
+
+    expect(status).toBe(200);
+    expect(body).toContain('discounts%5B0%5D%5Bcoupon%5D=stripe_coupon_20');
+    expect(body).toContain('subscription_data%5Bmetadata%5D%5BcouponId%5D=cpn_local');
+    expect(body).toContain('subscription_data%5Bmetadata%5D%5BcouponCode%5D=SAVE20');
   });
 });
 

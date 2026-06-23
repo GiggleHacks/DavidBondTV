@@ -1,13 +1,32 @@
 // Manage Videos page (/god-videos.html). Cookie-authenticated. Paginates the
 // library at 50/page, supports checkbox + Select-All bulk actions
-// (delete / publish / unpublish / premium / free) plus per-row edit, thumbnail
-// replace, and delete.
+// (delete / publish / unpublish / premium / free / set thumbnail blur level)
+// plus per-row edit, thumbnail replace, and delete.
 import { requireAdmin } from './god-auth.js';
 import { ADMIN_PATHS } from './admin-paths.js';
 import { COUNTRIES } from './countries.js';
+import { attachEmojiPicker } from './emoji-picker.js';
 
 const $ = (id) => document.getElementById(id);
 const PAGE = 50;
+const REVIEW_QUEUE_KEY = 'dbtv-review-queue'; // handoff to god-review.html
+
+// Approval defaults to 'approved' for legacy entries written before review mode,
+// so existing videos are never trapped in the draft-review queue.
+const approvalOf = (v) => (v.approval || 'approved');
+
+// Derive the single owner-facing state of a video. Lifecycle (processing/failed)
+// takes precedence, then live, then the draft approval split.
+function stateOf(v) {
+  if (v.status === 'processing') return 'processing';
+  if (v.status === 'failed') return 'failed';
+  if (v.published === true) return 'published';
+  return approvalOf(v) === 'approved' ? 'draft-approved' : 'draft-unapproved';
+}
+const isUnapprovedDraft = (v) => v.published === false && approvalOf(v) === 'unapproved';
+const isApprovedDraft = (v) => v.published === false && approvalOf(v) === 'approved';
+
+const chunk = (a, n) => { const o = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o; };
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // <option> list for the category flag picker: "no flag" + every country, value
@@ -28,6 +47,7 @@ async function load() {
   try {
     cats = (await (await fetch('/api/categories')).json()).categories || [];
   } catch { cats = []; }
+  renderCatFilter();
   applyFilter();
 }
 
@@ -35,9 +55,32 @@ const catName = (slug) => (cats.find((c) => c.slug === slug) || {}).name || '';
 
 function applyFilter() {
   const q = $('search').value.trim().toLowerCase();
-  filtered = q ? all.filter((v) => (v.title || '').toLowerCase().includes(q) || v.id.toLowerCase().includes(q)) : all.slice();
+  const cat = $('cat-filter') ? $('cat-filter').value : '';
+  const state = $('state-filter') ? $('state-filter').value : '';
+  filtered = all.filter((v) => {
+    if (state && stateOf(v) !== state) return false;
+    const vcat = v.category || '';
+    if (cat === '__none__') { if (vcat) return false; }
+    else if (cat && vcat !== cat) return false;
+    if (q && !(v.title || '').toLowerCase().includes(q) && !v.id.toLowerCase().includes(q)) return false;
+    return true;
+  });
   page = 0;
   render();
+}
+
+// (Re)build the category filter dropdown from the loaded categories, preserving
+// the current selection. "All categories" clears the filter.
+function renderCatFilter() {
+  const sel = $('cat-filter');
+  if (!sel) return;
+  const cur = sel.value;
+  const opts = ['<option value="">All categories</option>']
+    .concat(cats.map((c) => `<option value="${esc(c.slug)}">${esc(c.name)}</option>`));
+  // An "Uncategorized" bucket so videos with no category are reachable for bulk ops.
+  if (all.some((v) => !v.category)) opts.push('<option value="__none__">— Uncategorized —</option>');
+  sel.innerHTML = opts.join('');
+  sel.value = [...sel.options].some((o) => o.value === cur) ? cur : '';
 }
 
 function render() {
@@ -48,6 +91,7 @@ function render() {
   if (!filtered.length) lib.innerHTML = '<p class="muted">No videos.</p>';
   renderPager();
   updateSel();
+  updateReviewCounts();
 }
 
 function renderPager() {
@@ -64,12 +108,79 @@ function renderPager() {
 
 function badges(v) {
   const out = [];
-  if (v.status === 'processing') out.push('<span class="vb vb-proc">Processing</span>');
-  if (v.status === 'failed') out.push('<span class="vb vb-fail">Failed</span>');
-  if (v.published === false) out.push('<span class="vb vb-un">Unpublished</span>');
+  // Exactly one state badge per row (lifecycle → live → draft approval split).
+  const st = stateOf(v);
+  if (st === 'processing') out.push('<span class="vb vb-proc">Processing</span>');
+  else if (st === 'failed') out.push('<span class="vb vb-fail">Failed</span>');
+  else if (st === 'published') out.push('<span class="vb vb-live">Live</span>');
+  else if (st === 'draft-approved') out.push('<span class="vb vb-appr">Draft · Approved</span>');
+  else out.push('<span class="vb vb-draft">Draft · Unapproved</span>');
   if (v.visibility === 'premium') out.push('<span class="vb vb-prem">Premium</span>');
   if (v.category && catName(v.category)) out.push(`<span class="vb vb-cat">${esc(catName(v.category))}</span>`);
   return out.join(' ');
+}
+
+// Keep the review/publish toolbar counts in sync with the full library.
+function updateReviewCounts() {
+  const un = all.filter(isUnapprovedDraft).length;
+  const ap = all.filter(isApprovedDraft).length;
+  if ($('unapproved-count')) $('unapproved-count').textContent = un ? `(${un})` : '';
+  if ($('approved-count')) $('approved-count').textContent = ap ? `(${ap})` : '';
+}
+
+// Inline "Quick edit" for a video's title — no full editor needed. Swaps the
+// title text for an input + Save/Cancel; saves via /api/admin/edit (title only)
+// and refreshes the list. The full editor stays available for everything else.
+function startQuickEdit(row, v) {
+  const lt = row.querySelector('.lt');
+  if (lt.querySelector('.qe')) return; // already editing this row
+  const titleEl = lt.querySelector('b');
+  const qe = document.createElement('div');
+  qe.className = 'qe';
+  qe.innerHTML = `
+    <input class="qe-input" type="text" maxlength="200" aria-label="Video title" />
+    <button class="btn sm qe-save" type="button">Save</button>
+    <button class="btn sm ghost qe-cancel" type="button">Cancel</button>
+    <span class="qe-msg muted"></span>`;
+  const input = qe.querySelector('.qe-input');
+  const msg = qe.querySelector('.qe-msg');
+  input.value = v.title || '';
+  titleEl.style.display = 'none';
+  lt.insertBefore(qe, titleEl);
+  input.focus();
+  input.select();
+
+  const teardown = () => { qe.remove(); titleEl.style.display = ''; };
+  const save = async () => {
+    const t = input.value.trim();
+    if (!t) { msg.textContent = 'Title required.'; return; }
+    if (t === (v.title || '')) { teardown(); return; }
+    qe.querySelector('.qe-save').disabled = true;
+    msg.textContent = 'Saving…';
+    let data = {};
+    try {
+      const res = await fetch('/api/admin/edit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: v.id, title: t }),
+      });
+      if (res.status === 401) { location.reload(); return; }
+      data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Save failed.');
+    } catch (e) {
+      qe.querySelector('.qe-save').disabled = false;
+      msg.textContent = e.message || 'Save failed.';
+      return;
+    }
+    v.title = t; // same object reference is shared by `all` and `filtered`
+    render(); // refresh the list (in place, current page) with the new title
+  };
+
+  qe.querySelector('.qe-save').addEventListener('click', save);
+  qe.querySelector('.qe-cancel').addEventListener('click', teardown);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    else if (e.key === 'Escape') { e.preventDefault(); teardown(); }
+  });
 }
 
 function libRow(v) {
@@ -80,11 +191,14 @@ function libRow(v) {
     <img alt="" ${v.thumb ? `src="${v.thumb}?_=${Date.now()}"` : ''} />
     <div class="lt"><b></b><span class="meta"></span></div>
     <div class="lib-actions">
+      <button class="btn-quick" type="button">Quick edit</button>
       <a class="btn-edit" href="${ADMIN_PATHS.edit}?v=${encodeURIComponent(v.id)}">Edit</a>
       <button class="btn-del" type="button">Delete</button>
     </div>`;
   row.querySelector('b').textContent = v.title || v.id;
   row.querySelector('.meta').innerHTML = `${esc(v.durLabel || '')} · ${esc(v.uploaded || '')} ${badges(v)}`.trim();
+
+  row.querySelector('.btn-quick').addEventListener('click', () => startQuickEdit(row, v));
 
   const check = row.querySelector('.row-check');
   check.addEventListener('change', () => { if (check.checked) selected.add(v.id); else selected.delete(v.id); updateSel(); });
@@ -107,15 +221,41 @@ function updateSel() {
   sa.checked = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
 }
 
+// Apply a bulk action to ids in ≤500-id batches (the /api/admin/bulk route caps
+// the body at 64 KB, ~1600 ids — stay well under so thousand-item ops succeed).
+async function bulkChunked(ids, action) {
+  for (const batch of chunk(ids, 500)) {
+    // eslint-disable-next-line no-await-in-loop
+    const res = await fetch('/api/admin/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: batch, action }) });
+    if (res.status === 401) { location.reload(); throw new Error('Session expired.'); }
+    // eslint-disable-next-line no-await-in-loop
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Bulk action failed.');
+  }
+}
+
 async function runBulk(action) {
   const ids = [...selected];
   if (!ids.length) { alert('Select at least one video.'); return; }
-  if (action === 'delete' && !confirm(`Delete ${ids.length} video(s)? This cannot be undone.`)) return;
-  const res = await fetch('/api/admin/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, action }) });
-  if (res.status === 401) { location.reload(); return; }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.ok) { alert(data.error || 'Bulk action failed.'); return; }
+  if (action === 'delete' && !confirm(`Delete ${ids.length} video(s)? This permanently removes them and their files.`)) return;
+  if (action === 'publish' && !confirm(`Publish ${ids.length} video(s)? They go live immediately.`)) return;
+  try { await bulkChunked(ids, action); } catch (e) { alert(e.message || 'Bulk action failed.'); return; }
   selected.clear();
+  await load();
+}
+
+// Hand off an ordered id list to Review Mode (sessionStorage avoids huge URLs).
+function startReview(ids) {
+  if (!ids.length) { alert('No videos to review.'); return; }
+  try { sessionStorage.setItem(REVIEW_QUEUE_KEY, JSON.stringify(ids)); } catch { /* ignore */ }
+  location.href = ADMIN_PATHS.review;
+}
+
+async function publishApproved() {
+  const ids = all.filter(isApprovedDraft).map((v) => v.id);
+  if (!ids.length) { alert('No approved drafts to publish.'); return; }
+  if (!confirm(`Publish ${ids.length} approved draft${ids.length === 1 ? '' : 's'}? They go live immediately.`)) return;
+  try { await bulkChunked(ids, 'publish'); } catch (e) { alert(e.message || 'Publish failed.'); return; }
   await load();
 }
 
@@ -126,6 +266,7 @@ async function catAction(body) {
   return res.json().catch(() => ({}));
 }
 function renderCats() {
+  renderCatFilter(); // keep the Manage-videos category filter in sync with edits
   const wrap = $('cat-list');
   if (!wrap) return;
   wrap.replaceChildren();
@@ -138,10 +279,24 @@ function renderCats() {
       : '<span class="cat-flag-none" aria-hidden="true"></span>';
     row.innerHTML = `${flagThumb}
       <input class="cat-name" value="${esc(c.name)}" maxlength="40" />
+      <button class="btn sm ghost cat-emoji emoji-btn" type="button" title="Add emoji to name" aria-label="Add emoji to name">😊</button>
       <span class="muted cat-slug">${esc(c.slug)}</span>
+      <span class="cat-icon-group">
+        <input class="cat-icon-input" value="${esc(c.icon || '')}" maxlength="8" placeholder="—" title="Sidebar icon emoji" aria-label="Sidebar icon" />
+        <button class="btn sm ghost cat-icon-emoji emoji-btn" type="button" title="Pick sidebar icon" aria-label="Pick sidebar icon">🎨</button>
+        <button class="btn sm ghost cat-icon-save" type="button">Set icon</button>
+      </span>
       <select class="cat-flag" aria-label="Category flag">${FLAG_OPTIONS}</select>
       <button class="btn sm ghost cat-save">Rename</button>
       <button class="btn sm danger cat-del">Remove</button>`;
+    attachEmojiPicker(row.querySelector('.cat-name'), row.querySelector('.cat-emoji'));
+    attachEmojiPicker(row.querySelector('.cat-icon-input'), row.querySelector('.cat-icon-emoji'));
+    row.querySelector('.cat-icon-save').addEventListener('click', async () => {
+      const icon = row.querySelector('.cat-icon-input').value.trim();
+      const d = await catAction({ action: 'seticon', slug: c.slug, icon });
+      if (d && d.ok) { cats = d.categories; render(); renderCats(); }
+      else if (d) alert(d.error || 'Could not set icon.');
+    });
     row.querySelector('.cat-flag').value = c.flag || '';
     row.querySelector('.cat-flag').addEventListener('change', async (e) => {
       const d = await catAction({ action: 'setflag', slug: c.slug, flag: e.target.value });
@@ -175,16 +330,26 @@ function wireCats() {
   };
   btn.addEventListener('click', submit);
   $('cat-new').addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  const emo = $('cat-new-emoji');
+  if (emo) attachEmojiPicker($('cat-new'), emo); // pick emoji into the new-category name
 }
 
 function wire() {
   $('search').addEventListener('input', applyFilter);
+  $('cat-filter')?.addEventListener('change', applyFilter);
+  $('state-filter')?.addEventListener('change', applyFilter);
+  $('review-all')?.addEventListener('click', () => startReview(all.filter(isUnapprovedDraft).map((v) => v.id)));
+  $('review-selected')?.addEventListener('click', () => startReview([...selected]));
+  $('publish-approved')?.addEventListener('click', publishApproved);
   $('select-all').addEventListener('change', (e) => {
     if (e.target.checked) filtered.forEach((v) => selected.add(v.id));
     else filtered.forEach((v) => selected.delete(v.id));
     render();
   });
   document.querySelectorAll('[data-bulk]').forEach((b) => b.addEventListener('click', () => runBulk(b.dataset.bulk)));
+  // Bulk thumbnail blur: the level dropdown + Apply button map to a `blur-<level>`
+  // action handled by the same /api/admin/bulk endpoint.
+  $('bulk-blur-apply')?.addEventListener('click', () => runBulk(`blur-${$('bulk-blur-level').value}`));
 }
 
 async function main() {

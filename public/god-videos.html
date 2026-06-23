@@ -20,6 +20,8 @@
         <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-videos.html" class="active">Videos</a>
         <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-products.html">Products</a>
         <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-pricing.html">Pricing</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-categories.html">Categories</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-coupons.html">Coupons</a>
         <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-users.html">Users</a>
         <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-community.html">Community</a>
         <a class="back" href="/">← Site</a>
@@ -46,30 +48,50 @@
         <div id="publish-status" class="muted"></div>
       </section>
 
-      <section class="card" id="cats-card">
-        <div class="card-head"><h2>Categories</h2></div>
-        <div class="cat-add">
-          <input id="cat-new" maxlength="40" placeholder="New category name" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:13px" />
-          <button class="btn sm" id="cat-add-btn">Add category</button>
-          <span id="cat-msg" class="muted"></span>
-        </div>
-        <div id="cat-list" class="cat-list"></div>
-      </section>
-
       <section class="card">
         <div class="card-head">
           <h2>Manage videos <span id="vcount" class="muted"></span></h2>
-          <input id="search" placeholder="Search title" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:13px" />
+          <div class="mv-filters">
+            <select id="state-filter" aria-label="Filter by state" title="Filter by state">
+              <option value="">All states</option>
+              <option value="draft-unapproved">Draft · Unapproved</option>
+              <option value="draft-approved">Draft · Approved</option>
+              <option value="published">Published (live)</option>
+              <option value="processing">Processing</option>
+              <option value="failed">Failed</option>
+            </select>
+            <select id="cat-filter" aria-label="Filter by category" title="Filter by category"></select>
+            <input id="search" placeholder="Search title" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:13px" />
+            <a class="btn sm ghost" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-categories.html">Manage categories</a>
+          </div>
+        </div>
+
+        <div class="reviewbar">
+          <button class="btn sm" id="review-all" type="button">▶ Review all unapproved <span id="unapproved-count" class="muted"></span></button>
+          <button class="btn sm ghost" id="review-selected" type="button">▶ Review selected</button>
+          <span style="flex:1"></span>
+          <button class="btn sm" id="publish-approved" type="button">⬆ Publish approved <span id="approved-count" class="muted"></span></button>
         </div>
 
         <div class="bulkbar">
           <label class="selall"><input type="checkbox" id="select-all" /> Select all</label>
           <span id="selcount" class="muted">0 selected</span>
           <span style="flex:1"></span>
+          <button class="btn sm ghost" data-bulk="approve">Approve</button>
+          <button class="btn sm ghost" data-bulk="unapprove">Unapprove</button>
           <button class="btn sm ghost" data-bulk="publish">Publish</button>
           <button class="btn sm ghost" data-bulk="unpublish">Unpublish</button>
           <button class="btn sm ghost" data-bulk="premium">Make Premium</button>
           <button class="btn sm ghost" data-bulk="free">Make Free</button>
+          <span class="bulk-blur">
+            <select id="bulk-blur-level" aria-label="Thumbnail blur level">
+              <option value="off">No blur</option>
+              <option value="medium">Medium blur</option>
+              <option value="strong">Strong blur</option>
+              <option value="strongest">Strongest blur</option>
+            </select>
+            <button class="btn sm ghost" id="bulk-blur-apply">Apply blur</button>
+          </span>
           <button class="btn sm danger" data-bulk="delete">Delete</button>
         </div>
 

@@ -103,7 +103,7 @@ function card(v) {
   const lockedByCourse = courseProds.length > 0 && !canWatchVideo(state.me, v, courseProds);
   const locked = !canWatchVideo(state.me, v, courseProds);
   // Per-video thumbnail blur level (admin-configured). Default medium for premium.
-  const blur = ['strong', 'medium', 'off'].includes(v.blur) ? v.blur
+  const blur = ['strongest', 'strong', 'medium', 'off'].includes(v.blur) ? v.blur
     : (v.visibility === 'premium' ? 'medium' : 'off');
   const a = document.createElement('a');
   a.className = `vcard${status !== 'ready' ? ` is-${status}` : ''}${locked ? ` is-locked blur-${blur}` : ''}`;

@@ -8,6 +8,9 @@ export const ADMIN_PATHS = {
   community: `${ADMIN_ROUTE_PREFIX}-community.html`,
   products: `${ADMIN_ROUTE_PREFIX}-products.html`,
   pricing: `${ADMIN_ROUTE_PREFIX}-pricing.html`,
+  coupons: `${ADMIN_ROUTE_PREFIX}-coupons.html`,
+  categories: `${ADMIN_ROUTE_PREFIX}-categories.html`,
   analytics: `${ADMIN_ROUTE_PREFIX}-analytics.html`,
   edit: `${ADMIN_ROUTE_PREFIX}-edit.html`,
+  review: `${ADMIN_ROUTE_PREFIX}-review.html`,
 };

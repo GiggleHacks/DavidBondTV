@@ -54,4 +54,12 @@ describe('category flags', () => {
     expect(r.category.flag).toBe('co');
     expect(categories.list().find((c) => c.slug === 'medellin').flag).toBe('co');
   });
+
+  it('sidebar icon survives rename and can be cleared', () => {
+    categories.add('Reviews');
+    expect(categories.setIcon('reviews', '🎬').category.icon).toBe('🎬');
+    expect(categories.rename('reviews', 'Video Reviews').category.icon).toBe('🎬');
+    const cleared = categories.setIcon('reviews', '');
+    expect('icon' in cleared.category).toBe(false);
+  });
 });

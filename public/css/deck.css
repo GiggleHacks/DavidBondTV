@@ -151,8 +151,90 @@ html:has(.deck) { background: #0e0f14; }
 
 .dico { font-size: 14px; }
 
+/* ---------- layout picker ---------- */
+.layout-picker { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+.layout-opt { display: flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 7px;
+  border: 1px solid var(--d-edge); background: var(--d-panel2); color: var(--d-dim);
+  font-size: 12px; font-family: var(--mono); cursor: pointer; transition: color .15s, border-color .15s, background .15s; }
+.layout-opt:hover { color: var(--d-text); border-color: var(--d-edge2); background: var(--d-panel); }
+.layout-opt.on { color: var(--d-accent); border-color: var(--d-accent-soft); background: rgba(99,102,241,.08); }
+.layout-icon { font-size: 14px; }
+.layout-name { letter-spacing: .5px; }
+
+/* ---------- Mission Control layout ---------- */
+.mc-kpis .mc-kpi-card { text-align: center; padding: 18px 12px 12px; }
+.mc-ring-wrap { position: relative; width: 80px; height: 80px; margin: 0 auto 8px; }
+.mc-ring { width: 100%; height: 100%; }
+.mc-ring-val { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: var(--pixel); font-size: 22px; color: var(--d-text); }
+.mc-kpi-label { font-size: 11px; color: var(--d-dim); letter-spacing: 1px; text-transform: uppercase; }
+.mc-gauges-grid { grid-template-columns: repeat(3, 1fr); }
+.mc-gauge-panel { text-align: center; }
+.mc-gauge-row { display: flex; justify-content: center; padding: 10px 0; }
+.mc-gauge-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center;
+  font-size: 12px; color: var(--d-dim); margin-top: 6px; }
+.mc-gauge-meta b { color: var(--d-text); font-weight: 500; }
+
+/* Gauge ring */
+.gauge { position: relative; display: inline-block; }
+.gauge svg { width: 100%; height: 100%; }
+.gauge-val { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: var(--pixel); font-size: 24px; color: var(--d-text); pointer-events: none; }
+.gauge-label { position: absolute; bottom: 4px; left: 0; right: 0; text-align: center;
+  font-size: 9px; color: var(--d-dim); letter-spacing: 1px; text-transform: uppercase; }
+
+/* MC status grid */
+.mc-status-grid { display: flex; flex-direction: column; gap: 8px; }
+.mc-status-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.mc-status-item .mc-sval { margin-left: auto; color: var(--d-dim); font-size: 11px; }
+.mc-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.mc-dot-green { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+.mc-dot-blue { background: var(--d-blue); box-shadow: 0 0 6px var(--d-blue); }
+.mc-dot-amber { background: var(--d-amber); box-shadow: 0 0 6px var(--d-amber); }
+
+/* ---------- Analytics Grid layout ---------- */
+.ag-grid { grid-template-columns: repeat(6, 1fr); }
+.ag-card { text-align: center; padding: 14px 10px 12px; }
+.ag-icon { font-size: 18px; margin-bottom: 4px; }
+.ag-num { font-family: var(--pixel); font-size: 28px; color: var(--d-text); line-height: 1; }
+.ag-label { font-size: 10px; color: var(--d-dim); letter-spacing: 1px; text-transform: uppercase; margin-top: 4px; }
+.ag-meters { display: flex; flex-direction: column; gap: 10px; margin: 8px 0; }
+.ag-meter { display: grid; grid-template-columns: 80px 1fr 80px; align-items: center; gap: 10px; }
+.ag-m-label { font-size: 11px; color: var(--d-dim); letter-spacing: .5px; }
+.ag-m-track { height: 10px; background: var(--d-panel2); border: 1px solid var(--d-edge); border-radius: 4px; overflow: hidden; }
+.ag-m-fill { height: 100%; border-radius: 3px; transition: width .8s ease; }
+.ag-m-val { font-size: 11px; color: var(--d-text); text-align: right; }
+.ag-sys-row { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 11px; color: var(--d-dim);
+  border-top: 1px solid var(--d-edge); padding-top: 8px; margin-top: 6px; }
+.ag-sys-row b { color: var(--d-text); font-weight: 500; }
+.ag-feed { max-height: 200px; }
+
+/* ---------- Executive Brief layout ---------- */
+.eb-hero { text-align: center; padding: 28px 20px 18px; border-top: 3px solid var(--d-accent); }
+.eb-hero-label { font-size: 12px; color: var(--d-dim); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+.eb-hero-num { font-family: var(--pixel); font-size: 64px; line-height: .85; color: var(--d-accent); }
+.eb-hero-trend { margin: 8px 0 14px; }
+.eb-hero-chart { max-height: 140px; }
+.eb-stats { grid-template-columns: repeat(3, 1fr); }
+.eb-stat { text-align: center; padding: 16px 12px; }
+.eb-stat-label { font-size: 11px; color: var(--d-dim); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 4px; }
+.eb-stat-num { font-family: var(--pixel); font-size: 36px; color: var(--d-text); line-height: 1; }
+.eb-health { display: flex; flex-direction: column; gap: 0; }
+.eb-h-row { display: flex; align-items: center; gap: 10px; padding: 8px 0;
+  border-bottom: 1px solid var(--d-edge); font-size: 13px; }
+.eb-h-row:last-child { border-bottom: none; }
+.eb-h-item { display: flex; align-items: center; gap: 8px; min-width: 100px; color: var(--d-text); }
+.eb-h-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.eb-h-detail { color: var(--d-dim); font-size: 12px; }
+.eb-h-detail b { color: var(--d-text); font-weight: 500; }
+
 @media (max-width: 900px) {
   .deck .g-kpi { grid-template-columns: repeat(2, 1fr); }
   .deck .g-2, .deck .g-3 { grid-template-columns: 1fr; }
   .deck .span2 { grid-column: auto; }
+  .mc-gauges-grid { grid-template-columns: 1fr; }
+  .ag-grid { grid-template-columns: repeat(3, 1fr); }
+  .eb-stats { grid-template-columns: 1fr; }
+  .eb-hero-num { font-size: 48px; }
+  .layout-picker { justify-content: center; width: 100%; }
 }

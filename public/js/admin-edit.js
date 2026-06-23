@@ -58,7 +58,7 @@ async function main() {
   const vis = entry.visibility === 'premium' ? 'premium' : 'free';
   const visEl = document.querySelector(`input[name="ev-vis"][value="${vis}"]`);
   if (visEl) visEl.checked = true;
-  $('ev-blur').value = ['strong', 'medium', 'off'].includes(entry.blur) ? entry.blur
+  $('ev-blur').value = ['strongest', 'strong', 'medium', 'off'].includes(entry.blur) ? entry.blur
     : (vis === 'premium' ? 'medium' : 'off');
   const currentVis = () => (document.querySelector('input[name="ev-vis"]:checked') || {}).value || 'free';
   const syncBlur = () => $('ev-blur-field').classList.toggle('hidden', currentVis() !== 'premium');

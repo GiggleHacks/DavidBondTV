@@ -11,42 +11,62 @@
   <link rel="stylesheet" href="/css/account.css" />
 </head>
 <body>
-  <div class="acc-page wide">
-    <div class="acc-head">
-      <a class="logo" href="/" style="text-decoration:none">
-        <img class="logo-mark" src="/brand/mark.png" alt="" width="124" height="124" />
-        <span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span>
-      </a>
-    </div>
-    <div class="acc-card">
-      <h1>Set up your profile</h1>
-      <p class="acc-sub">Choose a username and a profile photo to finish.</p>
-      <form id="form" novalidate>
-        <div class="acc-field">
-          <label for="username">Username</label>
-          <input class="acc-input" id="username" type="text" maxlength="20" autocomplete="off" placeholder="3-20 letters, numbers or _" />
-        </div>
+  <main class="setup-overlay">
+    <section class="setup-modal" id="welcome-step" aria-labelledby="welcome-title">
+      <div class="setup-progress" style="--setup-progress:8%">
+        <div class="setup-kicker"><b>Step 1 of 3</b><span>Welcome</span></div>
+        <div class="setup-bar"><i></i></div>
+      </div>
+      <div class="setup-body setup-welcome">
+        <div class="setup-spark" aria-hidden="true">✧</div>
+        <h1 id="welcome-title">Welcome!</h1>
+        <p>Let's set up your profile so the rest of the community can get to know you. Takes about a minute — you can edit later in settings.</p>
+      </div>
+      <div class="setup-footer">
+        <button class="acc-btn acc-btn-ghost" type="button" disabled>← Back</button>
+        <span></span>
+        <button class="acc-btn" id="start-setup" type="button">Let's go →</button>
+      </div>
+    </section>
 
-        <div class="acc-field">
-          <label>Profile photo</label>
-          <div class="avatar-upload-row">
+    <section class="setup-modal" id="profile-step" aria-labelledby="profile-title" hidden>
+      <div class="setup-progress" style="--setup-progress:34%">
+        <div class="setup-kicker"><b>Step 2 of 3</b><span>Profile photo</span></div>
+        <div class="setup-bar"><i></i></div>
+      </div>
+      <form id="form" novalidate>
+        <div class="setup-body">
+          <h1 id="profile-title">Add a profile photo</h1>
+          <p>A friendly face helps people connect with you.</p>
+          <div class="setup-note">Use a real photo of yourself and complete your profile. This helps build trust and keeps the community high quality.</div>
+          <div class="setup-photo-row">
             <img id="current" class="avatar-current" alt="Your avatar" src="" />
             <div>
-              <button type="button" class="acc-btn acc-btn-ghost" id="upload-btn" style="width:auto">Upload a photo</button>
+              <button type="button" class="acc-btn acc-btn-ghost" id="upload-btn" style="width:auto">Upload photo</button>
               <input id="file" type="file" accept="image/png,image/jpeg,image/webp" hidden />
-              <p style="color:var(--text-dim);font-size:12px;margin:8px 0 0">PNG, JPEG or WEBP · max 2 MB. Optional — if you skip it, we’ll use your initial.</p>
             </div>
           </div>
+          <div class="acc-field">
+            <label for="username">Username</label>
+            <input class="acc-input" id="username" type="text" maxlength="20" autocomplete="off" placeholder="3-20 letters, numbers or _" />
+          </div>
+          <div class="acc-field">
+            <label for="about">Short bio</label>
+            <textarea class="acc-textarea" id="about" maxlength="500" placeholder="Tell people a little about you"></textarea>
+          </div>
+          <p class="acc-msg" id="msg" hidden></p>
         </div>
-
-        <button class="acc-btn" id="submit" type="submit">Save profile</button>
-        <p class="acc-msg" id="msg" hidden></p>
+        <div class="setup-footer">
+          <button class="acc-btn acc-btn-ghost" id="setup-back" type="button">← Back</button>
+          <button class="setup-skip" id="skip-photo" type="button">Skip</button>
+          <button class="acc-btn" id="submit" type="submit">Next →</button>
+        </div>
       </form>
-    </div>
-  </div>
+    </section>
+  </main>
 
   <script type="module">
-    import { fetchMe, postJSON, initialAvatarDataUri, consumeAfterAuth } from '/js/account.js';
+    import { fetchMe, postJSON, initialAvatarDataUri } from '/js/account.js';
     const $ = (id) => document.getElementById(id);
     // null → no explicit photo: the account uses a generated initial avatar.
     let selected = null;
@@ -62,6 +82,16 @@
       if (selected === null) $('current').src = initialAvatarDataUri($('username').value.trim());
     }
     $('username').addEventListener('input', refreshInitial);
+    $('start-setup').addEventListener('click', () => {
+      $('welcome-step').hidden = true;
+      $('profile-step').hidden = false;
+      setTimeout(() => $('username').focus(), 40);
+    });
+    $('setup-back').addEventListener('click', () => {
+      $('profile-step').hidden = true;
+      $('welcome-step').hidden = false;
+    });
+    $('skip-photo').addEventListener('click', () => $('submit').click());
 
     $('upload-btn').addEventListener('click', () => $('file').click());
     $('file').addEventListener('change', async () => {
@@ -88,15 +118,12 @@
       const r = await postJSON('/api/profile/setup', {
         username: $('username').value.trim(),
         avatar: selected,
+        about: $('about').value.trim(),
       });
       if (r.ok && r.data.ok) {
-        // Password accounts get a one-time recovery-key step (which then honours
-        // any post-auth destination). Others go straight to where they were headed.
-        const u = r.data.user;
         // Flag a first-time user so the feed shows the onboarding overlay once.
         try { localStorage.setItem('dbtv_onboard', '1'); } catch { /* ignore */ }
-        window.location.href = (u && u.hasPassword && !u.hasRecoveryKey)
-          ? '/recovery-key.html' : consumeAfterAuth('/videos');
+        window.location.href = '/videos';
       } else {
         setMsg(r.data.error || 'Could not save your profile.', 'error');
         $('submit').disabled = false;
@@ -110,7 +137,7 @@
       refreshInitial();
     }());
   </script>
-  <script src="/js/age-gate.js"></script>
+
   <script src="/js/footer.js"></script>
 </body>
 </html>

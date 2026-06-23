@@ -49,7 +49,8 @@ async function build() {
     courses = prods.filter((p) => p.type === 'course');
   } catch { /* none */ }
 
-  const catItems = cats.map((c) => itemHTML('all', c.slug, c.name, c.flag ? flagImg(c.flag) : TAG, false)).join('');
+  const catIcon = (c) => c.icon ? `<span class="sb-emoji">${c.icon}</span>` : c.flag ? flagImg(c.flag) : TAG;
+  const catItems = cats.map((c) => itemHTML('all', c.slug, c.name, catIcon(c), false)).join('');
   const courseItems = courses.map((p) => itemHTML('courses', p.slug, p.name, CAP, false)).join('');
   nav.innerHTML = `
     <a class="sb-brand" href="/" aria-label="David Bond TV — home">

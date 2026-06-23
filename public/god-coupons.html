@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>David Bond TV — Coupons</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+  <script>document.documentElement.classList.add('admin-auth-pending');</script>
+</head>
+<body>
+  <div class="admin-wrap wide admin-app-shell">
+    <header class="admin-bar">
+      <a class="logo" href="/" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
+      <nav class="admin-nav">
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789">Dashboard</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-videos.html">Videos</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-products.html">Products</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-pricing.html">Pricing</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-coupons.html" class="active">Coupons</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-users.html">Users</a>
+        <a class="back" href="/">← Site</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="card">
+        <div class="card-head">
+          <h2>Coupon codes</h2>
+          <button class="btn sm" type="button" id="new-coupon">New coupon</button>
+        </div>
+        <div class="mv-filters">
+          <input id="coupon-search" placeholder="Search code or label" />
+          <select id="coupon-state">
+            <option value="">All coupons</option>
+            <option value="active">Active</option>
+            <option value="disabled">Disabled</option>
+            <option value="expired">Expired</option>
+          </select>
+        </div>
+        <div id="coupon-list" class="coupon-list"></div>
+      </section>
+
+      <dialog id="coupon-dialog" class="admin-dialog">
+        <form method="dialog" id="coupon-form">
+          <div class="card-head"><h2 id="coupon-dialog-title">New coupon</h2><button class="btn sm ghost" value="cancel">Close</button></div>
+          <input type="hidden" id="coupon-id" />
+          <div class="form-grid">
+            <label>Code<input id="coupon-code" maxlength="40" placeholder="SAVE20" /></label>
+            <label>Label<input id="coupon-label" maxlength="80" placeholder="Launch promo" /></label>
+            <label>Percent off<input id="coupon-percent" type="number" min="1" max="100" value="20" /></label>
+            <label>Duration<select id="coupon-duration"><option value="once">Once</option><option value="forever">Forever</option><option value="repeating">Repeating</option></select></label>
+            <label>Repeating months<input id="coupon-months" type="number" min="1" max="36" placeholder="3" /></label>
+            <label>Max redemptions<input id="coupon-cap" type="number" min="1" placeholder="No cap" /></label>
+            <label>Expires<input id="coupon-expires" type="datetime-local" /></label>
+            <label class="checkline"><input id="coupon-once" type="checkbox" /> One use per customer</label>
+            <label class="checkline"><input id="coupon-active" type="checkbox" checked /> Active</label>
+          </div>
+          <p class="muted" id="coupon-msg"></p>
+          <div class="modal-actions">
+            <button class="btn" type="submit">Save coupon</button>
+          </div>
+        </form>
+      </dialog>
+    </main>
+  </div>
+  <script type="module" src="/js/admin-coupons.js"></script>
+</body>
+</html>

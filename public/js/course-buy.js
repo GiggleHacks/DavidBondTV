@@ -21,9 +21,9 @@ export function fmtMoney(amount, currency) {
  * incomplete-profile users into the right onboarding step first. Returns the
  * response object on a soft error so the caller can surface the message.
  */
-export async function startPurchase(product, next, btn) {
+export async function startPurchase(product, next, btn, couponCode = '') {
   if (btn) btn.disabled = true;
-  const r = await postJSON('/api/pay/stripe/buy', { productId: product.id, next: next || '' });
+  const r = await postJSON('/api/pay/stripe/buy', { productId: product.id, next: next || '', couponCode });
   if (r.ok && r.data && r.data.url) { location.href = r.data.url; return r; }
   if (r.status === 401) {
     // Not signed in → sign up/in first, then land on this course's page to buy.
