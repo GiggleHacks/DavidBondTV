@@ -177,8 +177,10 @@ a.tr:hover .name { color: var(--accent); }
 /* Category manager (god-videos) */
 .cat-add { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
 .cat-list { display: flex; flex-direction: column; gap: 8px; }
-.cat-row { display: flex; align-items: center; gap: 10px; }
-.cat-row .cat-name { width: 220px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; }
+/* Wraps on narrow screens so the Rename/Remove buttons never get pushed off the
+   right edge; the name input flex-shrinks (capped at 220px on wider screens). */
+.cat-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cat-row .cat-name { flex: 1 1 150px; min-width: 0; max-width: 220px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; }
 .cat-row .cat-slug { font-size: 12px; font-family: ui-monospace, monospace; }
 .lib-actions { display: flex; gap: 8px; flex: none; }
 .btn-edit { flex: none; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
@@ -196,8 +198,11 @@ a.tr:hover .name { color: var(--accent); }
 @media (max-width: 768px) {
   .admin-wrap.wide { padding: 16px 14px 60px; }
   .admin-bar { align-items: stretch; gap: 12px; }
-  .admin-nav { width: 100%; }
-  .admin-nav a.back { margin-left: 0; }
+  /* flex-basis:100% forces the nav onto its own full-width line under the logo —
+     base `.admin-nav{flex:1}` (basis 0%) otherwise overrides `width` and keeps it
+     a narrow column beside the logo, making the links wrap into a cramped mess. */
+  .admin-nav { flex: 1 1 100%; width: 100%; }
+  .admin-nav a.back { margin-left: auto; }
   .card { padding: 16px; }
   .card-head { align-items: stretch; }
   .card-head > input,

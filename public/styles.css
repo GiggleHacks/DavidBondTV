@@ -642,17 +642,18 @@ body {
 @media (max-width: 560px) {
   .site-header {
     flex-wrap: wrap;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 10px;
     padding: 10px 12px;
   }
   .site-header .logo {
     min-width: 0;
   }
-  .auth-widget,
-  .hdr-bell {
-    margin-left: auto;
-  }
+  /* The logo (when present) keeps its base `margin-right:auto` and stays left;
+     everything else — bell, upload, auth widget — clusters on the right. We do
+     NOT put `margin-left:auto` on individual controls here: with two of them it
+     splits the free space and strands the bell mid-row (which then makes its
+     right-anchored panel open off the left edge of the screen). */
   .share-btn,
   .hdr-upload,
   .hdr-god,
@@ -662,6 +663,18 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+  /* Notifications panel: anchor to the viewport (not the bell) so it's always
+     fully on-screen. The default `right:0` opens leftward from the bell, which
+     clips off the left edge whenever the bell isn't hard against the right edge
+     (e.g. when the admin Upload button sits to its right). */
+  .hdr-bell-panel {
+    position: fixed;
+    top: 60px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-width: none;
   }
   .page,
   .browse {
