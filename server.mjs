@@ -843,12 +843,31 @@ async function handleApi(req, res, ctx) {
     const topVideos = Object.entries(vids)
       .map(([id, s]) => ({ id, title: titles[id] || id, views: s.views, minutes: Math.round(s.totalSeconds / 60) }))
       .sort((a, b) => b.views - a.views).slice(0, 20);
+    const blocked = analytics.getBlockedStats();
+    // Site-wide daily series (last 30 days) for the trend chart + KPI sparklines —
+    // summed across every video's byDay rollup, plus the blocked-by-day series.
+    const byDay = {};
+    for (const s of Object.values(vids)) {
+      for (const [day, d] of Object.entries(s.byDay || {})) {
+        const e = (byDay[day] ||= { views: 0, minutes: 0, blocked: 0 });
+        e.views += d.views || 0;
+        e.minutes += Math.round((d.seconds || 0) / 60);
+      }
+    }
+    for (const [day, n] of Object.entries(blocked.byDay || {})) {
+      (byDay[day] ||= { views: 0, minutes: 0, blocked: 0 }).blocked += n;
+    }
+    const series = Object.keys(byDay).sort().slice(-30)
+      .map((day) => ({ day, views: byDay[day].views, minutes: byDay[day].minutes, blocked: byDay[day].blocked }));
+    const verifiedUsers = accounts.store.listAll().filter((u) => u.verified).length;
     sendJson(res, 200, {
       totals: { views: totals.views, minutes: Math.round(totals.seconds / 60), hours: Math.round(totals.seconds / 360) / 10 },
       topVideos,
       countries: analytics.getCountryStats(),
-      blocked: analytics.getBlockedStats(),
-      userCount: accounts.store.listAll().length,
+      blocked,
+      userCount: verifiedUsers,
+      series,
+      generatedAt: Date.now(),
     });
     return true;
   }

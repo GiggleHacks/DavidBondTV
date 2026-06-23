@@ -4,14 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex" />
-  <title>David Bond TV — Dashboard</title>
+  <title>David Bond TV — Control Deck</title>
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/css/admin.css" />
+  <link rel="stylesheet" href="/css/deck.css" />
   <script>document.documentElement.classList.add('admin-auth-pending');</script>
 </head>
 <body>
-  <div class="admin-wrap wide admin-app-shell">
+  <div class="admin-wrap wide admin-app-shell deck">
     <header class="admin-bar">
       <a class="logo" href="/" title="Back to site" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
       <nav class="admin-nav">
@@ -27,108 +28,186 @@
     </header>
 
     <main id="app">
-      <!-- Quick actions -->
-      <div class="quick-grid">
-        <a class="quick" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-upload.html"><span class="qi">⬆</span><b>Upload Video</b><span class="qs">Add new clips</span></a>
-        <a class="quick" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-videos.html"><span class="qi">🎬</span><b>Manage Videos</b><span class="qs" id="q-videos">—</span></a>
-        <a class="quick" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-products.html"><span class="qi">🎓</span><b>Products</b><span class="qs">Courses &amp; bundles</span></a>
-        <a class="quick" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-pricing.html"><span class="qi">💲</span><b>Pricing</b><span class="qs">Subscription &amp; intro</span></a>
-        <a class="quick" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-users.html"><span class="qi">👥</span><b>Users</b><span class="qs" id="q-users">—</span></a>
+      <!-- ============ header strip ============ -->
+      <div class="deck-head">
+        <div class="deck-brand glow">DAVID&nbsp;BOND&nbsp;TV<small>// ADMIN CONTROL DECK v2.0</small></div>
+        <div class="deck-sys">
+          <div><span class="deck-dot"></span>SYSTEM <b>ONLINE</b> · davidbondtv.com</div>
+          <div>NODE v22 · <span id="deck-clock">--:--:-- UTC</span></div>
+          <div><span class="deck-pill">GEOIP: CLOUDFLARE CF-IPCountry</span></div>
+        </div>
       </div>
 
-      <!-- Site statistics -->
-      <div class="stat-grid">
-        <div class="stat"><b id="s-views">—</b><span>Total views</span></div>
-        <div class="stat"><b id="s-hours">—</b><span>Hours watched</span></div>
-        <div class="stat"><b id="s-users">—</b><span>Registered users</span></div>
-        <div class="stat"><b id="s-blocked">—</b><span>Blocked visits</span></div>
+      <!-- ============ tab bar ============ -->
+      <div class="deck-tabs" id="deck-tabs">
+        <button class="deck-tab on" data-tab="overview"><span class="dico">📊</span>OVERVIEW</button>
+        <button class="deck-tab" data-tab="traffic"><span class="dico">🌍</span>TRAFFIC</button>
+        <button class="deck-tab" data-tab="viewers"><span class="dico">🙋</span>VIEWERS</button>
+        <button class="deck-tab" data-tab="geo"><span class="dico">🛡️</span>GEO-DEFENSE</button>
+        <button class="deck-tab" data-tab="videos"><span class="dico">🎬</span>VIDEOS</button>
       </div>
 
-      <!-- World map -->
-      <section class="card">
-        <div class="card-head">
-          <h2>Where viewers are</h2>
-          <div class="seg" id="map-mode">
-            <button data-mode="viewers" class="active">Viewers</button>
-            <button data-mode="subscribers">Subscribers</button>
-            <button data-mode="blocked">Blocked</button>
+      <!-- ============ OVERVIEW ============ -->
+      <section class="deck-panel-tab on" data-panel="overview">
+        <div class="grid g-kpi">
+          <div class="dpanel kpi">
+            <div class="klabel"><span class="kemoji">👁️</span> TOTAL VIEWS</div>
+            <div class="kv glow" id="kpi-views">—</div>
+            <div class="ktrend flat" id="trend-views">· · ·</div>
+            <svg class="kspark" id="spark-views" viewBox="0 0 120 28" preserveAspectRatio="none"></svg>
+            <div class="dsrc">SOURCE: <b>analytics/raw event log</b><br>distinct viewId · 1st heartbeat · <span id="upd-1">—</span></div>
+          </div>
+          <div class="dpanel kpi amber">
+            <div class="klabel"><span class="kemoji">⏱️</span> WATCH HOURS</div>
+            <div class="kv glow" id="kpi-hours">—</div>
+            <div class="ktrend flat" id="trend-hours">· · ·</div>
+            <svg class="kspark" id="spark-hours" viewBox="0 0 120 28" preserveAspectRatio="none"></svg>
+            <div class="dsrc">SOURCE: <b>Σ heartbeat seconds</b> ÷ 3600<br>clamped 300s/beat · <span id="upd-2">—</span></div>
+          </div>
+          <div class="dpanel kpi cyan">
+            <div class="klabel"><span class="kemoji">👥</span> REGISTERED</div>
+            <div class="kv glow" id="kpi-users">—</div>
+            <div class="ktrend flat" id="trend-users">verified accounts</div>
+            <svg class="kspark" id="spark-users" viewBox="0 0 120 28" preserveAspectRatio="none"></svg>
+            <div class="dsrc">SOURCE: <b>data/users.json</b><br>email-verified only · <span id="upd-3">—</span></div>
+          </div>
+          <div class="dpanel kpi magenta">
+            <div class="klabel"><span class="kemoji">🛡️</span> BLOCKED HITS</div>
+            <div class="kv glow" id="kpi-blocked">—</div>
+            <div class="ktrend flat" id="trend-blocked">· · ·</div>
+            <svg class="kspark" id="spark-blocked" viewBox="0 0 120 28" preserveAspectRatio="none"></svg>
+            <div class="dsrc">SOURCE: <b>geo-gate recordBlocked()</b><br>country / IP / user rules · <span id="upd-4">—</span></div>
           </div>
         </div>
-        <div class="map-wrap">
-          <svg id="map" viewBox="0 0 360 180" preserveAspectRatio="xMidYMid meet" aria-label="World map of viewers">
-            <g id="graticule">
-              <rect x="0" y="0" width="360" height="180" fill="var(--surface-2)" rx="3" />
-              <g stroke="var(--border)" stroke-width="0.3" fill="none">
-                <line x1="30" y1="0" x2="30" y2="180"/><line x1="60" y1="0" x2="60" y2="180"/>
-                <line x1="90" y1="0" x2="90" y2="180"/><line x1="120" y1="0" x2="120" y2="180"/>
-                <line x1="150" y1="0" x2="150" y2="180"/><line x1="210" y1="0" x2="210" y2="180"/>
-                <line x1="240" y1="0" x2="240" y2="180"/><line x1="270" y1="0" x2="270" y2="180"/>
-                <line x1="300" y1="0" x2="300" y2="180"/><line x1="330" y1="0" x2="330" y2="180"/>
-                <line x1="0" y1="30" x2="360" y2="30"/><line x1="0" y1="60" x2="360" y2="60"/>
-                <line x1="0" y1="120" x2="360" y2="120"/><line x1="0" y1="150" x2="360" y2="150"/>
+
+        <div class="grid g-2 row-gap">
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">📈</span> VIEWS &amp; WATCH-TIME — LAST 30 DAYS <span class="q" title="Daily rollups summed across every video (analytics/videos.json byDay). Times in server UTC.">?</span></div>
+            <div class="dlegend"><span><i style="background:#5ef08a"></i>Views</span><span><i style="background:#ffc04d"></i>Watch hrs</span></div>
+            <svg class="dchart" id="trend-chart" viewBox="0 0 640 200" preserveAspectRatio="none" role="img" aria-label="Views and watch-time trend, last 30 days"></svg>
+            <div class="dsrc">SOURCE: <b>analytics rollups</b> · 90-day retention window · TZ server UTC</div>
+          </div>
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">🥧</span> TRAFFIC BY COUNTRY <span class="q" title="Per-country first-heartbeat view counts from analytics/countries.json; country from Cloudflare CF-IPCountry.">?</span></div>
+            <svg class="dchart" id="donut" viewBox="0 0 220 160" role="img" aria-label="Traffic by country"></svg>
+            <div class="dlegend" id="donut-legend" style="margin-top:8px"></div>
+            <div class="dsrc">SOURCE: <b>GeoIP via Cloudflare</b> CF-IPCountry header</div>
+          </div>
+        </div>
+
+        <div class="grid g-3 row-gap">
+          <div class="dpanel span2">
+            <div class="dp-title"><span class="dico">🖥️</span> LIVE VISITOR FEED <span class="deck-dot" style="margin-left:4px"></span> <span class="q" title="Recent individual watch events from analytics/raw/*.jsonl — IP, GeoIP country, user (if logged in), video, seconds watched. Newest first.">?</span></div>
+            <div class="dfeed" id="visitors"></div>
+            <div class="dsrc">SOURCE: <b>raw/*.jsonl</b> · IP + GeoIP + watch event · 7-day retention</div>
+          </div>
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">⚙️</span> SYSTEM <span class="q" title="Live library count + last deploy version from the running build.">?</span></div>
+            <div class="dvit">
+              <div><span class="k">VIDEOS</span><span class="g" id="vit-videos">—</span></div>
+              <div><span class="k">LIBRARY</span><span class="g">● intact</span></div>
+              <div><span class="k">BUILD</span><span class="c" id="vit-build">—</span></div>
+              <div><span class="k">FFMPEG</span><span class="a" id="vit-ffmpeg">—</span></div>
+            </div>
+            <div style="margin-top:10px">
+              <a class="dmini" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-upload.html">⬆ Upload video <span class="e">— add new clips</span></a>
+              <a class="dmini" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-videos.html">🎬 Manage videos <span class="e" id="q-videos">—</span></a>
+              <a class="dmini" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-pricing.html">💲 Pricing <span class="e">— subscription &amp; intro</span></a>
+            </div>
+            <div class="dsrc">SOURCE: <b>/api/admin/videos</b> + build manifest</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ TRAFFIC ============ -->
+      <section class="deck-panel-tab" data-panel="traffic">
+        <div class="dpanel">
+          <div class="dp-title" style="margin-bottom:12px"><span class="dico">🗺️</span> WHERE VIEWERS ARE
+            <span class="seg" id="map-mode" style="margin-left:auto">
+              <button data-mode="viewers" class="active">Viewers</button>
+              <button data-mode="subscribers">Subscribers</button>
+              <button data-mode="blocked">Blocked</button>
+            </span>
+          </div>
+          <div class="map-wrap">
+            <svg id="map" viewBox="0 0 360 180" preserveAspectRatio="xMidYMid meet" aria-label="World map of viewers">
+              <g id="graticule">
+                <rect x="0" y="0" width="360" height="180" fill="#0c1a14" rx="3" />
+                <g stroke="#1f3a2e" stroke-width="0.3" fill="none">
+                  <line x1="30" y1="0" x2="30" y2="180"/><line x1="60" y1="0" x2="60" y2="180"/>
+                  <line x1="90" y1="0" x2="90" y2="180"/><line x1="120" y1="0" x2="120" y2="180"/>
+                  <line x1="150" y1="0" x2="150" y2="180"/><line x1="210" y1="0" x2="210" y2="180"/>
+                  <line x1="240" y1="0" x2="240" y2="180"/><line x1="270" y1="0" x2="270" y2="180"/>
+                  <line x1="300" y1="0" x2="300" y2="180"/><line x1="330" y1="0" x2="330" y2="180"/>
+                  <line x1="0" y1="30" x2="360" y2="30"/><line x1="0" y1="60" x2="360" y2="60"/>
+                  <line x1="0" y1="120" x2="360" y2="120"/><line x1="0" y1="150" x2="360" y2="150"/>
+                </g>
+                <line x1="180" y1="0" x2="180" y2="180" stroke="#1f3a2e" stroke-width="0.5"/>
+                <line x1="0" y1="90" x2="360" y2="90" stroke="#1f3a2e" stroke-width="0.5"/>
               </g>
-              <line x1="180" y1="0" x2="180" y2="180" stroke="var(--border)" stroke-width="0.5"/>
-              <line x1="0" y1="90" x2="360" y2="90" stroke="var(--border)" stroke-width="0.5"/>
-            </g>
-          </svg>
-          <div class="map-hover" id="map-hover"></div>
+            </svg>
+            <div class="map-hover" id="map-hover"></div>
+          </div>
+          <div class="rank" id="country-rank"></div>
+          <div class="dsrc">SOURCE: <b>analytics/countries.json</b> · GeoIP via Cloudflare CF-IPCountry</div>
         </div>
-        <div class="rank" id="country-rank"></div>
       </section>
 
-      <div class="two-col">
-        <!-- Top videos -->
-        <section class="card">
-          <h2>Top videos</h2>
-          <div class="tbl" id="top-videos"></div>
-        </section>
-
-        <!-- Recent users -->
-        <section class="card">
-          <div class="card-head"><h2>Recent users</h2><a class="back" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-users.html">Manage all →</a></div>
+      <!-- ============ VIEWERS ============ -->
+      <section class="deck-panel-tab" data-panel="viewers">
+        <div class="dpanel">
+          <div class="dp-title"><span class="dico">🔎</span> RECENT USERS <a class="back" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-users.html" style="margin-left:auto">Manage all →</a></div>
           <div id="recent-users"></div>
-        </section>
-      </div>
-
-      <!-- Recent visitors: individual viewer events with IP + location -->
-      <section class="card">
-        <div class="card-head"><h2>Recent visitors</h2><span class="muted" id="vis-note">IP &amp; location of recent watch activity</span></div>
-        <div class="tbl visitors" id="visitors"></div>
+          <div class="dsrc">SOURCE: <b>data/users.json</b> + analytics rollups · newest first · verified only</div>
+        </div>
       </section>
 
-      <!-- Geo-restriction controls -->
-      <section class="card">
-        <div class="card-head">
-          <h2>Geo-restriction</h2>
-          <label class="switch"><input type="checkbox" id="geo-enabled" /> <span>Enabled</span></label>
-        </div>
-        <div id="geo-detect" class="banner info"></div>
-        <div class="geo-grid">
-          <div>
-            <h3>Blocked countries</h3>
-            <div class="chips" id="cc-chips"></div>
-            <div class="country-picker">
-              <input id="cc-search" type="text" autocomplete="off" placeholder="Search a country to block…" />
-              <div class="country-menu hidden" id="cc-results" role="listbox"></div>
+      <!-- ============ GEO-DEFENSE ============ -->
+      <section class="deck-panel-tab" data-panel="geo">
+        <div class="dpanel">
+          <div class="dp-title"><span class="dico">🛡️</span> GEO-RESTRICTION
+            <label class="switch" style="margin-left:auto"><input type="checkbox" id="geo-enabled" /> <span>Enabled</span></label>
+          </div>
+          <div id="geo-detect" class="banner info"></div>
+          <div class="geo-grid">
+            <div>
+              <h3>Blocked countries</h3>
+              <div class="chips" id="cc-chips"></div>
+              <div class="country-picker">
+                <input id="cc-search" type="text" autocomplete="off" placeholder="Search a country to block…" />
+                <div class="country-menu hidden" id="cc-results" role="listbox"></div>
+              </div>
+            </div>
+            <div>
+              <h3>Blocked IPs</h3>
+              <div class="chips" id="ip-chips"></div>
+              <div class="addrow"><input id="ip-input" placeholder="IP address" /><button id="ip-add" class="btn sm">Block</button></div>
+            </div>
+            <div>
+              <h3>Allowlist (never blocked)</h3>
+              <div class="chips" id="allow-chips"></div>
+              <div class="addrow"><input id="allow-input" placeholder="IP address" /><button id="allow-add" class="btn sm">Allow</button><button id="allow-me" class="btn sm ghost">Add my IP</button></div>
+            </div>
+            <div>
+              <h3>Test &amp; safety</h3>
+              <div class="addrow"><input id="sim-input" maxlength="2" placeholder="Simulate CC" /><button id="sim-set" class="btn sm">Preview</button><button id="sim-clear" class="btn sm ghost">Stop</button></div>
+              <p class="muted" style="margin:8px 0">Preview shows the site as a visitor from that country sees it. <a href="/under-construction.html" target="_blank">View blocked page →</a></p>
             </div>
           </div>
-          <div>
-            <h3>Blocked IPs</h3>
-            <div class="chips" id="ip-chips"></div>
-            <div class="addrow"><input id="ip-input" placeholder="IP address" /><button id="ip-add" class="btn sm">Block</button></div>
-          </div>
-          <div>
-            <h3>Allowlist (never blocked)</h3>
-            <div class="chips" id="allow-chips"></div>
-            <div class="addrow"><input id="allow-input" placeholder="IP address" /><button id="allow-add" class="btn sm">Allow</button><button id="allow-me" class="btn sm ghost">Add my IP</button></div>
-          </div>
-          <div>
-            <h3>Test &amp; safety</h3>
-            <div class="addrow"><input id="sim-input" maxlength="2" placeholder="Simulate CC" /><button id="sim-set" class="btn sm">Preview</button><button id="sim-clear" class="btn sm ghost">Stop</button></div>
-            <p class="muted" style="margin:8px 0">Preview shows the site as a visitor from that country sees it. <a href="/under-construction.html" target="_blank">View blocked page →</a></p>
-          </div>
+          <div class="dsrc">SOURCE: <b>data/geo-rules.json</b> · your IP/country detected via Cloudflare on this request</div>
         </div>
       </section>
+
+      <!-- ============ VIDEOS ============ -->
+      <section class="deck-panel-tab" data-panel="videos">
+        <div class="dpanel">
+          <div class="dp-title"><span class="dico">🔥</span> TOP VIDEOS <a class="back" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-videos.html" style="margin-left:auto">Manage →</a></div>
+          <div class="dbars" id="top-videos"></div>
+          <div class="dsrc">SOURCE: <b>analytics/videos.json</b> · ranked by distinct views · titles via manifest</div>
+        </div>
+      </section>
+
+      <div class="deck-foot">┌─ DAVID BOND TV CONTROL DECK ─┐ &nbsp; all timestamps UTC &nbsp; · &nbsp; hover <b>?</b> on any panel for methodology &nbsp; └─ READY <span class="cur"></span> ─┘</div>
     </main>
   </div>
   <script type="module" src="/js/admin-analytics.js"></script>

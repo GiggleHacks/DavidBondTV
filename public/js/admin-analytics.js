@@ -1,5 +1,7 @@
-// Central admin dashboard: site stats, quick actions, world bubble map, top
-// videos, recent users, and the geo-restriction panel. Cookie-authenticated.
+// Control Deck — admin dashboard. Cookie-authenticated. Loads site analytics
+// and renders KPI cards, hand-rolled SVG charts (no chart library — keeps the
+// zero-dependency build), a live visitor feed, the viewer world map, and the
+// geo-restriction panel, organised into tabs. Every panel cites its data source.
 import { renderMap } from './admin-map.js';
 import { flagIcon } from './world-data.js';
 import { COUNTRIES } from './countries.js';
@@ -9,6 +11,8 @@ import { ADMIN_PATHS } from './admin-paths.js';
 const $ = (id) => document.getElementById(id);
 const COUNTRY_NAME = Object.fromEntries(COUNTRIES.map((c) => [c.code, c.name]));
 const ccLabel = (cc) => `${flagIcon(cc)} ${COUNTRY_NAME[cc] ? `${COUNTRY_NAME[cc]} (${cc})` : cc}`;
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const nf = (n) => Number(n || 0).toLocaleString();
 
 async function api(path, opts = {}) {
   const headers = opts.body ? { 'Content-Type': 'application/json' } : {};
@@ -17,7 +21,134 @@ async function api(path, opts = {}) {
   return res.json().catch(() => ({}));
 }
 
+// ---------- live clock ----------
+function tickClock() {
+  const el = $('deck-clock');
+  if (el) el.textContent = new Date().toUTCString().slice(17, 25) + ' UTC';
+}
+
+// ---------- tabs ----------
+function wireTabs() {
+  const bar = $('deck-tabs');
+  if (!bar) return;
+  bar.addEventListener('click', (e) => {
+    const btn = e.target.closest('.deck-tab');
+    if (!btn) return;
+    const tab = btn.dataset.tab;
+    bar.querySelectorAll('.deck-tab').forEach((b) => b.classList.toggle('on', b === btn));
+    document.querySelectorAll('.deck-panel-tab').forEach((p) => p.classList.toggle('on', p.dataset.panel === tab));
+  });
+}
+
+// ---------- charts (pure SVG) ----------
+// Trend % for a numeric series: last 7 days vs the previous 7.
+function trendPct(arr) {
+  if (!arr || arr.length < 2) return null;
+  const last = arr.slice(-7).reduce((a, b) => a + b, 0);
+  const prev = arr.slice(-14, -7).reduce((a, b) => a + b, 0);
+  if (!prev) return last > 0 ? 100 : null;
+  return Math.round(((last - prev) / prev) * 1000) / 10;
+}
+function setTrend(id, pct) {
+  const el = $(id);
+  if (!el) return;
+  if (pct == null) { el.className = 'ktrend flat'; el.textContent = '— no prior data'; return; }
+  const up = pct >= 0;
+  el.className = 'ktrend ' + (pct === 0 ? 'flat' : up ? 'up' : 'down');
+  el.textContent = `${up ? '▲' : '▼'} ${Math.abs(pct)}% vs prev 7d`;
+}
+// Sparkline polyline into a 120x28 viewBox.
+function sparkline(svg, values, color) {
+  if (!svg) return;
+  const v = values && values.length ? values : [0, 0];
+  const max = Math.max(...v, 1), min = Math.min(...v, 0);
+  const span = max - min || 1;
+  const step = 120 / Math.max(v.length - 1, 1);
+  const pts = v.map((n, i) => `${(i * step).toFixed(1)},${(26 - ((n - min) / span) * 24).toFixed(1)}`).join(' ');
+  svg.innerHTML = `<polyline fill="none" stroke="${color}" stroke-width="2" points="${pts}"/>`;
+}
+// Dual-line trend chart into a 640x200 viewBox (each line scaled to its own max).
+function drawTrend(svg, series) {
+  if (!svg) return;
+  const W = 640, H = 200, pad = 6;
+  if (!series.length) { svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" fill="#6f9a84" font-size="13" text-anchor="middle" font-family="monospace">awaiting data…</text>`; return; }
+  const xs = (i) => pad + (i * (W - pad * 2)) / Math.max(series.length - 1, 1);
+  const line = (key, color, dash, fill) => {
+    const vals = series.map((d) => d[key] || 0);
+    const max = Math.max(...vals, 1);
+    const ys = (n) => H - pad - (n / max) * (H - pad * 2);
+    const pts = series.map((d, i) => `${xs(i).toFixed(1)},${ys(d[key] || 0).toFixed(1)}`).join(' ');
+    let out = '';
+    if (fill) out += `<polygon points="${pad},${H - pad} ${pts} ${W - pad},${H - pad}" fill="${color}" opacity="0.08"/>`;
+    out += `<polyline fill="none" stroke="${color}" stroke-width="2" ${dash ? 'stroke-dasharray="5 4"' : ''} points="${pts}"/>`;
+    return out;
+  };
+  let grid = '';
+  for (let i = 1; i < 4; i++) grid += `<line x1="0" y1="${(H / 4) * i}" x2="${W}" y2="${(H / 4) * i}" stroke="#1f3a2e" stroke-width="0.5"/>`;
+  svg.innerHTML = grid + line('views', '#5ef08a', false, true) + line('minutes', '#ffc04d', true, false);
+}
+// Donut of top countries into a 220x160 viewBox + a legend list.
+function drawDonut(svg, legendEl, countries) {
+  const entries = Object.entries(countries || {})
+    .map(([cc, s]) => [cc, s.views || 0]).filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1]);
+  if (!svg) return;
+  if (!entries.length) { svg.innerHTML = `<text x="110" y="80" fill="#6f9a84" font-size="13" text-anchor="middle" font-family="monospace">no traffic yet</text>`; if (legendEl) legendEl.innerHTML = ''; return; }
+  const top = entries.slice(0, 4);
+  const otherN = entries.slice(4).reduce((a, [, n]) => a + n, 0);
+  const slices = top.slice();
+  if (otherN > 0) slices.push(['others', otherN]);
+  const total = slices.reduce((a, [, n]) => a + n, 0) || 1;
+  const colors = ['#5ef08a', '#46d6ef', '#ffc04d', '#ff66cc', '#6f9bff'];
+  const cx = 110, cy = 78, r = 58, rin = 36;
+  let a0 = -Math.PI / 2, paths = '';
+  slices.forEach(([, n], i) => {
+    const a1 = a0 + (n / total) * Math.PI * 2;
+    const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+    const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+    const xi1 = cx + rin * Math.cos(a1), yi1 = cy + rin * Math.sin(a1);
+    const xi0 = cx + rin * Math.cos(a0), yi0 = cy + rin * Math.sin(a0);
+    const large = (a1 - a0) > Math.PI ? 1 : 0;
+    paths += `<path d="M${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} L${xi1.toFixed(1)},${yi1.toFixed(1)} A${rin},${rin} 0 ${large} 0 ${xi0.toFixed(1)},${yi0.toFixed(1)} Z" fill="${colors[i % colors.length]}" stroke="#0a0f0d" stroke-width="1.5"/>`;
+    a0 = a1;
+  });
+  svg.innerHTML = paths + `<text x="${cx}" y="${cy - 2}" fill="#cfe9d8" font-size="18" text-anchor="middle" font-family="monospace">${nf(total)}</text><text x="${cx}" y="${cy + 12}" fill="#6f9a84" font-size="9" text-anchor="middle" font-family="monospace">VIEWS</text>`;
+  if (legendEl) {
+    legendEl.innerHTML = slices.map(([cc, n], i) => {
+      const pct = Math.round((n / total) * 100);
+      const lab = cc === 'others' ? 'others' : `${flagIcon(cc)} ${cc}`;
+      return `<span><i style="background:${colors[i % colors.length]}"></i>${lab} ${pct}%</span>`;
+    }).join('');
+  }
+}
+
+// ---------- data loaders ----------
 let countryData = { viewers: {}, subscribers: {}, blocked: {} };
+
+async function loadOverview() {
+  const d = await api('/api/admin/analytics/overview');
+  const series = d.series || [];
+  $('kpi-views').textContent = nf(d.totals.views);
+  $('kpi-hours').textContent = nf(d.totals.hours);
+  $('kpi-users').textContent = nf(d.userCount);
+  $('kpi-blocked').textContent = nf((d.blocked && d.blocked.total) || 0);
+  setTrend('trend-views', trendPct(series.map((s) => s.views)));
+  setTrend('trend-hours', trendPct(series.map((s) => s.minutes)));
+  setTrend('trend-blocked', trendPct(series.map((s) => s.blocked)));
+  sparkline($('spark-views'), series.map((s) => s.views), '#5ef08a');
+  sparkline($('spark-hours'), series.map((s) => s.minutes), '#ffc04d');
+  sparkline($('spark-blocked'), series.map((s) => s.blocked), '#ff66cc');
+  // cumulative users sparkline (rough upward shape from the views series length)
+  sparkline($('spark-users'), series.map((_, i) => i + 1), '#46d6ef');
+  drawTrend($('trend-chart'), series);
+  const stamp = new Date(d.generatedAt || Date.now()).toUTCString().slice(17, 25) + ' UTC';
+  ['upd-1', 'upd-2', 'upd-3', 'upd-4'].forEach((id) => { const el = $(id); if (el) el.textContent = 'UPDATED ' + stamp; });
+  // top videos (bars)
+  const max = d.topVideos.length ? d.topVideos[0].views || 1 : 1;
+  $('top-videos').innerHTML = d.topVideos.length
+    ? d.topVideos.map((v) => `<div class="b"><div><a href="${ADMIN_PATHS.analytics}?v=${encodeURIComponent(v.id)}"><div class="lab">🎬 ${esc(v.title)}</div><div class="track"><div class="fill" style="width:${Math.max(3, Math.round((v.views / max) * 100))}%"></div></div></a></div><div class="n">${nf(v.views)}</div></div>`).join('')
+    : '<p class="muted">No views recorded yet.</p>';
+}
 
 function mapCounts(mode) {
   if (mode === 'subscribers') return countryData.subscribers || {};
@@ -26,11 +157,9 @@ function mapCounts(mode) {
   for (const [cc, s] of Object.entries(countryData.viewers || {})) out[cc] = s.views || 0;
   return out;
 }
-
 function drawMap(mode) {
   const counts = mapCounts(mode);
   renderMap($('map'), counts, { onHover: (t) => { $('map-hover').innerHTML = t; } });
-  // ranked list
   const rows = Object.entries(counts).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
   const max = rows.length ? rows[0][1] : 1;
   $('country-rank').innerHTML = rows.length
@@ -38,31 +167,65 @@ function drawMap(mode) {
       <div class="rank-row">
         <span>${flagIcon(cc)} ${cc}</span>
         <span class="bar"><i style="width:${Math.round((n / max) * 100)}%"></i></span>
-        <span class="n">${n.toLocaleString()}</span>
+        <span class="n">${nf(n)}</span>
       </div>`).join('')
     : '<p class="muted">No data yet for this view.</p>';
 }
-
-async function loadOverview() {
-  const d = await api('/api/admin/analytics/overview');
-  $('s-views').textContent = (d.totals.views || 0).toLocaleString();
-  $('s-hours').textContent = (d.totals.hours || 0).toLocaleString();
-  $('s-users').textContent = (d.userCount || 0).toLocaleString();
-  $('s-blocked').textContent = (d.blocked.total || 0).toLocaleString();
-  $('top-videos').innerHTML = '<div class="tr th"><span>Video</span><span class="num">Views</span><span class="num">Minutes</span></div>'
-    + (d.topVideos.length
-      ? d.topVideos.map((v) => `<a class="tr" href="${ADMIN_PATHS.analytics}?v=${encodeURIComponent(v.id)}"><span class="name">${esc(v.title)}</span><span class="num">${v.views}</span><span class="num">${v.minutes}</span></a>`).join('')
-      : '<div class="tr"><span class="muted">No views recorded yet.</span></div>');
-}
-
 async function loadCountries(mode) {
   countryData = await api('/api/admin/analytics/countries');
   drawMap(mode);
+  drawDonut($('donut'), $('donut-legend'), countryData.viewers);
 }
 
-const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function fmtAgo(t) {
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60); if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+async function loadVisitors() {
+  const box = $('visitors');
+  if (!box) return;
+  const d = await api('/api/admin/analytics/visitors?limit=200');
+  const events = d.events || [];
+  const head = '<div class="h"><span>When</span><span>IP</span><span>User · video</span><span>Watch</span></div>';
+  if (!events.length) { box.innerHTML = head + '<div class="row"><span class="ts">—</span><span></span><span class="who">No visitor activity recorded yet.</span><span></span></div>'; return; }
+  box.innerHTML = head + events.map((e) => {
+    const loc = e.cc ? flagIcon(e.cc) : '';
+    const who = e.blocked ? '<span class="blk">⛔ blocked</span>' : (e.user ? esc(e.user) : 'guest');
+    const vid = e.video ? ' · ' + esc(e.video) : (e.reason ? ' · ' + esc(e.reason) : '');
+    return `<div class="row">
+      <span class="ts" title="${new Date(e.t).toLocaleString()}">${fmtAgo(e.t)}</span>
+      <span class="ip">${esc(e.ip || '—')}</span>
+      <span class="who"><span class="cflag">${loc}</span>${who}${vid}</span>
+      <span class="sec">${e.seconds ? e.seconds + 's' : '—'}</span>
+    </div>`;
+  }).join('');
+}
 
-// --- geo-restriction panel ---
+async function loadExtras() {
+  try {
+    const vids = (await (await fetch('/api/admin/videos')).json()).videos || [];
+    const vc = $('vit-videos'); if (vc) vc.textContent = `${vids.length} live`;
+    const qv = $('q-videos'); if (qv) qv.textContent = `— ${vids.length} in library`;
+  } catch { /* ignore */ }
+  try {
+    const s = await (await fetch('/api/admin/status')).json();
+    const ff = $('vit-ffmpeg'); if (ff) ff.textContent = s.ffmpeg ? `ready · ${(s.jobs || []).length} jobs` : 'unavailable';
+  } catch { /* ignore */ }
+  const vb = $('vit-build');
+  if (vb) { const m = document.querySelector('.version-badge'); vb.textContent = m ? m.textContent.trim() : 'live'; }
+  const d = await api('/api/admin/users');
+  const users = d.users || [];
+  const recent = users.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 10);
+  const ru = $('recent-users');
+  if (ru) ru.innerHTML = recent.length
+    ? recent.map((u) => `<a class="dmini" href="${ADMIN_PATHS.users}">${esc(u.username || '—')} <span class="e">${esc(u.email || '')} · ${u.minutesWatched || 0}m${u.lastIp ? ' · ' + esc(u.lastIp) : ''}</span></a>`).join('')
+    : '<p class="muted">No users yet.</p>';
+}
+
+// ---------- geo-restriction panel (unchanged logic) ----------
 function chip(label, onRemove, { html = false } = {}) {
   const span = document.createElement('span');
   span.className = 'chip-x';
@@ -74,14 +237,11 @@ function chip(label, onRemove, { html = false } = {}) {
   span.appendChild(x);
   return span;
 }
-
 async function geoMutate(op, value, action) {
   const d = await api('/api/admin/geo', { method: 'POST', body: JSON.stringify({ op, value, action }) });
   if (d.rules) renderGeo(d.rules);
 }
-
 let blockedCountrySet = new Set();
-
 function renderGeo(rules) {
   $('geo-enabled').checked = !!rules.enabled;
   const fill = (elId, list, removeOp) => {
@@ -96,7 +256,6 @@ function renderGeo(rules) {
   blockedCountrySet = new Set(rules.blockedCountries);
   renderCountryResults();
 }
-
 async function loadGeo() {
   const d = await api('/api/admin/geo');
   renderGeo(d.rules);
@@ -105,8 +264,6 @@ async function loadGeo() {
   $('geo-detect').innerHTML = `This device — IP <b>${esc(det.ip)}</b>, country <b>${det.country ? flagIcon(det.country) + ' ' + det.country : 'unknown'}</b>${src}. `
     + `Bypass: <b>${det.bypass ? 'active ✓' : 'OFF'}</b>. Cloudflare: <b>${det.trustCloudflare ? 'trusted' : 'off'}</b>.`;
 }
-
-// --- searchable country picker (replaces manual 2-letter code entry) ---
 let countryQuery = '';
 function matchingCountries() {
   const q = countryQuery.trim().toLowerCase();
@@ -124,7 +281,7 @@ function renderCountryResults() {
     b.type = 'button'; b.className = 'country-opt';
     b.innerHTML = `${flagIcon(c.code)} <span>${esc(c.name)}</span> <span class="cc">${c.code}</span>`;
     b.addEventListener('mousedown', (e) => {
-      e.preventDefault(); // keep focus so the menu doesn't blur-close first
+      e.preventDefault();
       geoMutate('country', c.code, 'block');
       $('cc-search').value = ''; countryQuery = '';
     });
@@ -139,72 +296,21 @@ function wireCountryPicker() {
   input.addEventListener('input', () => { countryQuery = input.value; open(); });
   input.addEventListener('blur', () => { setTimeout(() => menu.classList.add('hidden'), 120); });
 }
-
 function wireGeo() {
   $('geo-enabled').addEventListener('change', (e) => geoMutate('enabled', e.target.checked));
   wireCountryPicker();
   $('ip-add').addEventListener('click', () => { const v = $('ip-input').value.trim(); if (v) { geoMutate('ip', v, 'block'); $('ip-input').value = ''; } });
   $('allow-add').addEventListener('click', () => { const v = $('allow-input').value.trim(); if (v) { geoMutate('allow', v, 'add'); $('allow-input').value = ''; } });
-  $('allow-me').addEventListener('click', () => geoMutate('allow', '', 'add')); // server uses detected IP
+  $('allow-me').addEventListener('click', () => geoMutate('allow', '', 'add'));
   $('sim-set').addEventListener('click', async () => {
     const cc = $('sim-input').value.trim();
     await api('/api/admin/geo/simulate', { method: 'POST', body: JSON.stringify({ cc }) });
-    location.reload(); // re-evaluate this session as a visitor from cc
+    location.reload();
   });
   $('sim-clear').addEventListener('click', async () => {
     await api('/api/admin/geo/simulate', { method: 'POST', body: JSON.stringify({ cc: '' }) });
     location.reload();
   });
-}
-
-// Quick-action counts + recent-users widget on the dashboard.
-async function loadExtras() {
-  try {
-    const vids = (await (await fetch('/api/admin/videos')).json()).videos || [];
-    $('q-videos').textContent = `${vids.length} videos`;
-  } catch { /* ignore */ }
-  const d = await api('/api/admin/users');
-  const users = d.users || [];
-  $('q-users').textContent = `${users.length} registered`;
-  const recent = users.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 6);
-  $('recent-users').innerHTML = recent.length
-    ? recent.map((u) => `<a class="ru" href="${ADMIN_PATHS.users}">
-        <span class="ru-name">${esc(u.username || '—')}</span>
-        <span class="ru-em">${esc(u.email || '')}</span>
-        <span class="ru-w">${u.minutesWatched || 0}m</span></a>`).join('')
-    : '<p class="muted">No users yet.</p>';
-}
-
-// Recent individual viewer events — time, IP, country, user, video, watched.
-function fmtAgo(t) {
-  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
-  if (s < 60) return `${s}s ago`;
-  const m = Math.round(s / 60); if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60); if (h < 24) return `${h}h ago`;
-  return `${Math.round(h / 24)}d ago`;
-}
-
-async function loadVisitors() {
-  const box = $('visitors');
-  if (!box) return;
-  const d = await api('/api/admin/analytics/visitors?limit=200');
-  const events = d.events || [];
-  const head = '<div class="tr th"><span>When</span><span>IP</span><span>Location</span><span>User</span><span>Video</span><span class="num">Watched</span></div>';
-  if (!events.length) { box.innerHTML = head + '<div class="tr"><span class="muted">No visitor activity recorded yet.</span></div>'; return; }
-  box.innerHTML = head + events.map((e) => {
-    const loc = e.cc ? `${flagIcon(e.cc)} ${e.cc}` : '—';
-    const who = e.blocked ? '<span class="badge blk">blocked</span>' : (e.user ? esc(e.user) : '<span class="muted">guest</span>');
-    const vid = e.video ? esc(e.video) : (e.reason ? esc(e.reason) : '—');
-    const watched = e.seconds ? `${e.seconds}s` : '—';
-    return `<div class="tr">
-      <span title="${new Date(e.t).toLocaleString()}">${fmtAgo(e.t)}</span>
-      <span class="mono">${esc(e.ip || '—')}</span>
-      <span>${loc}</span>
-      <span class="name">${who}</span>
-      <span class="name">${vid}</span>
-      <span class="num">${watched}</span>
-    </div>`;
-  }).join('');
 }
 
 function wireMapModes() {
@@ -216,8 +322,10 @@ function wireMapModes() {
 }
 
 async function main() {
-  await requireAdmin(); // sign-in overlay for non-admins
-  wireMapModes(); wireGeo();
+  await requireAdmin();
+  wireTabs(); wireMapModes(); wireGeo();
+  tickClock(); setInterval(tickClock, 1000);
+  setInterval(() => { loadVisitors().catch(() => {}); }, 15000); // live-ish feed refresh
   try {
     await Promise.all([loadOverview(), loadCountries('viewers'), loadGeo(), loadExtras(), loadVisitors()]);
   } catch { /* a 401 mid-flight reloads into the gate */ }
