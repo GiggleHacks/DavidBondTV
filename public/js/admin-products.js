@@ -18,7 +18,7 @@ let editingId = null; // null = creating a new product
 
 async function load() {
   try { products = (await (await fetch('/api/admin/products')).json()).products || []; } catch { products = []; }
-  try { videos = (await (await fetch(`/thumbs/videos.json?_=${Date.now()}`)).json()).filter((v) => (v.status || 'ready') === 'ready'); } catch { videos = []; }
+  try { videos = ((await (await fetch(`/api/admin/videos?_=${Date.now()}`)).json()).videos || []).filter((v) => (v.status || 'ready') === 'ready'); } catch { videos = []; }
   renderList();
 }
 

@@ -12,6 +12,7 @@ import { initReactions } from './reactions.js';
 import { initWatchTracker } from './watch-tracker.js';
 import { canUserWatchPremium, isAdminUser, canWatchVideo } from './viewer-access.js';
 import { startPurchase, fmtMoney } from './course-buy.js';
+import { ADMIN_PATHS } from './admin-paths.js';
 
 const $ = (id) => document.getElementById(id);
 const FPS = 30000 / 1001; // source frame rate (~29.97)
@@ -159,6 +160,16 @@ async function loadEntry(id) {
   }
 }
 
+async function loadPlayback(id) {
+  try {
+    const res = await fetch(`/api/videos/${encodeURIComponent(id)}/playback`);
+    if (!res.ok) return null;
+    return (await res.json()).video || null;
+  } catch {
+    return null;
+  }
+}
+
 async function init() {
   // Apply the saved theme before anything paints (avoids a flash of the default).
   initTheme();
@@ -251,6 +262,14 @@ async function init() {
     return;
   }
 
+  const playback = await loadPlayback(entry.id);
+  if (!playback) {
+    showError('This video is currently unavailable.');
+    initReactions(commentVideo);
+    initComments(commentVideo);
+    return;
+  }
+
   // hls.js controller is created lazily; the settings menu reaches it via this ref.
   const hlsRef = { ctrl: null };
   const settings = createSettingsMenu({
@@ -264,22 +283,22 @@ async function init() {
   // (still processing, or processing failed) we show a clear message — there is
   // no demo stream to fall back to.
   let storyboard = null;
-  if (entry && entry.storyboard) storyboard = await loadStoryboard(entry.storyboard);
-  if (entry && entry.hls) {
-    hlsRef.ctrl = createHlsController(video, entry.hls, {
+  if (playback.storyboard) storyboard = await loadStoryboard(playback.storyboard);
+  if (playback.hls) {
+    hlsRef.ctrl = createHlsController(video, playback.hls, {
       onLevels: (levels) => settings.setLevels(levels),
       onAutoLevel: (h, auto) => settings.setAutoLevel(h, auto),
       onError: (msg) => showError(msg),
     });
-  } else if (entry && Array.isArray(entry.qualityLevels) && entry.qualityLevels.length) {
+  } else if (Array.isArray(playback.qualityLevels) && playback.qualityLevels.length) {
     // Real per-video renditions (Low/Medium/High) served as discrete MP4s.
-    hlsRef.ctrl = createMp4QualityController(video, entry.qualityLevels, {
+    hlsRef.ctrl = createMp4QualityController(video, playback.qualityLevels, {
       onLevels: (levels) => settings.setLevels(levels),
       onAutoLevel: (h, auto) => settings.setAutoLevel(h, auto),
       onError: (msg) => showError(msg),
     });
-  } else if (entry && entry.preview) {
-    video.src = entry.preview; // native MP4 playback (no adaptive levels)
+  } else if (playback.preview) {
+    video.src = playback.preview; // native MP4 playback (no adaptive levels)
     video.addEventListener('error', () => showError('This video could not be played.'));
     settings.setLevels([]); // hide the quality menu — single quality
   } else {
@@ -330,9 +349,9 @@ async function init() {
       grp.className = 'creator-controls';
       const vid = encodeURIComponent(entry.id);
       grp.innerHTML = `
-        <a class="creator-btn" href="/god-analytics.html?v=${vid}">
+        <a class="creator-btn" href="${ADMIN_PATHS.analytics}?v=${vid}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h4v8H3zM10 3h4v18h-4zM17 9h4v12h-4z"/></svg>Analytics</a>
-        <a class="creator-btn primary" href="/god-edit.html?v=${vid}">
+        <a class="creator-btn primary" href="${ADMIN_PATHS.edit}?v=${vid}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>Edit video</a>`;
       sub.appendChild(grp);
     }

@@ -32,7 +32,8 @@ ssh root@72.62.241.93 'systemctl restart davidbondtv && systemctl is-active davi
 - Code: re-deploy a previous build; the service auto-restarts on failure.
 
 ## Operator checklist / follow-ups
+- After deploying the admin hardening change, run `node scripts/reset-admin-password.mjs` on the server and set a new long random password. This rotates the admin `securityStamp`, which expires any session minted through the old recovery flow.
 - **Rotate the Cloudflare + Hostinger API tokens** that were shared in chat.
 - In the Cloudflare dashboard, set **SSL/TLS → Full (strict)** so the CF→origin hop is encrypted (the origin has a valid LE cert; this API token couldn't read/set the SSL mode).
-- Geo-blocking is currently **disabled** (clean launch). Re-enable per-country in `/god` when desired.
-- Admin login: username `davidbond` (password in `data/admin-credentials.txt`).
+- Geo-blocking is currently **disabled** (clean launch). Re-enable per-country in `/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789` when desired.
+- Admin login: username `davidbond` at `/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789` (password in `data/admin-credentials.txt`, or reset with `node scripts/reset-admin-password.mjs`).

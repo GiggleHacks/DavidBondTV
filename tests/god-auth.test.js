@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyAdminGateState, releaseAdminGateState } from '../public/js/god-auth.js';
+import { applyAdminGateState, createAdminGateMarkup, releaseAdminGateState } from '../public/js/god-auth.js';
 
 function makeElement() {
   const attrs = new Map();
@@ -39,5 +39,13 @@ describe('admin gate state helpers', () => {
     expect(appRoot.hasAttribute('aria-hidden')).toBe(false);
     expect(appRoot.hasAttribute('inert')).toBe(false);
     expect(body.classList.contains('admin-gated')).toBe(false);
+  });
+
+  it('renders a sign-in-only admin gate with server-only recovery guidance', () => {
+    const markup = createAdminGateMarkup();
+
+    expect(markup).not.toContain('Forgot password?');
+    expect(markup).not.toContain('/api/admin/recover');
+    expect(markup).toContain('Admin recovery is server-only.');
   });
 });

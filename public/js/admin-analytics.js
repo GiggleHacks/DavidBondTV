@@ -4,6 +4,7 @@ import { renderMap } from './admin-map.js';
 import { flagIcon } from './world-data.js';
 import { COUNTRIES } from './countries.js';
 import { requireAdmin } from './god-auth.js';
+import { ADMIN_PATHS } from './admin-paths.js';
 
 const $ = (id) => document.getElementById(id);
 const COUNTRY_NAME = Object.fromEntries(COUNTRIES.map((c) => [c.code, c.name]));
@@ -50,7 +51,7 @@ async function loadOverview() {
   $('s-blocked').textContent = (d.blocked.total || 0).toLocaleString();
   $('top-videos').innerHTML = '<div class="tr th"><span>Video</span><span class="num">Views</span><span class="num">Minutes</span></div>'
     + (d.topVideos.length
-      ? d.topVideos.map((v) => `<a class="tr" href="/god-analytics.html?v=${encodeURIComponent(v.id)}"><span class="name">${esc(v.title)}</span><span class="num">${v.views}</span><span class="num">${v.minutes}</span></a>`).join('')
+      ? d.topVideos.map((v) => `<a class="tr" href="${ADMIN_PATHS.analytics}?v=${encodeURIComponent(v.id)}"><span class="name">${esc(v.title)}</span><span class="num">${v.views}</span><span class="num">${v.minutes}</span></a>`).join('')
       : '<div class="tr"><span class="muted">No views recorded yet.</span></div>');
 }
 
@@ -159,7 +160,7 @@ function wireGeo() {
 // Quick-action counts + recent-users widget on the dashboard.
 async function loadExtras() {
   try {
-    const vids = await (await fetch('/thumbs/videos.json')).json();
+    const vids = (await (await fetch('/api/admin/videos')).json()).videos || [];
     $('q-videos').textContent = `${vids.length} videos`;
   } catch { /* ignore */ }
   const d = await api('/api/admin/users');
@@ -167,7 +168,7 @@ async function loadExtras() {
   $('q-users').textContent = `${users.length} registered`;
   const recent = users.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 6);
   $('recent-users').innerHTML = recent.length
-    ? recent.map((u) => `<a class="ru" href="/god-users.html">
+    ? recent.map((u) => `<a class="ru" href="${ADMIN_PATHS.users}">
         <span class="ru-name">${esc(u.username || '—')}</span>
         <span class="ru-em">${esc(u.email || '')}</span>
         <span class="ru-w">${u.minutesWatched || 0}m</span></a>`).join('')

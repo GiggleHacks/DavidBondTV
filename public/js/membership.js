@@ -9,6 +9,7 @@
 import { fetchMe, postJSON } from '/js/account.js';
 import { deriveBillingView } from '/js/billing-view.js';
 import { initTheme } from '/js/theme.js';
+import { ADMIN_PATHS } from '/js/admin-paths.js';
 
 initTheme();
 
@@ -58,7 +59,7 @@ function showMember(me) {
     : view.status;
   if (title) title.textContent = view.kind === 'admin-access' ? 'Admin access included.' : "You're in.";
   if (foot) foot.textContent = view.kind === 'admin-access' ? 'Back to the admin dashboard →' : 'Browse exclusive videos →';
-  if (foot && view.kind === 'admin-access') foot.href = '/god';
+  if (foot && view.kind === 'admin-access') foot.href = ADMIN_PATHS.dashboard;
   if (foot && view.kind !== 'admin-access') foot.href = '/';
   const manage = $('manage-btn');
   manage.hidden = view.action !== 'manage';

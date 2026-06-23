@@ -4,6 +4,7 @@
 // across the site. Also shows a read-only list of course/product prices (edited
 // on the Products page) so all pricing is visible in one place.
 import { requireAdmin } from './god-auth.js';
+import { ADMIN_PATHS } from './admin-paths.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -63,7 +64,7 @@ async function loadProducts() {
   wrap.innerHTML = products.map((p) => `
     <div class="pr-prodrow">
       <span>${esc(p.name)} <span class="muted">· ${esc(p.type)}${p.published ? '' : ' · draft'}</span></span>
-      <span><b>${fmt(p.price, p.currency)}</b> &nbsp;<a class="back" href="/god-products.html">edit →</a></span>
+      <span><b>${fmt(p.price, p.currency)}</b> &nbsp;<a class="back" href="${ADMIN_PATHS.products}">edit →</a></span>
     </div>`).join('');
 }
 

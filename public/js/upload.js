@@ -7,6 +7,7 @@
 // page renders on the same bar. A notification sound plays when each job completes.
 import { requireAdmin } from './god-auth.js';
 import { listSounds, playSound, getSelected, setSelected, isEnabled, setEnabled, primeAudio } from './upload-sounds.js';
+import { ADMIN_PATHS } from './admin-paths.js';
 
 // Large uploads must skip Cloudflare's ~100MB proxy cap, so the upload page is
 // served from a DNS-only subdomain. If we're on the main (proxied) host, hand off
@@ -14,7 +15,7 @@ import { listSounds, playSound, getSelected, setSelected, isEnabled, setEnabled,
 const UPLOAD_HOST = 'upload.davidbondtv.com';
 const MAIN_HOSTS = ['davidbondtv.com', 'www.davidbondtv.com'];
 if (MAIN_HOSTS.includes(location.hostname)) {
-  location.replace(`https://${UPLOAD_HOST}/god-upload.html${location.search}`);
+  location.replace(`https://${UPLOAD_HOST}${ADMIN_PATHS.upload}${location.search}`);
 }
 
 // Upload size limit (overwritten from /api/admin/status on load). 25 GB fallback.
@@ -176,7 +177,7 @@ function addRowActions(rowId, manifestId) {
   view.textContent = 'View';
   const edit = document.createElement('a');
   edit.className = 'btn sm';
-  edit.href = `/god-edit.html?v=${encodeURIComponent(manifestId)}`;
+  edit.href = `${ADMIN_PATHS.edit}?v=${encodeURIComponent(manifestId)}`;
   edit.textContent = 'Edit';
   actions.append(view, edit);
   body.appendChild(actions);

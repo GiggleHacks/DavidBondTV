@@ -1,7 +1,7 @@
 // Shared admin gate for every /god* page. Uses the normal session cookie (sent
 // automatically with same-origin fetches) — no bearer tokens. If the visitor
-// isn't a signed-in admin, it renders a self-contained sign-in overlay (with
-// security-question recovery) right on the page. Resolves to the admin user, or
+// isn't a signed-in admin, it renders a self-contained sign-in overlay right on
+// the page. Resolves to the admin user, or
 // never resolves (the overlay takes over) for non-admins.
 export async function requireAdmin() {
   const appRoot = findAdminAppRoot();
@@ -51,27 +51,7 @@ function renderGate() {
   wrap.id = 'god-gate';
   wrap.setAttribute('role', 'dialog');
   wrap.setAttribute('aria-modal', 'true');
-  wrap.innerHTML = `
-    <div class="gg-card">
-      <div class="gg-logo"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></div>
-      <h2 id="gg-title">Admin sign-in</h2>
-      <div id="gg-err" class="gg-err hidden"></div>
-
-      <div id="gg-login">
-        <input id="gg-id" placeholder="Username or email" autocomplete="username" />
-        <input id="gg-pw" type="password" placeholder="Password" autocomplete="current-password" />
-        <button id="gg-go" class="gg-btn">Sign in</button>
-        <button id="gg-forgot" class="gg-link" type="button">Forgot password?</button>
-      </div>
-
-      <div id="gg-recover" class="hidden">
-        <p id="gg-q" class="gg-muted"></p>
-        <input id="gg-answer" placeholder="Answer" />
-        <input id="gg-newpw" type="password" placeholder="New password" autocomplete="new-password" />
-        <button id="gg-reset" class="gg-btn">Reset &amp; sign in</button>
-        <button id="gg-back" class="gg-link" type="button">Back to sign in</button>
-      </div>
-    </div>`;
+  wrap.innerHTML = createAdminGateMarkup();
   document.body.appendChild(wrap);
   injectStyles();
 
@@ -92,31 +72,21 @@ function renderGate() {
     if (!isAdmin(d.user)) return showErr('That account is not an administrator.');
     location.reload();
   }
+}
 
-  $('gg-forgot').addEventListener('click', async () => {
-    clearErr();
-    const d = await (await fetch('/api/admin/recover')).json().catch(() => ({}));
-    $('gg-q').textContent = d.question || 'Security question';
-    $('gg-login').classList.add('hidden');
-    $('gg-recover').classList.remove('hidden');
-    $('gg-title').textContent = 'Password recovery';
-  });
-  $('gg-back').addEventListener('click', () => {
-    $('gg-recover').classList.add('hidden');
-    $('gg-login').classList.remove('hidden');
-    $('gg-title').textContent = 'Admin sign-in';
-    clearErr();
-  });
-  $('gg-reset').addEventListener('click', async () => {
-    clearErr();
-    const r = await fetch('/api/admin/recover', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ answer: $('gg-answer').value, newPassword: $('gg-newpw').value }),
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok || !d.ok) return showErr(d.error || 'Recovery failed.');
-    location.reload();
-  });
+export function createAdminGateMarkup() {
+  return `
+    <div class="gg-card">
+      <div class="gg-logo"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></div>
+      <h2 id="gg-title">Admin sign-in</h2>
+      <div id="gg-err" class="gg-err hidden"></div>
+      <div id="gg-login">
+        <input id="gg-id" placeholder="Username or email" autocomplete="username" />
+        <input id="gg-pw" type="password" placeholder="Password" autocomplete="current-password" />
+        <button id="gg-go" class="gg-btn">Sign in</button>
+        <p class="gg-muted">Admin recovery is server-only. Use the local break-glass reset script over SSH.</p>
+      </div>
+    </div>`;
 }
 
 function injectStyles() {

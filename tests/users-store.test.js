@@ -54,12 +54,14 @@ describe('users-store', () => {
     expect(reopened.getById(u.id).verified).toBe(true);
   });
 
-  it('publicUser hides sensitive fields', async () => {
+  it('publicUser hides sensitive fields and admin role markers', async () => {
     const store = createUsersStore(file);
     const u = (await store.createUser({ email: 'a@b.com', passwordHash: 'secret' })).user;
-    const pub = publicUser(u);
+    await store.updateUser(u.id, { username: 'public', roles: ['admin'] });
+    const pub = publicUser(store.getByUsername('public'));
     expect(pub.email).toBeUndefined();
     expect(pub.passwordHash).toBeUndefined();
+    expect(pub.isAdmin).toBeUndefined();
     expect(pub).toHaveProperty('username');
   });
 

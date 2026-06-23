@@ -5,6 +5,7 @@
 // Reuses the existing admin endpoint:
 //   POST /api/admin/edit   { id, title, description, visibility, blur, category, thumb }
 import { requireAdmin } from './god-auth.js';
+import { ADMIN_PATHS } from './admin-paths.js';
 
 const $ = (id) => document.getElementById(id);
 const videoId = new URLSearchParams(location.search).get('v') || '';
@@ -17,7 +18,7 @@ function setMsg(text, kind) {
 
 async function loadEntry(id) {
   try {
-    const videos = await (await fetch(`/thumbs/videos.json?_=${Date.now()}`)).json();
+    const videos = (await (await fetch(`/api/admin/videos?_=${Date.now()}`)).json()).videos || [];
     return Array.isArray(videos) ? videos.find((v) => v.id === id) || null : null;
   } catch { return null; }
 }
@@ -48,7 +49,7 @@ async function main() {
   $('ev-desc').value = entry.description || '';
   paintThumb(entry.thumb);
   $('ev-view').href = `/watch?v=${encodeURIComponent(entry.id)}`;
-  $('ev-analytics').href = `/god-analytics.html?v=${encodeURIComponent(entry.id)}`;
+  $('ev-analytics').href = `${ADMIN_PATHS.analytics}?v=${encodeURIComponent(entry.id)}`;
 
   // Visibility (Free/Premium) + thumbnail blur. Blur only matters for Premium,
   // so its field is shown only when Premium is selected.

@@ -3,6 +3,7 @@
 // (delete / publish / unpublish / premium / free) plus per-row edit, thumbnail
 // replace, and delete.
 import { requireAdmin } from './god-auth.js';
+import { ADMIN_PATHS } from './admin-paths.js';
 
 const $ = (id) => document.getElementById(id);
 const PAGE = 50;
@@ -16,7 +17,7 @@ const selected = new Set();
 
 async function load() {
   try {
-    all = await (await fetch(`/thumbs/videos.json?_=${Date.now()}`)).json();
+    all = (await (await fetch(`/api/admin/videos?_=${Date.now()}`)).json()).videos || [];
   } catch { all = []; }
   try {
     cats = (await (await fetch('/api/categories')).json()).categories || [];
@@ -71,7 +72,7 @@ function libRow(v) {
     <img alt="" ${v.thumb ? `src="${v.thumb}?_=${Date.now()}"` : ''} />
     <div class="lt"><b></b><span class="meta"></span></div>
     <div class="lib-actions">
-      <a class="btn-edit" href="/god-edit.html?v=${encodeURIComponent(v.id)}">Edit</a>
+      <a class="btn-edit" href="${ADMIN_PATHS.edit}?v=${encodeURIComponent(v.id)}">Edit</a>
       <button class="btn-del" type="button">Delete</button>
     </div>`;
   row.querySelector('b').textContent = v.title || v.id;

@@ -1,3 +1,5 @@
+import { ADMIN_PATHS } from './admin-paths.js';
+
 // Reveals an admin-only "Upload Video" button in the site header for admins.
 // (The Dashboard / admin links now live in the profile dropdown — see
 // auth-widget.js.) Uses the unified session cookie — no bearer tokens.
@@ -11,7 +13,7 @@
   // Upload button — sits at the right of the header, just left of the avatar.
   const up = document.createElement('a');
   up.className = 'hdr-upload';
-  up.href = '/god-upload.html';
+  up.href = ADMIN_PATHS.upload;
   up.title = 'Upload a video (admin)';
   up.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l-6 6h4v6h4v-6h4l-6-6zM5 18v2h14v-2H5z"/></svg><span>Upload</span>';
 

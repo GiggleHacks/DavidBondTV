@@ -2,6 +2,7 @@
 // Pulls one video's stats from GET /api/admin/analytics/video?id=<id> and shows
 // headline numbers + a daily views bar chart (last 30 days).
 import { requireAdmin } from './god-auth.js';
+import { ADMIN_PATHS } from './admin-paths.js';
 
 const $ = (id) => document.getElementById(id);
 const videoId = new URLSearchParams(location.search).get('v') || '';
@@ -52,7 +53,7 @@ async function main() {
   $('va-minutes').textContent = (d.minutes || 0).toLocaleString();
   $('va-avg').textContent = fmtMmSs(d.avgSeconds);
   $('va-view').href = `/watch?v=${encodeURIComponent(videoId)}`;
-  $('va-edit').href = `/god-edit.html?v=${encodeURIComponent(videoId)}`;
+  $('va-edit').href = `${ADMIN_PATHS.edit}?v=${encodeURIComponent(videoId)}`;
   renderChart(d.byDay);
 }
 main();

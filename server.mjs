@@ -43,6 +43,8 @@ import { createRequestContext } from './lib/request-context.mjs';
 import { createAnalytics } from './lib/analytics-store.mjs';
 import { createGeoGate } from './lib/geo-gate.mjs';
 import { PUBLIC_DIR, MEDIA_DIR, MANIFEST, resolveAssetPath } from './lib/paths.js';
+import { ADMIN_ROUTE_PREFIX, isLegacyAdminRoute, isPrettyAdminRoute, resolveAdminFilePath } from './lib/admin-routes.js';
+import { sanitizePlaybackVideo, sanitizePublicVideo } from './lib/video-manifest.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 8080;
@@ -87,7 +89,6 @@ const commentBlocklist = (() => {
   } catch { return DEFAULT_BANNED; }
 })();
 const commentGuard = createCommentGuard({ banned: commentBlocklist });
-const recoverLimiter = createRateLimiter(60_000, 5); // 5 recovery attempts/min per IP
 // Max accepted upload size. Configurable so the grey-cloud upload host can take
 // large masters; default 25 GB. (Cloudflare still caps the main host at ~100 MB,
 // so large uploads go via the DNS-only upload subdomain — see deploy docs.)
@@ -224,7 +225,7 @@ async function seedAdminUser() {
 function isGeoCarveOut(pathname) {
   // All admin surfaces stay reachable so the owner can sign in, manage rules,
   // and (crucially) turn OFF a simulate-preview from any blocked country.
-  if (pathname === '/god' || pathname === '/god.html' || pathname.startsWith('/god-')) return true;
+  if (isPrettyAdminRoute(pathname)) return true;
   if (pathname === '/under-construction.html') return true;
   if (pathname === '/styles.css' || pathname === '/apple-touch-icon.png') return true;
   if (pathname.startsWith('/favicon')) return true;
@@ -259,7 +260,8 @@ function resolveFile(urlPath) {
   if (pathname === '/') pathname = '/browse.html'; // homepage = the video grid
   if (pathname === '/videos') pathname = '/browse.html'; // canonical feed URL (post-login landing)
   if (pathname === '/watch') pathname = '/index.html'; // per-video watch page (?v=<id>)
-  if (pathname === '/god') pathname = '/god.html'; // the admin backend lives at /god
+  const adminFile = resolveAdminFilePath(pathname);
+  if (adminFile) pathname = adminFile;
   // Pretty URLs for the legal / policy pages (linked from the site footer).
   if (pathname === '/terms') pathname = '/terms.html';
   if (pathname === '/privacy') pathname = '/privacy.html';
@@ -272,6 +274,20 @@ function resolveFile(urlPath) {
   // (/thumbs,/previews,/videos,/storyboards) → CONTENT_DIR, everything else →
   // public/. Traversal guard lives in resolveAssetPath (returns null on escape).
   return resolveAssetPath(pathname);
+}
+
+function playbackVideoById(id) {
+  if (!id) return null;
+  return listManifest().find((v) => v.id === id) || null;
+}
+
+function canAccessVideo(ctx, vid) {
+  const courseIds = products.productIdsForVideo(vid, { publishedOnly: true });
+  const courseGated = courseIds.length > 0;
+  const ownsCourse = courseGated && courseIds.some((pid) => ctx.ownedProductIds.includes(pid));
+  const dripBlocked = !videoPublic(vid) && !ctx.isAdmin;
+  const premiumBlocked = videoVisibility(vid) === 'premium' && !ctx.isMember;
+  return !(!ctx.isAdmin && (dripBlocked || (courseGated ? !ownsCourse : premiumBlocked)));
 }
 
 function escapeHtml(str) {
@@ -648,11 +664,11 @@ async function handleApi(req, res, ctx) {
     return true;
   }
 
-  // GET /api/admin/account → admin profile + security question (no hashes)
+  // GET /api/admin/account → admin profile (no hashes)
   if (req.method === 'GET' && url.pathname === '/api/admin/account') {
     const u = isAdminReq(req) ? accounts.currentUser(req) : null;
     if (!u) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
-    sendJson(res, 200, { account: { username: u.username, email: u.email, securityQuestion: adminAccount.getSecurityQuestion() } });
+    sendJson(res, 200, { account: { username: u.username, email: u.email } });
     return true;
   }
 
@@ -676,55 +692,17 @@ async function handleApi(req, res, ctx) {
     return true;
   }
 
-  // POST /api/admin/account/security  { password, question, answer }
-  if (req.method === 'POST' && url.pathname === '/api/admin/account/security') {
-    const u = isAdminReq(req) ? accounts.currentUser(req) : null;
-    if (!u) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
-    try {
-      const raw = await readBody(req, 4096);
-      let body; try { body = JSON.parse(raw); } catch { body = null; }
-      if (!body || !verifyPassword(body.password, u.passwordHash)) {
-        sendJson(res, 401, { error: 'Password is incorrect.' }); return true;
-      }
-      const result = adminAccount.setSecurityQuestion(body.question, body.answer);
-      sendJson(res, result.ok ? 200 : 400, result);
-    } catch { sendJson(res, 500, { error: 'Server error' }); }
+  // Legacy public admin recovery is intentionally removed. Recovery is now a
+  // server-only break-glass script, not a web endpoint.
+  if (url.pathname === '/api/admin/recover') {
+    sendJson(res, 404, { error: 'Not found' });
     return true;
   }
 
-  // GET /api/admin/recover → { question }  (unauthenticated, rate-limited)
-  if (req.method === 'GET' && url.pathname === '/api/admin/recover') {
-    if (!recoverLimiter.hit(clientIp(req)).allowed) {
-      sendJson(res, 429, { error: 'Too many attempts. Try again shortly.' });
-      return true;
-    }
-    sendJson(res, 200, { question: adminAccount.getSecurityQuestion() });
-    return true;
-  }
-
-  // POST /api/admin/recover  { answer, newPassword } → resets the admin password + signs in
-  if (req.method === 'POST' && url.pathname === '/api/admin/recover') {
-    if (!recoverLimiter.hit(clientIp(req)).allowed) {
-      sendJson(res, 429, { error: 'Too many attempts. Try again shortly.' });
-      return true;
-    }
-    try {
-      const raw = await readBody(req, 4096);
-      let body; try { body = JSON.parse(raw); } catch { body = null; }
-      if (!body || !adminAccount.verifySecurityAnswer(body.answer)) {
-        sendJson(res, 401, { error: 'Incorrect answer.' }); return true;
-      }
-      if (typeof body.newPassword !== 'string' || body.newPassword.length < 4) {
-        sendJson(res, 400, { error: 'Password must be at least 4 characters.' }); return true;
-      }
-      const adminU = accounts.store.getByUsername('davidbond');
-      if (!adminU) { sendJson(res, 500, { error: 'Admin account missing.' }); return true; }
-      await accounts.store.updateUser(adminU.id, {
-        passwordHash: hashPassword(body.newPassword), securityStamp: crypto.randomBytes(16).toString('hex'),
-      });
-      accounts.establishSession(res, accounts.store.getById(adminU.id)); // log straight in
-      sendJson(res, 200, { ok: true });
-    } catch { sendJson(res, 500, { error: 'Server error' }); }
+  // Full manifest for authenticated admin surfaces only.
+  if (req.method === 'GET' && url.pathname === '/api/admin/videos') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    sendJson(res, 200, { videos: listManifest() });
     return true;
   }
 
@@ -1589,6 +1567,10 @@ const server = http.createServer(async (req, res) => {
     // a blocked country/IP, or blocked users. Carve-outs (admin login, shell
     // assets, under-construction page) always pass so the owner can't lock out.
     const pathname = decodeURIComponent((req.url.split('?')[0]) || '/');
+    if (isLegacyAdminRoute(pathname)) {
+      res.writeHead(404, withSecurityHeaders());
+      return res.end('Not found');
+    }
     if (!isGeoCarveOut(pathname)) {
       const decision = geoGate.evaluate(ctx);
       if (decision.blocked) {
@@ -1609,16 +1591,30 @@ const server = http.createServer(async (req, res) => {
     const vmatch = pathname.match(/^\/videos\/([^/]+)\//); // pathname is already decoded
     if (vmatch) {
       const vid = vmatch[1];
-      const courseIds = products.productIdsForVideo(vid, { publishedOnly: true });
-      const courseGated = courseIds.length > 0;
-      const ownsCourse = courseGated && courseIds.some((pid) => ctx.ownedProductIds.includes(pid));
-      const dripBlocked = !videoPublic(vid) && !ctx.isAdmin;
-      const premiumBlocked = videoVisibility(vid) === 'premium' && !ctx.isMember;
-      const blocked = !ctx.isAdmin && (dripBlocked || (courseGated ? !ownsCourse : premiumBlocked));
-      if (blocked) {
+      if (!canAccessVideo(ctx, vid)) {
         res.writeHead(403, withSecurityHeaders());
         return res.end('Forbidden');
       }
+    }
+
+    if (pathname.startsWith('/api/videos/') && pathname.endsWith('/playback')) {
+      const vid = pathname.slice('/api/videos/'.length, -'/playback'.length);
+      const entry = playbackVideoById(vid);
+      if (!entry) {
+        res.writeHead(404, withSecurityHeaders());
+        return res.end('Not found');
+      }
+      if (!canAccessVideo(ctx, vid)) {
+        res.writeHead(403, withSecurityHeaders());
+        return res.end('Forbidden');
+      }
+      const json = JSON.stringify({ video: sanitizePlaybackVideo(entry) });
+      res.writeHead(200, withSecurityHeaders({
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': Buffer.byteLength(json),
+        'Cache-Control': 'no-store',
+      }));
+      return res.end(json);
     }
 
     // Dynamic sitemap generation for crawlers
@@ -1637,7 +1633,7 @@ const server = http.createServer(async (req, res) => {
     // so the upload/edit/manage pages still work).
     if (pathname === '/thumbs/videos.json') {
       const all = listManifest();
-      const list = ctx.isAdmin ? all : all.filter((v) => v.published !== false);
+      const list = ctx.isAdmin ? all : all.filter((v) => v.published !== false).map(sanitizePublicVideo);
       const json = JSON.stringify(list);
       res.writeHead(200, withSecurityHeaders({
         'Content-Type': 'application/json; charset=utf-8',
@@ -1646,7 +1642,6 @@ const server = http.createServer(async (req, res) => {
       }));
       return res.end(json);
     }
-
     // Static file serving (unchanged)
     const filePath = resolveFile(req.url);
     if (!filePath) {

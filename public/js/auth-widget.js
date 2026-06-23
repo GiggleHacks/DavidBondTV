@@ -1,6 +1,7 @@
 // Renders the header auth controls: "Sign in / Sign up" when logged out, or an
 // avatar + dropdown menu (Profile, Account, Logout) when logged in.
 import { fetchMe, postJSON } from './account.js';
+import { ADMIN_PATHS } from './admin-paths.js';
 
 const mount = document.getElementById('auth-widget');
 
@@ -73,10 +74,10 @@ function loggedIn(user) {
     label.textContent = 'Admin';
     menu.append(label);
     for (const [href, text] of [
-      ['/god', 'Dashboard'],
-      ['/god-videos.html', 'Manage videos'],
-      ['/god-users.html', 'Users'],
-      ['/god-community.html', 'Community'],
+      [ADMIN_PATHS.dashboard, 'Dashboard'],
+      [ADMIN_PATHS.videos, 'Manage videos'],
+      [ADMIN_PATHS.users, 'Users'],
+      [ADMIN_PATHS.community, 'Community'],
     ]) {
       const a = document.createElement('a');
       a.href = href;
