@@ -32,6 +32,14 @@ function fmtSize(bytes) {
   if (gb >= 1) return `${gb.toFixed(gb < 10 ? 1 : 0)} GB`;
   return `${Math.max(1, Math.round(bytes / 1e6))} MB`;
 }
+// "📦 540 MB → 118 MB · saved 78%" once a job reports original/compressed sizes.
+function compressionSummary(job) {
+  if (!job || !(job.originalSize > 0) || !(job.compressedSize > 0)) return '';
+  const saved = typeof job.savedPct === 'number'
+    ? job.savedPct
+    : Math.max(0, Math.round((1 - job.compressedSize / job.originalSize) * 100));
+  return `📦 ${fmtSize(job.originalSize)} → ${fmtSize(job.compressedSize)} · saved ${saved}%`;
+}
 function fmtEta(sec) {
   if (sec == null || !isFinite(sec) || sec < 0) return '—';
   sec = Math.round(sec);
@@ -485,6 +493,8 @@ async function pollJob(rowId, jobId, publishAt = 0) {
       const desc = publishAt ? `⏱ Scheduled for ${new Date(publishAt).toLocaleString()}` : '✓ Published';
       setState(rowId, 'ready', { title: `✅ ${job.title}`, desc });
       addRowActions(rowId, job.manifestId);
+      const sum = compressionSummary(job);
+      if (sum) setStats(rowId, sum);
       if (isEnabled()) playSound(getSelected()); // 🔊 completion chime
       return;
     }
@@ -571,6 +581,8 @@ async function recoverJobs(statusData) {
       } else if (job.status === 'ready') {
         setState(rowId, 'ready', { title: `✅ ${name}` });
         addRowActions(rowId, job.manifestId);
+        const sum = compressionSummary(job);
+        if (sum) setStats(rowId, sum);
       } else if (job.status === 'failed') {
         setState(rowId, 'failed', { title: '❌ Processing failed', desc: job.detail || job.error || '' });
       }
