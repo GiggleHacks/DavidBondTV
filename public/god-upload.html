@@ -128,6 +128,14 @@
     .snd-bar .btn.sm { padding: 7px 14px; }
     .up-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
     @media (max-width: 560px) { .snd-bar .acc-select { min-width: 120px; } }
+
+    .cat-badge-row { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); min-height: 18px; }
+    .cat-badge-row img { width: 18px; height: 13px; object-fit: cover; border-radius: 2px; }
+    .cat-badge-glyph { font-size: 15px; line-height: 1; }
+
+    .jobs-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+    .jobs-header h2 { margin: 0; }
+    #upload-limits-note { margin: 0 0 12px; }
   </style>
 </head>
 <body>
@@ -206,6 +214,7 @@
                   <option value="259200000">Every 72 hours</option>
                   <option value="604800000">Once per week</option>
                 </select>
+                <p id="drip-hint" class="field-note hidden">First video publishes immediately; each subsequent one releases at the chosen interval.</p>
               </div>
 
               <div class="up-field" id="category-row">
@@ -216,6 +225,7 @@
                   </select>
                   <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-videos.html" class="field-note">Manage →</a>
                 </div>
+                <div id="category-badge" class="cat-badge-row"></div>
               </div>
 
             </div>
@@ -233,7 +243,11 @@
       </section>
 
       <section id="jobs-card" class="card hidden">
-        <h2>Recent uploads</h2>
+        <div class="jobs-header">
+          <h2>Recent uploads</h2>
+          <button type="button" id="retry-all" class="btn ghost sm" disabled>↩ Retry all failed</button>
+        </div>
+        <p id="upload-limits-note" class="field-note"></p>
         <div id="jobs"></div>
       </section>
     </main>

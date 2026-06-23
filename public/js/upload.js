@@ -9,6 +9,10 @@ import { requireAdmin } from './god-auth.js';
 import { listSounds, playSound, getSelected, setSelected, isEnabled, setEnabled, primeAudio } from './upload-sounds.js';
 import { ADMIN_PATHS } from './admin-paths.js';
 import { attachEmojiPicker } from './emoji-picker.js';
+import {
+  RECENT_UPLOAD_RETENTION_MS, fmtSize, describeUploadError,
+  categoryOptionLabel, categoryBadge, filterRetainedJobs,
+} from './upload-utils.js';
 
 // Large uploads must skip Cloudflare's ~100MB proxy cap, so the upload page is
 // served from a DNS-only subdomain. If we're on the main (proxied) host, hand off
@@ -21,17 +25,17 @@ if (MAIN_HOSTS.includes(location.hostname)) {
 
 // Upload size limit (overwritten from /api/admin/status on load). 25 GB fallback.
 let maxUploadBytes = 25 * 1024 * 1024 * 1024;
+let uploadBatchLimit = null;
+let categoriesBySlug = new Map();
 
 const $ = (id) => document.getElementById(id);
 const jobsCard = $('jobs-card');
 const jobsEl = $('jobs');
+const retryAllBtn = $('retry-all');
+const uploadLimitsNote = $('upload-limits-note');
+const categoryBadgeEl = $('category-badge');
 
 // --- formatting helpers ---
-function fmtSize(bytes) {
-  const gb = bytes / 1e9;
-  if (gb >= 1) return `${gb.toFixed(gb < 10 ? 1 : 0)} GB`;
-  return `${Math.max(1, Math.round(bytes / 1e6))} MB`;
-}
 // "📦 540 MB → 118 MB · saved 78%" once a job reports original/compressed sizes.
 function compressionSummary(job) {
   if (!job || !(job.originalSize > 0) || !(job.compressedSize > 0)) return '';
@@ -48,22 +52,6 @@ function fmtEta(sec) {
   const s = sec % 60;
   if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
   return m > 0 ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`;
-}
-
-// Turn a raw HTTP status (or 0 for a network drop) into a clear, actionable
-// message. "Retry" wording is used wherever progress is saved and resumable.
-function describeUploadError(status, detail) {
-  if (status === 413) return `File too large — the limit is ${fmtSize(maxUploadBytes)}.`;
-  if (status === 415) return 'Only .mp4/.mov/.m4v video files are accepted.';
-  if (status === 429) return 'The server is rate-limiting uploads — wait a minute, then click Retry.';
-  if (status === 401) return 'Your admin session expired — reload the page and sign in again.';
-  if (status === 409) return 'The upload fell out of sync with the server — Retry will resync and continue.';
-  if (status === 502 || status === 503 || status === 504) {
-    return `The server gateway dropped the connection (${status}). Your progress is saved — click Retry to resume.`;
-  }
-  if (!status) return 'Network connection lost. Your progress is saved — click Retry to resume.';
-  if (status >= 500) return `The server hit an error (${status}). Your progress is saved — click Retry to resume.`;
-  return detail || `Upload failed (${status}).`;
 }
 
 // --- settings readers ---
@@ -93,12 +81,36 @@ async function loadCategories() {
   if (!sel) return;
   try {
     const { categories } = await (await fetch('/api/categories')).json();
+    categoriesBySlug = new Map((categories || []).map((c) => [c.slug, c]));
     for (const c of categories || []) {
       const o = document.createElement('option');
-      o.value = c.slug; o.textContent = c.name;
+      o.value = c.slug;
+      o.textContent = categoryOptionLabel(c);
       sel.appendChild(o);
     }
+    syncCategoryBadge();
   } catch { /* leave Uncategorized only */ }
+}
+
+function syncCategoryBadge() {
+  if (!categoryBadgeEl) return;
+  const selected = categoriesBySlug.get(currentCategory());
+  const badge = categoryBadge(selected);
+  const name = selected ? categoryOptionLabel(selected).replace(/^[^\s]+\s/, '') : 'Uncategorized';
+  if (badge.kind === 'flag' && badge.code) {
+    categoryBadgeEl.innerHTML = `<img src="/vendor/flags/4x3/${badge.code}.svg" alt="" loading="lazy" onerror="this.remove()"> <span>${name}</span>`;
+    return;
+  }
+  categoryBadgeEl.innerHTML = `<span class="cat-badge-glyph">${badge.text}</span><span>${name}</span>`;
+}
+
+function syncUploadLimitsNote() {
+  if (!uploadLimitsNote) return;
+  const sizeText = `Per-file limit ${fmtSize(maxUploadBytes)}`;
+  const batchText = uploadBatchLimit && Number.isFinite(uploadBatchLimit)
+    ? `batch limit ${uploadBatchLimit} files`
+    : 'no batch cap';
+  uploadLimitsNote.textContent = `${sizeText} • ${batchText} • uploads process one at a time • completed rows clear after 24 hours`;
 }
 
 // --- jobs UI ---
@@ -129,6 +141,7 @@ function renderJob(rowId, name, { editable = false, defaultTitle = '' } = {}) {
   el.querySelector('.job-cancel').addEventListener('click', () => cancelJob(rowId));
   jobNodes.set(rowId, el);
   jobsEl.prepend(el);
+  syncRetryAllButton();
   return el;
 }
 // Cancel a queued (not yet started) or in-flight upload without a page refresh.
@@ -174,6 +187,7 @@ function setState(rowId, state, { title, desc } = {}) {
     el.querySelector('.bar').classList.remove('hidden');
   }
   if (desc !== undefined) el.querySelector('.jdesc').textContent = desc || '';
+  syncRetryAllButton();
 }
 // On a completed upload, surface quick View + Edit actions (and a thumbnail).
 function addRowActions(rowId, manifestId) {
@@ -208,7 +222,6 @@ function addRowActions(rowId, manifestId) {
 
 // --- upload queue (one at a time) ---
 const MAX_CONCURRENT = 1;
-const MAX_BATCH = 50;
 const uploadQueue = [];
 let inFlight = 0;
 
@@ -216,9 +229,9 @@ function enqueueFiles(files) {
   primeAudio(); // unlock Web Audio within this user gesture so the done-chime can play
   let list = [...files].filter((f) => /\.(mp4|mov|m4v)$/i.test(f.name));
   if (!list.length) return;
-  if (list.length > MAX_BATCH) {
-    alert(`You selected ${list.length} files. Only the first ${MAX_BATCH} will be uploaded this batch.`);
-    list = list.slice(0, MAX_BATCH);
+  if (uploadBatchLimit && list.length > uploadBatchLimit) {
+    alert(`You selected ${list.length} files. This server currently allows ${uploadBatchLimit} files per batch.`);
+    list = list.slice(0, uploadBatchLimit);
   }
   const visibility = currentVisibility();
   const blur = currentBlur();
@@ -307,7 +320,7 @@ async function runUpload(item) {
 
   let settled = false;
   const settle = () => { if (settled) return; settled = true; jobControls.delete(rowId); inFlight--; pump(); };
-  const bail = (status, detail) => failWithRetry(rowId, item, describeUploadError(status, detail));
+  const bail = (status, detail) => failWithRetry(rowId, item, describeUploadError(status, detail, { maxUploadBytes }));
 
   try {
     // Resume: confirm the server's offset. If the session is gone, start fresh.
@@ -463,6 +476,17 @@ function failWithRetry(rowId, item, message) {
     pump();
   });
   el.querySelector('.jbody').appendChild(btn);
+  syncRetryAllButton();
+}
+
+function syncRetryAllButton() {
+  if (!retryAllBtn) return;
+  retryAllBtn.disabled = !jobsEl.querySelector('.job-retry');
+}
+
+function retryAllFailed() {
+  const buttons = [...jobsEl.querySelectorAll('.job-retry')];
+  buttons.forEach((btn) => btn.click());
 }
 
 // Poll server processing status and render GRANULAR telemetry: the exact task
@@ -552,7 +576,7 @@ function initSoundPicker() {
 
 // Recover active/recent processing jobs on page load so they survive refreshes.
 async function recoverJobs(statusData) {
-  const jobs = statusData.jobs || [];
+  const jobs = filterRetainedJobs(statusData.jobs || [], Date.now(), RECENT_UPLOAD_RETENTION_MS);
   // A finished job's record can outlive the video (e.g. the video was deleted).
   // Cross-check against the live library so we don't show "Recent uploads" rows
   // whose View/Edit would point at nothing.
@@ -593,11 +617,15 @@ async function recoverJobs(statusData) {
 async function main() {
   await requireAdmin(); // shows sign-in overlay for non-admins
   initSoundPicker();
+  retryAllBtn?.addEventListener('click', retryAllFailed);
   loadCategories();
+  $('category')?.addEventListener('change', syncCategoryBadge);
   try {
     const data = await (await fetch('/api/admin/status')).json();
     $('ffmpeg-banner').classList.toggle('hidden', data.ffmpeg !== false);
     if (typeof data.maxUploadBytes === 'number' && data.maxUploadBytes > 0) maxUploadBytes = data.maxUploadBytes;
+    uploadBatchLimit = Number.isFinite(data.maxBatchUploads) ? data.maxBatchUploads : null;
+    syncUploadLimitsNote();
     await recoverJobs(data);
   } catch { /* ignore */ }
 }

@@ -1398,10 +1398,6 @@ async function handleApi(req, res, ctx) {
       sendJson(res, 401, { error: 'Unauthorized' });
       return true;
     }
-    if (!uploadLimiter.hit(clientIp(req)).allowed) {
-      sendJson(res, 429, { error: 'Too many uploads — wait a minute and try again.' });
-      return true;
-    }
     const name = url.searchParams.get('name') || '';
     if (!acceptableUpload(name, req.headers['content-type'])) {
       sendJson(res, 415, { error: 'Only video files (.mp4/.mov/.m4v) are accepted.' });
@@ -1425,10 +1421,6 @@ async function handleApi(req, res, ctx) {
   // cleans up. Each chunk is small so it never trips Node's requestTimeout. ---
   if (req.method === 'POST' && url.pathname === '/api/admin/upload/init') {
     if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
-    if (!uploadLimiter.hit(clientIp(req)).allowed) {
-      sendJson(res, 429, { error: 'Too many uploads — wait a minute and try again.' });
-      return true;
-    }
     let body; try { body = JSON.parse(await readBody(req, 8192)); } catch { body = null; }
     const name = body && typeof body.name === 'string' ? body.name : '';
     const size = body ? Number(body.size) : NaN;
