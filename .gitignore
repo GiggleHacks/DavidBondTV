@@ -20,3 +20,9 @@ data/
 # Secrets (Gmail App Password, AUTH_SECRET, etc.) — keep .env.example tracked
 .env
 .deploy-data/
+
+# Whisper speech model + generated transcripts (used only by the offline
+# build/ingest-course tooling — the 148 MB model must never be committed).
+whisper/
+build/transcripts/
+build/*.state.json

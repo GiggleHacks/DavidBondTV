@@ -128,6 +128,16 @@
 .sub-btn:active { transform: scale(.97); }
 .sub-btn.is-subbed { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
 .sub-count { color: var(--text-dim); font-size: 13px; }
+/* Share button — mirrors the reaction pill; sits at the end of the action row */
+.share-btn {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 999px; padding: 7px 15px; font-size: 14px; font-weight: 600; min-height: 44px;
+  transition: filter .15s, transform .05s, border-color .15s;
+}
+.share-btn svg { fill: currentColor; }
+.share-btn:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.share-btn:active { transform: scale(.97); }
 .react-btn {
   display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
   background: var(--surface-2); color: var(--text); border: 1px solid var(--border);

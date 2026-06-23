@@ -9,6 +9,7 @@ import { nextRate } from './playback.js';
 import { initTheme } from './theme.js';
 import { initComments } from './comments.js';
 import { initReactions } from './reactions.js';
+import { initShare } from './share.js';
 import { initWatchTracker } from './watch-tracker.js';
 import { canUserWatchPremium, isAdminUser, canWatchVideo } from './viewer-access.js';
 import { startPurchase, fmtMoney } from './course-buy.js';
@@ -190,6 +191,9 @@ async function init() {
   const errorMsg = $('error-msg');
   const retryBtn = $('retry-btn');
   const settingsMenuEl = $('settings-menu');
+
+  // Share button works on every path (incl. the paywall) — it only needs the URL.
+  initShare($('share-btn'));
 
   // Buffering spinner
   video.addEventListener('waiting', () => { spinner.hidden = false; });

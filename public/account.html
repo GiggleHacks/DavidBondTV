@@ -102,6 +102,7 @@
     import { fetchMe, postJSON, initialAvatarDataUri, fetchAuthConfig, mountSecretReveal } from '/js/account.js';
     import { deriveBillingView } from '/js/billing-view.js';
     const $ = (id) => document.getElementById(id);
+    const fmtDate = (ms) => (ms ? new Date(ms).toLocaleDateString() : '—');
     const PROVIDER_LABELS = { discord: 'Discord', google: 'Google', github: 'GitHub' };
     let authCfg = { providers: {} };
     // undefined → photo unchanged; '' → revert to generated initial; else an upload value.
