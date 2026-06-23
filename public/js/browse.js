@@ -84,6 +84,16 @@ function stopPreview() {
 const NEW_WINDOW_MS = 3 * 24 * 60 * 60 * 1000; // "NEW" badge visible for 3 days
 const isNew = (v) => typeof v.uploadedAt === 'number' && (Date.now() - v.uploadedAt) < NEW_WINDOW_MS;
 
+const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// Optional "flag + category name" meta row for a card, when the video's category
+// has an admin-assigned country flag. Empty string when there's no flag.
+function catFlagRow(v) {
+  const cat = v.category && state.categoryMap ? state.categoryMap.get(v.category) : null;
+  if (!cat || !cat.flag) return '';
+  return `<div class="vcatflag"><img class="vcf-img" src="/vendor/flags/4x3/${cat.flag}.svg" alt="" loading="lazy" onerror="this.remove()"><span>${escHtml(cat.name)}</span></div>`;
+}
+
 function card(v) {
   const status = v.status || 'ready';
   // Access gate (mirrors the server): admin > course-ownership > premium-member >
@@ -116,6 +126,7 @@ function card(v) {
       <div class="vmeta">
         <div class="vtitle"></div>
         <div class="vchannel">David Bond TV <span class="check">✔</span></div>
+        ${catFlagRow(v)}
         <div class="vdesc"></div>
         <div class="vstats"></div>
       </div>
@@ -402,6 +413,11 @@ async function init() {
     }
     state.videoCourseMap = map;
   } catch { /* no products */ }
+  try {
+    // Category registry (slug → {name, flag?}) so cards can show a category flag.
+    const cats = (await (await fetch('/api/categories')).json()).categories || [];
+    state.categoryMap = new Map(cats.map((c) => [c.slug, c]));
+  } catch { /* no categories */ }
   try {
     const res = await fetch('/thumbs/videos.json');
     state.videos = await res.json();

@@ -175,6 +175,38 @@ async function loadExtras() {
     : '<p class="muted">No users yet.</p>';
 }
 
+// Recent individual viewer events — time, IP, country, user, video, watched.
+function fmtAgo(t) {
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60); if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+async function loadVisitors() {
+  const box = $('visitors');
+  if (!box) return;
+  const d = await api('/api/admin/analytics/visitors?limit=200');
+  const events = d.events || [];
+  const head = '<div class="tr th"><span>When</span><span>IP</span><span>Location</span><span>User</span><span>Video</span><span class="num">Watched</span></div>';
+  if (!events.length) { box.innerHTML = head + '<div class="tr"><span class="muted">No visitor activity recorded yet.</span></div>'; return; }
+  box.innerHTML = head + events.map((e) => {
+    const loc = e.cc ? `${flagIcon(e.cc)} ${e.cc}` : '—';
+    const who = e.blocked ? '<span class="badge blk">blocked</span>' : (e.user ? esc(e.user) : '<span class="muted">guest</span>');
+    const vid = e.video ? esc(e.video) : (e.reason ? esc(e.reason) : '—');
+    const watched = e.seconds ? `${e.seconds}s` : '—';
+    return `<div class="tr">
+      <span title="${new Date(e.t).toLocaleString()}">${fmtAgo(e.t)}</span>
+      <span class="mono">${esc(e.ip || '—')}</span>
+      <span>${loc}</span>
+      <span class="name">${who}</span>
+      <span class="name">${vid}</span>
+      <span class="num">${watched}</span>
+    </div>`;
+  }).join('');
+}
+
 function wireMapModes() {
   $('map-mode').addEventListener('click', (e) => {
     const btn = e.target.closest('button'); if (!btn) return;
@@ -187,7 +219,7 @@ async function main() {
   await requireAdmin(); // sign-in overlay for non-admins
   wireMapModes(); wireGeo();
   try {
-    await Promise.all([loadOverview(), loadCountries('viewers'), loadGeo(), loadExtras()]);
+    await Promise.all([loadOverview(), loadCountries('viewers'), loadGeo(), loadExtras(), loadVisitors()]);
   } catch { /* a 401 mid-flight reloads into the gate */ }
 }
 main();

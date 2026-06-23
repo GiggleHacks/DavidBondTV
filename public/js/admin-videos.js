@@ -4,10 +4,16 @@
 // replace, and delete.
 import { requireAdmin } from './god-auth.js';
 import { ADMIN_PATHS } from './admin-paths.js';
+import { COUNTRIES } from './countries.js';
 
 const $ = (id) => document.getElementById(id);
 const PAGE = 50;
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// <option> list for the category flag picker: "no flag" + every country, value
+// = lowercase ISO code (matches the SVG flag filenames). Built once.
+const FLAG_OPTIONS = '<option value="">— No flag —</option>'
+  + COUNTRIES.map((c) => `<option value="${c.code.toLowerCase()}">${esc(c.name)} (${c.code})</option>`).join('');
 
 let all = [];
 let filtered = [];
@@ -125,10 +131,21 @@ function renderCats() {
   for (const c of cats) {
     const row = document.createElement('div');
     row.className = 'cat-row';
-    row.innerHTML = `<input class="cat-name" value="${esc(c.name)}" maxlength="40" />
+    const flagThumb = c.flag
+      ? `<img class="cat-flag-img" src="/vendor/flags/4x3/${c.flag}.svg" alt="" onerror="this.remove()">`
+      : '<span class="cat-flag-none" aria-hidden="true"></span>';
+    row.innerHTML = `${flagThumb}
+      <input class="cat-name" value="${esc(c.name)}" maxlength="40" />
       <span class="muted cat-slug">${esc(c.slug)}</span>
+      <select class="cat-flag" aria-label="Category flag">${FLAG_OPTIONS}</select>
       <button class="btn sm ghost cat-save">Rename</button>
       <button class="btn sm danger cat-del">Remove</button>`;
+    row.querySelector('.cat-flag').value = c.flag || '';
+    row.querySelector('.cat-flag').addEventListener('change', async (e) => {
+      const d = await catAction({ action: 'setflag', slug: c.slug, flag: e.target.value });
+      if (d && d.ok) { cats = d.categories; render(); renderCats(); }
+      else if (d) alert(d.error || 'Could not set flag.');
+    });
     row.querySelector('.cat-save').addEventListener('click', async () => {
       const name = row.querySelector('.cat-name').value.trim();
       const d = await catAction({ action: 'rename', slug: c.slug, name });

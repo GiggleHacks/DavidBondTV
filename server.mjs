@@ -892,6 +892,29 @@ async function handleApi(req, res, ctx) {
     return true;
   }
 
+  // GET /api/admin/analytics/visitors?limit= → recent individual viewer events
+  // with IP + country + user + video (newest first), for the analytics panel.
+  if (req.method === 'GET' && url.pathname === '/api/admin/analytics/visitors') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '200', 10) || 200, 1), 1000);
+    const titles = manifestTitleMap();
+    const names = new Map(accounts.store.listAll().map((u) => [u.id, u.username || u.email || u.id]));
+    const events = analytics.getRecentEvents(limit).map((e) => ({
+      t: e.t,
+      ip: e.ip,
+      cc: e.cc,
+      user: e.userId ? (names.get(e.userId) || 'deleted user') : null,
+      userId: e.userId,
+      video: e.video ? (titles[e.video] || e.video) : null,
+      videoId: e.video,
+      seconds: e.dt,
+      blocked: e.blocked,
+      reason: e.reason,
+    }));
+    sendJson(res, 200, { events });
+    return true;
+  }
+
   // --- Community inbox (admin) --- aggregate every comment across all videos.
   // GET /api/admin/community?q=&video=&author=&sort=&limit=&offset=
   if (req.method === 'GET' && url.pathname === '/api/admin/community') {
@@ -989,11 +1012,17 @@ async function handleApi(req, res, ctx) {
     if (req.method === 'GET' && !userId) {
       const ustats = analytics.getAllUserStats();
       const blockedIds = new Set(geoGate.getRules().blockedUserIds);
-      const users = accounts.store.listAll().map((u) => {
+      const all = accounts.store.listAll();
+      // Only show users who have completed email verification — pending/fake
+      // signups stay out of the directory until their email is confirmed.
+      const verifiedUsers = all.filter((u) => u.verified);
+      const hiddenUnverified = all.length - verifiedUsers.length;
+      const users = verifiedUsers.map((u) => {
         const s = ustats[u.id] || {};
         return {
           id: u.id, username: u.username, email: u.email,
           country: s.lastCountry || null,
+          lastIp: (s.ips && s.ips[0]) || null,
           subscribed: hasActiveMembership(u),
           videosWatched: s.byVideo ? Object.keys(s.byVideo).length : 0,
           minutesWatched: Math.round((s.totalSeconds || 0) / 60),
@@ -1001,7 +1030,7 @@ async function handleApi(req, res, ctx) {
           verified: u.verified, createdAt: u.createdAt,
         };
       });
-      sendJson(res, 200, { users });
+      sendJson(res, 200, { users, hiddenUnverified });
       return true;
     }
 
@@ -1247,8 +1276,9 @@ async function handleApi(req, res, ctx) {
         let body; try { body = JSON.parse(raw); } catch { body = null; }
         if (!body || !body.action) { sendJson(res, 400, { error: 'Invalid request' }); return true; }
         let result;
-        if (body.action === 'add') result = categories.add(body.name);
+        if (body.action === 'add') result = categories.add(body.name, body.flag);
         else if (body.action === 'rename') result = categories.rename(body.slug, body.name);
+        else if (body.action === 'setflag') result = categories.setFlag(body.slug, body.flag);
         else if (body.action === 'remove') result = categories.remove(body.slug);
         else result = { ok: false, error: 'Unknown action.' };
         sendJson(res, result.ok ? 200 : 400, { ...result, categories: categories.list() });

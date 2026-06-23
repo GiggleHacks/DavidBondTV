@@ -81,6 +81,15 @@ body.admin-gated { overflow: hidden; }
 .tbl .th { color: var(--text-dim); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: .5px; }
 .tbl .tr .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tbl .num { text-align: right; color: var(--text-dim); }
+/* Recent visitors table — 6 columns: when / IP / location / user / video / watched */
+.tbl.visitors .tr { grid-template-columns: 76px 130px 96px 1fr 1fr 70px; }
+.tbl.visitors .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 720px) {
+  .tbl.visitors .tr { grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+  .tbl.visitors .th { display: none; }
+  .tbl.visitors .tr .num { text-align: left; }
+}
+
 /* clickable top-video rows → per-video analytics */
 a.tr { color: inherit; text-decoration: none; }
 a.tr:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
@@ -182,6 +191,9 @@ a.tr:hover .name { color: var(--accent); }
 .cat-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .cat-row .cat-name { flex: 1 1 150px; min-width: 0; max-width: 220px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; }
 .cat-row .cat-slug { font-size: 12px; font-family: ui-monospace, monospace; }
+.cat-row .cat-flag-img { width: 26px; height: 19px; object-fit: cover; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); flex: none; }
+.cat-row .cat-flag-none { width: 26px; height: 19px; border-radius: 3px; border: 1px dashed var(--border); flex: none; }
+.cat-row .cat-flag { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; max-width: 170px; }
 .lib-actions { display: flex; gap: 8px; flex: none; }
 .btn-edit { flex: none; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
 .btn-edit:hover { background: color-mix(in srgb, var(--accent) 18%, var(--surface-2)); }

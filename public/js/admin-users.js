@@ -16,6 +16,7 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': 
 const fmtDate = (ms) => (ms ? new Date(ms).toLocaleDateString() : '—');
 
 let allUsers = [];
+let hiddenUnverified = 0;
 
 function statusBadge(u) {
   if (u.blocked) return '<span class="badge blk">Blocked</span>';
@@ -26,7 +27,9 @@ function statusBadge(u) {
 function renderList(filter = '') {
   const f = filter.toLowerCase();
   const rows = allUsers.filter((u) => !f || (u.username || '').toLowerCase().includes(f) || (u.email || '').toLowerCase().includes(f));
-  $('ucount').textContent = `(${rows.length})`;
+  $('ucount').textContent = hiddenUnverified
+    ? `(${rows.length}) · ${hiddenUnverified} unverified hidden`
+    : `(${rows.length})`;
   $('user-list').innerHTML = rows.length ? '' : '<p class="muted">No users.</p>';
   for (const u of rows) {
     const row = document.createElement('div');
@@ -135,6 +138,7 @@ function membershipButton(active, m) {
 async function loadList() {
   const d = await api('/api/admin/users');
   allUsers = d.users || [];
+  hiddenUnverified = d.hiddenUnverified || 0;
   renderList($('search').value);
 }
 

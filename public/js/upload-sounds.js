@@ -89,7 +89,7 @@ const SOUNDS = [
 ];
 
 const byId = new Map(SOUNDS.map((s) => [s.id, s]));
-const DEFAULT_ID = 'chime';
+const DEFAULT_ID = 'arpUp';
 
 export function listSounds() {
   return SOUNDS.map(({ id, name }) => ({ id, name }));
