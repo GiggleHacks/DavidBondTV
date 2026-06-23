@@ -66,36 +66,62 @@
     /* --- Job rows --- */
     .job { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
     .job:first-child { border-top: none; }
-    .job .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex: none; background: var(--text-dim); }
-    .job.uploading .dot { background: #3b82f6; animation: pulse 1s infinite; }
-    .job.processing .dot { background: #f59e0b; animation: pulse 1s infinite; }
-    .job.ready .dot { background: #22c55e; }
-    .job.failed .dot { background: #ef4444; }
+    .job .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex: none; background: var(--text-dim);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-dim) 22%, transparent); }
+    .job.queued .dot { background: #a78bfa; box-shadow: 0 0 0 3px color-mix(in srgb, #a78bfa 28%, transparent); }
+    .job.uploading .dot { background: #3b82f6; box-shadow: 0 0 0 3px color-mix(in srgb, #3b82f6 30%, transparent); animation: pulse 1s infinite; }
+    .job.processing .dot { background: #f59e0b; box-shadow: 0 0 0 3px color-mix(in srgb, #f59e0b 30%, transparent); animation: pulse 1s infinite; }
+    .job.ready .dot { background: #22c55e; box-shadow: 0 0 0 3px color-mix(in srgb, #22c55e 32%, transparent); }
+    .job.failed .dot { background: #ef4444; box-shadow: 0 0 0 3px color-mix(in srgb, #ef4444 30%, transparent); }
+    .job.canceled .dot { background: #94a3b8; box-shadow: 0 0 0 3px color-mix(in srgb, #94a3b8 26%, transparent); }
     @keyframes pulse { 50% { opacity: .35; } }
     .job .jbody { flex: 1; min-width: 0; }
     .job .jname { font-size: 12px; color: var(--text-dim); word-break: break-word; }
     .job .jtitle { font-weight: 700; margin-top: 2px; }
     .job .jdesc { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
     .job .jstats { font-family: inherit; font-size: 12px; letter-spacing: .3px; color: var(--accent); margin-top: 4px; }
-    .retrobar {
-      height: 10px; margin-top: 6px; padding: 2px; border-radius: 4px;
-      background: #0b1120; border: 2px solid #05080f;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,.05), inset 0 2px 4px rgba(0,0,0,.5);
-      image-rendering: pixelated; overflow: hidden;
+
+    /* Redesigned progress bar — bright, rounded, animated sheen + % label */
+    .bar {
+      position: relative; height: 16px; margin-top: 8px; border-radius: 999px; overflow: hidden;
+      background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+      box-shadow: inset 0 0 0 1px var(--border);
     }
-    .retrobar > i {
-      display: block; height: 100%; width: 0; border-radius: 2px;
-      background-image:
-        repeating-linear-gradient(90deg, rgba(0,0,0,.22) 0, rgba(0,0,0,.22) 2px, transparent 2px, transparent 12px),
-        linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, #fff) 0%, var(--accent) 52%, color-mix(in srgb, var(--accent) 70%, #000) 100%);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.35);
-      transition: width .3s steps(16, end);
+    .bar > i {
+      position: relative; display: block; height: 100%; width: 0; border-radius: 999px; overflow: hidden;
+      background: linear-gradient(90deg,
+        color-mix(in srgb, var(--accent) 85%, #6ee7ff) 0%,
+        var(--accent) 55%,
+        color-mix(in srgb, var(--accent) 70%, #a855f7) 100%);
+      transition: width .25s ease;
     }
-    .job.uploading .retrobar > i { animation: retro-pulse .8s steps(2, end) infinite; }
-    @keyframes retro-pulse { 50% { filter: brightness(1.18); } }
+    /* Moving sheen while uploading */
+    .job.uploading .bar > i::after {
+      content: ""; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.45) 50%, transparent 100%);
+      background-size: 40% 100%; background-repeat: no-repeat;
+      animation: bar-sheen 1.1s linear infinite;
+    }
+    @keyframes bar-sheen { 0% { background-position: -45% 0; } 100% { background-position: 145% 0; } }
+    .job.ready .bar > i { background: linear-gradient(90deg, #16a34a, #22c55e); }
+    .bar-pct {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 800; letter-spacing: .4px;
+      color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5); pointer-events: none;
+    }
+
     .job-thumb { width: 72px; height: 41px; object-fit: cover; border-radius: 6px; background: var(--surface-2); flex: none; }
     .job-actions { display: flex; gap: 8px; margin-top: 8px; }
+    .job-cancel { margin-top: 8px; }
     .btn.sm { padding: 6px 16px; font-size: 13px; }
+
+    /* --- Notification sound picker --- */
+    .snd-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .snd-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); cursor: pointer; user-select: none; }
+    .snd-bar .acc-select { width: auto; min-width: 160px; }
+    .snd-bar .btn.sm { padding: 7px 14px; }
+    .up-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    @media (max-width: 560px) { .snd-bar .acc-select { min-width: 120px; } }
   </style>
 </head>
 <body>
@@ -117,7 +143,14 @@
     <main id="app">
       <section class="card">
         <div class="up-head">
-          <h2>Upload</h2>
+          <h2>📤 Upload</h2>
+          <div class="snd-bar">
+            <label class="snd-toggle" title="Play a sound when an upload finishes">
+              <input type="checkbox" id="snd-toggle" /> 🔊 Sound
+            </label>
+            <select id="snd-select" class="acc-select" aria-label="Notification sound"></select>
+            <button type="button" id="snd-test" class="btn ghost sm">▶ Test</button>
+          </div>
         </div>
         <div id="ffmpeg-banner" class="banner warn hidden">⚠ ffmpeg isn't installed on this server, so uploads can't be processed yet.</div>
 
@@ -183,7 +216,7 @@
 
           <div id="drop" class="drop">
             <div class="drop-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4l-6 6h4v6h4v-6h4l-6-6zM5 18v2h14v-2H5z"/></svg></div>
-            <strong>Drop videos here</strong>
+            <strong>Drop videos here 🎬</strong>
             <div class="drop-formats">.mp4 · .mov · .m4v</div>
             <button type="button" class="btn drop-select">Select files</button>
           </div>

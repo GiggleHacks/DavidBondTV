@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { contentType, parseRange, sendJson, readBody, clientIp, withSecurityHeaders } from './lib/http-util.js';
+import { contentType, parseRange, sendJson, readBody, readRawBody, clientIp, withSecurityHeaders } from './lib/http-util.js';
 import { createChallenge, verifyChallenge } from './lib/challenge.js';
 import { createRateLimiter } from './lib/rate-limit.js';
 import { validateComment, addComment, listComments, deleteComment, readAllComments } from './lib/comments-store.js';
@@ -35,6 +35,7 @@ import {
 } from './lib/notifications-store.js';
 import { hasFfmpeg } from './lib/media.mjs';
 import * as categories from './lib/categories.js';
+import * as uploads from './lib/upload-sessions.mjs';
 import * as products from './lib/products.js';
 import * as pricing from './lib/pricing.js';
 import * as subscribers from './lib/subscribers.js';
@@ -91,6 +92,12 @@ const recoverLimiter = createRateLimiter(60_000, 5); // 5 recovery attempts/min 
 // large masters; default 25 GB. (Cloudflare still caps the main host at ~100 MB,
 // so large uploads go via the DNS-only upload subdomain — see deploy docs.)
 const UPLOAD_MAX_BYTES = Number(process.env.UPLOAD_MAX_BYTES) || 25 * 1024 * 1024 * 1024;
+// Chunk size for resumable uploads. Small enough that a single chunk always
+// finishes well under Node's requestTimeout (so the 502-on-slow-upload class of
+// failure can't happen), large enough to keep request overhead low.
+const UPLOAD_CHUNK_SIZE = Number(process.env.UPLOAD_CHUNK_SIZE) || 16 * 1024 * 1024;
+const UPLOAD_SCHEDULE_MAX_MS = 365 * 24 * 60 * 60 * 1000; // a year out, sanity cap
+const UPLOAD_SESSION_IDLE_MS = 6 * 60 * 60 * 1000; // discard a stalled .part after 6h
 const COMMENTS_FILE = path.join(__dirname, 'data', 'comments.json');
 const REACTIONS_FILE = path.join(__dirname, 'data', 'reactions.json');
 const ADMIN_FILE = path.join(__dirname, 'data', 'admin.json');
@@ -1127,6 +1134,112 @@ async function handleApi(req, res, ctx) {
     return true;
   }
 
+  // --- Resumable chunked upload (preferred path; single-shot above kept as a
+  // fallback). Flow: init → chunk×N → complete. status enables resume; abort
+  // cleans up. Each chunk is small so it never trips Node's requestTimeout. ---
+  if (req.method === 'POST' && url.pathname === '/api/admin/upload/init') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    if (!uploadLimiter.hit(clientIp(req)).allowed) {
+      sendJson(res, 429, { error: 'Too many uploads — wait a minute and try again.' });
+      return true;
+    }
+    let body; try { body = JSON.parse(await readBody(req, 8192)); } catch { body = null; }
+    const name = body && typeof body.name === 'string' ? body.name : '';
+    const size = body ? Number(body.size) : NaN;
+    if (!name || !Number.isFinite(size)) { sendJson(res, 400, { error: 'Invalid request.' }); return true; }
+    if (!acceptableUpload(name, body.type)) {
+      sendJson(res, 415, { error: 'Only video files (.mp4/.mov/.m4v) are accepted.' }); return true;
+    }
+    if (size <= 0) { sendJson(res, 400, { error: 'That file is empty.' }); return true; }
+    if (size > UPLOAD_MAX_BYTES) { sendJson(res, 413, { error: 'File too large.' }); return true; }
+    const visibility = body.visibility === 'premium' ? 'premium' : 'free';
+    const blur = typeof body.blur === 'string' ? body.blur : '';
+    const catParam = typeof body.category === 'string' ? body.category : '';
+    const category = categories.has(catParam) ? catParam : '';
+    const pa = Number(body.publishAt);
+    const publishAt = Number.isFinite(pa) && pa > Date.now() && pa < Date.now() + UPLOAD_SCHEDULE_MAX_MS ? pa : 0;
+    const { id, savedPath, partPath } = newUploadTarget(name);
+    await fsp.unlink(partPath).catch(() => {}); // clear any stale .part for this id
+    uploads.createSession(id, { partPath, savedPath, name, size, visibility, blur, category, publishAt });
+    console.log(`[upload] INIT id=${id} name="${name}" size=${(size / 1e6).toFixed(1)}MB visibility=${visibility}`);
+    sendJson(res, 200, { uploadId: id, offset: 0, chunkSize: UPLOAD_CHUNK_SIZE });
+    return true;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/admin/upload/status') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const session = uploads.getSession(url.searchParams.get('id') || '');
+    if (!session) { sendJson(res, 404, { error: 'Upload session not found — start the upload again.' }); return true; }
+    sendJson(res, 200, { offset: session.received, size: session.size });
+    return true;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/admin/upload/chunk') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const id = url.searchParams.get('id') || '';
+    const offset = Number(url.searchParams.get('offset'));
+    const session = uploads.getSession(id);
+    const declaredLen = Number(req.headers['content-length']) || 0;
+    const check = uploads.validateChunk(session, offset, declaredLen, UPLOAD_MAX_BYTES);
+    if (!check.ok) {
+      try { req.resume(); } catch { /* drain */ }
+      console.error(`[upload] chunk REJECT ${check.status} id=${id} offset=${offset} (${check.error})`);
+      sendJson(res, check.status, { error: check.error, expected: check.expected });
+      return true;
+    }
+    const buf = await readRawBody(req, declaredLen + 1024); // small slack over declared length
+    if (buf === null) {
+      console.error(`[upload] chunk FAIL id=${id} offset=${offset}: body read error/overflow`);
+      sendJson(res, 500, { error: 'Could not receive that chunk — Retry to resume.' });
+      return true;
+    }
+    try {
+      await fsp.appendFile(session.partPath, buf);
+      session.received += buf.length;
+      uploads.touch(session);
+      sendJson(res, 200, { offset: session.received });
+    } catch (err) {
+      console.error(`[upload] chunk FAIL id=${id} offset=${offset}: ${(err && (err.code || err.message)) || 'error'}`);
+      sendJson(res, 500, { error: 'Could not save that chunk — Retry to resume.' });
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/admin/upload/complete') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const id = url.searchParams.get('id') || '';
+    const session = uploads.getSession(id);
+    const check = uploads.validateComplete(session);
+    if (!check.ok) { sendJson(res, check.status, { error: check.error, expected: check.expected }); return true; }
+    try {
+      await fsp.rename(session.partPath, session.savedPath);
+      const { jobId, manifestId } = enqueue(session.savedPath, session.name, {
+        visibility: session.visibility, blur: session.blur,
+        category: session.category, publishAt: session.publishAt,
+      });
+      uploads.deleteSession(id);
+      console.log(`[upload] COMPLETE id=${id} ${(session.size / 1e6).toFixed(1)}MB → jobId=${jobId} manifestId=${manifestId}`);
+      sendJson(res, 202, { ok: true, jobId, manifestId });
+    } catch (err) {
+      console.error(`[upload] complete FAIL id=${id}: ${(err && (err.code || err.message)) || 'error'}`);
+      sendJson(res, 500, { error: 'Could not finalize the upload — Retry to resume.' });
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/admin/upload/abort') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const id = url.searchParams.get('id') || '';
+    const session = uploads.getSession(id);
+    if (session) {
+      await fsp.unlink(session.partPath).catch(() => {});
+      uploads.deleteSession(id);
+      console.log(`[upload] ABORT id=${id}`);
+    }
+    sendJson(res, 200, { ok: true });
+    return true;
+  }
+
   // Subscribe (free follow) to the channel. Logged-in users only.
   if (url.pathname === '/api/subscribe/status' && req.method === 'GET') {
     const u = accounts.currentUser(req);
@@ -1387,7 +1500,10 @@ function streamProductAsset(req, res, id, target) {
   });
 }
 
-/** Stream a raw request body to disk (bypassing readBody), then enqueue ingestion. */
+/** Stream a raw request body to disk (bypassing readBody), then enqueue ingestion.
+ *  Heavily logged ([upload] prefix) so 502s / interruptions can be diagnosed:
+ *  every terminal path records the reason, elapsed time, and bytes received vs
+ *  the Content-Length the client promised. */
 function streamUpload(req, res, name, visibility = 'free', blur = '', category = '', publishAt = 0) {
   return new Promise((resolve) => {
     const { savedPath, partPath } = newUploadTarget(name);
@@ -1395,9 +1511,21 @@ function streamUpload(req, res, name, visibility = 'free', blur = '', category =
     let total = 0;
     let aborted = false;
 
-    const fail = (status, error) => {
+    const t0 = Date.now();
+    const expected = Number(req.headers['content-length']) || 0;
+    const ip = clientIp(req);
+    const mb = (n) => (n / 1e6).toFixed(1);
+    const secs = () => ((Date.now() - t0) / 1000).toFixed(1);
+    const pct = () => (expected ? ` (${((total / expected) * 100).toFixed(0)}%)` : '');
+    const got = () => `${mb(total)}MB${expected ? `/${mb(expected)}MB` : ''}${pct()}`;
+    let nextLogAt = 256 * 1024 * 1024; // progress line roughly every 256 MB
+
+    console.log(`[upload] START name="${name}" expected=${expected ? `${mb(expected)}MB` : 'unknown'} type=${req.headers['content-type'] || '?'} visibility=${visibility} ip=${ip}`);
+
+    const fail = (status, error, detail) => {
       if (aborted) return;
       aborted = true;
+      console.error(`[upload] FAIL ${status} "${error}"${detail ? ` [${detail}]` : ''} after ${secs()}s — received ${got()} name="${name}"`);
       try { req.destroy(); } catch { /* ignore */ }
       out.destroy();
       fsp.unlink(partPath).catch(() => {});
@@ -1407,24 +1535,40 @@ function streamUpload(req, res, name, visibility = 'free', blur = '', category =
 
     req.on('data', (chunk) => {
       total += chunk.length;
-      if (total > UPLOAD_MAX_BYTES) fail(413, 'File too large.');
+      if (total >= nextLogAt) {
+        const el = (Date.now() - t0) / 1000;
+        console.log(`[upload] ..progress ${got()} · ${(total / 1e6 / Math.max(el, 0.001)).toFixed(1)}MB/s avg · ${el.toFixed(0)}s name="${name}"`);
+        nextLogAt += 256 * 1024 * 1024;
+      }
+      if (total > UPLOAD_MAX_BYTES) fail(413, 'File too large.', `exceeded cap ${mb(UPLOAD_MAX_BYTES)}MB`);
     });
-    out.on('error', () => fail(500, 'Write failed.'));
-    req.on('error', () => fail(400, 'Upload interrupted.'));
-    req.on('aborted', () => fail(400, 'Upload aborted.'));
+    out.on('error', (err) => fail(500, 'Write failed.', `disk write ${(err && (err.code || err.message)) || 'error'}`));
+    req.on('error', (err) => fail(400, 'Upload interrupted.', `req ${(err && (err.code || err.message)) || 'error'}`));
+    req.on('aborted', () => fail(400, 'Upload aborted.', 'req aborted — client/proxy closed the connection, or Node requestTimeout fired'));
+
+    // Diagnostic for the 502 case: if the connection closes before the body is
+    // fully received and we're at/near server.requestTimeout, Node killed the
+    // request (nginx then surfaces a 502). req.complete is true only on a clean,
+    // fully-read body, so this fires on premature closes that 'aborted' may miss.
+    req.on('close', () => {
+      if (!aborted && !req.complete) {
+        console.error(`[upload] CLOSED before body complete after ${secs()}s — received ${got()}. Node requestTimeout=${server.requestTimeout}ms (a slow upload exceeding it is aborted → 502). name="${name}"`);
+      }
+    });
 
     req.pipe(out);
 
     out.on('close', () => {
       if (aborted) return;
-      if (total === 0) { fail(400, 'Empty upload.'); return; }
+      if (total === 0) { fail(400, 'Empty upload.', 'no bytes received'); return; }
       fsp.rename(partPath, savedPath)
         .then(() => {
           const { jobId, manifestId } = enqueue(savedPath, name, { visibility, blur, category, publishAt });
+          console.log(`[upload] DONE name="${name}" ${got()} in ${secs()}s → jobId=${jobId} manifestId=${manifestId}`);
           sendJson(res, 202, { ok: true, jobId, manifestId });
           resolve();
         })
-        .catch(() => fail(500, 'Could not finalize upload.'));
+        .catch((err) => fail(500, 'Could not finalize upload.', `rename ${(err && (err.code || err.message)) || 'error'}`));
     });
   });
 }
@@ -1591,6 +1735,10 @@ server.listen(PORT, async () => {
   }
   console.log(`▶  David Bond TV running at http://localhost:${PORT}`);
   console.log(`   admin uploads: ${adminConfigured(adminAccount) ? 'enabled' : 'DISABLED'} · ffmpeg: ${hasFfmpeg() ? 'ok' : 'MISSING'} · cloudflare: ${TRUST_CLOUDFLARE ? 'trusted' : 'off'}`);
+  // Surface the effective HTTP timeouts. A slow upload that runs longer than
+  // requestTimeout (Node default 300000ms = 5 min) is aborted by Node mid-body,
+  // which the nginx proxy reports to the browser as a 502. See streamUpload logs.
+  console.log(`   http timeouts (ms): requestTimeout=${server.requestTimeout} headersTimeout=${server.headersTimeout} keepAliveTimeout=${server.keepAliveTimeout} timeout=${server.timeout}`);
   await bootSweep(); // any interrupted "processing" entries → "failed"
   await releaseScheduled(); // publish any drips whose time passed while we were down
 });
@@ -1598,6 +1746,15 @@ server.listen(PORT, async () => {
 // Scheduled-release worker: publish due "slow-drip" videos (and notify viewers)
 // roughly every minute. unref() so it never holds the process open.
 setInterval(() => { releaseScheduled().catch(() => {}); }, 60_000).unref();
+
+// Reclaim disk from chunked uploads that stalled and were never finished:
+// drop idle sessions and unlink their orphaned .part files. Runs every 30 min.
+setInterval(() => {
+  for (const s of uploads.sweepStale(UPLOAD_SESSION_IDLE_MS)) {
+    fsp.unlink(s.partPath).catch(() => {});
+    console.log(`[upload] swept stale session id=${s.id} (idle > ${UPLOAD_SESSION_IDLE_MS / 3600000}h)`);
+  }
+}, 30 * 60_000).unref();
 
 // Persist in-memory analytics rollups on shutdown so nothing is lost.
 for (const sig of ['SIGINT', 'SIGTERM']) {

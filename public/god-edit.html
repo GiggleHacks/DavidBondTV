@@ -36,7 +36,12 @@
     .ev-radios { display: flex; flex-wrap: wrap; gap: 16px; font-size: 14px; }
     .ev-radios label { display: inline-flex; gap: 10px; align-items: center; cursor: pointer; min-height: 44px; padding: 8px 12px; border-radius: 12px; background: color-mix(in srgb, var(--surface-2) 84%, transparent); }
     .ev-radios input[type="radio"] { width: 18px; height: 18px; accent-color: var(--accent); }
-    #ev-blur { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; }
+    #ev-blur, #ev-category { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; }
+    #ev-category { width: 100%; box-sizing: border-box; }
+    .ev-cat-new { display: flex; gap: 8px; margin-top: 8px; }
+    .ev-cat-new input { flex: 1; min-width: 0; }
+    #ev-cat-msg { font-size: 12px; margin-top: 6px; }
+    #ev-cat-msg.ok { color: #4ade80; } #ev-cat-msg.error { color: #f87171; }
     @media (max-width: 560px) { .ev-links > a, .ev-actions > button { width: 100%; } }
   </style>
 </head>
@@ -84,6 +89,15 @@
                 <label><input type="radio" name="ev-vis" value="free" /> Free</label>
                 <label><input type="radio" name="ev-vis" value="premium" /> <span class="badge-premium"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7l4 4 5-7 5 7 4-4-2 12H5L3 7z"/></svg>Premium</span> <span class="muted">(subscribers only)</span></label>
               </div>
+            </div>
+            <div class="ev-field">
+              <label for="ev-category">Category</label>
+              <select id="ev-category"><option value="">Uncategorized</option></select>
+              <div class="ev-cat-new">
+                <input id="ev-cat-new" type="text" maxlength="40" placeholder="Create new category…" />
+                <button class="btn ghost sm" type="button" id="ev-cat-add">+ Add</button>
+              </div>
+              <div id="ev-cat-msg"></div>
             </div>
             <div class="ev-field hidden" id="ev-blur-field">
               <label for="ev-blur">Thumbnail blur</label>

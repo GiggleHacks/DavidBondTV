@@ -1,8 +1,9 @@
 // Dedicated per-video edit page (/god-edit.html?v=<id>). Cookie-authenticated.
 // Loads the video's manifest record and lets the admin change title,
-// description, visibility (free/premium), and pick a thumbnail from frames
-// auto-extracted across the clip. Reuses the existing admin endpoint:
-//   POST /api/admin/edit   { id, title, description, visibility, blur, thumb }
+// description, visibility (free/premium), category, and pick a thumbnail from
+// frames auto-extracted across the clip. Categories can be created inline.
+// Reuses the existing admin endpoint:
+//   POST /api/admin/edit   { id, title, description, visibility, blur, category, thumb }
 import { requireAdmin } from './god-auth.js';
 
 const $ = (id) => document.getElementById(id);
@@ -60,6 +61,56 @@ async function main() {
   const syncBlur = () => $('ev-blur-field').classList.toggle('hidden', currentVis() !== 'premium');
   document.querySelectorAll('input[name="ev-vis"]').forEach((r) => r.addEventListener('change', syncBlur));
   syncBlur();
+
+  // Category — editable dropdown populated from the registry, with inline create.
+  // Saved together with the rest of the form (POST /api/admin/edit { category }).
+  const catSel = $('ev-category');
+  function paintCats(cats, selected) {
+    catSel.replaceChildren();
+    const u = document.createElement('option');
+    u.value = ''; u.textContent = 'Uncategorized';
+    catSel.appendChild(u);
+    for (const c of cats) {
+      const o = document.createElement('option');
+      o.value = c.slug; o.textContent = c.name;
+      catSel.appendChild(o);
+    }
+    catSel.value = selected || '';
+  }
+  async function loadCats(selected) {
+    try {
+      const { categories: cats } = await (await fetch('/api/categories')).json();
+      paintCats(cats || [], selected);
+    } catch { paintCats([], selected); }
+  }
+  await loadCats(entry.category || '');
+
+  function setCatMsg(text, kind) {
+    const el = $('ev-cat-msg');
+    el.textContent = text || '';
+    el.className = kind || '';
+  }
+  $('ev-cat-add').addEventListener('click', async () => {
+    const input = $('ev-cat-new');
+    const name = input.value.trim();
+    if (!name) return;
+    const btn = $('ev-cat-add'); btn.disabled = true; setCatMsg('');
+    try {
+      const res = await fetch('/api/admin/categories', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'add', name }),
+      });
+      if (res.status === 401) { location.reload(); return; }
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.ok) {
+        // Repopulate from the authoritative list and select the new category.
+        paintCats(d.categories || [], d.category ? d.category.slug : catSel.value);
+        input.value = '';
+        setCatMsg(`Added “${d.category ? d.category.name : name}” — remember to Save changes.`, 'ok');
+      } else setCatMsg(d.error || 'Could not add category.', 'error');
+    } catch { setCatMsg('Network error.', 'error'); }
+    finally { btn.disabled = false; }
+  });
 
   // Scheduled-drip status + a one-click "Publish now" (reuses the bulk endpoint).
   if (typeof entry.publishAt === 'number' && entry.publishAt > Date.now()) {
@@ -133,7 +184,7 @@ async function main() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: entry.id, title: $('ev-title').value, description: $('ev-desc').value,
-          visibility, blur: $('ev-blur').value,
+          visibility, blur: $('ev-blur').value, category: catSel.value,
         }),
       });
       if (res.status === 401) { location.reload(); return; }
@@ -141,6 +192,7 @@ async function main() {
       if (res.ok && data.ok) {
         entry.title = $('ev-title').value.trim();
         entry.visibility = visibility; entry.blur = $('ev-blur').value;
+        entry.category = catSel.value;
         setMsg('Saved.', 'ok');
       }
       else setMsg(data.error || 'Save failed.', 'error');
