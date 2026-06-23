@@ -32,12 +32,13 @@ function isTenorGif(u) {
   } catch { return false; }
 }
 
-// ISO-2 country code → flag emoji (regional indicator pair). '' if unknown.
-function flagEmoji(cc) {
+// ISO-2 country code → normalized lowercase code, or '' if invalid.
+// (Emoji flags don't render on Windows / most Android browsers, so we use
+// self-hosted SVGs under /vendor/flags/4x3 — the same set the admin UI uses.)
+function flagCode(cc) {
   const up = typeof cc === 'string' ? cc.toUpperCase() : '';
   if (!/^[A-Z]{2}$/.test(up)) return '';
-  const A = 'A'.charCodeAt(0);
-  return String.fromCodePoint(0x1f1e6 + up.charCodeAt(0) - A, 0x1f1e6 + up.charCodeAt(1) - A);
+  return up.toLowerCase();
 }
 
 export function initComments(videoId) {
@@ -171,12 +172,15 @@ export function initComments(videoId) {
       head.append(badge);
     }
 
-    const flag = flagEmoji(c.country);
-    if (flag) {
-      const flagEl = document.createElement('span');
+    const code = flagCode(c.country);
+    if (code) {
+      const flagEl = document.createElement('img');
       flagEl.className = 'comment-flag';
-      flagEl.textContent = flag;
+      flagEl.src = `/vendor/flags/4x3/${code}.svg`;
+      flagEl.alt = c.country;
       flagEl.title = c.country;
+      flagEl.loading = 'lazy';
+      flagEl.addEventListener('error', () => flagEl.remove());
       head.append(flagEl);
     }
 

@@ -1,6 +1,6 @@
 // Community inbox: every comment across all videos in one searchable, filterable
 // feed with video context + moderation actions (reply, delete, ban). Admin-only.
-import { flagEmoji } from './world-data.js';
+import { flagIcon } from './world-data.js';
 import { requireAdmin } from './god-auth.js';
 
 const $ = (id) => document.getElementById(id);
@@ -41,7 +41,7 @@ function badge(c) {
 function rowEl(c) {
   const row = document.createElement('div');
   row.className = 'comm-row';
-  const flag = c.country ? `<span title="${esc(c.country)}">${flagEmoji(c.country)}</span> ` : '';
+  const flag = c.country ? `<span title="${esc(c.country)}">${flagIcon(c.country)}</span> ` : '';
   const avatar = c.avatar
     ? `<img class="comm-av" src="${esc(c.avatar)}" alt="" />`
     : `<div class="comm-av ph">${esc((c.name || '?').trim().charAt(0).toUpperCase() || '?')}</div>`;

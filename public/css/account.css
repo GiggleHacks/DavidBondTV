@@ -157,7 +157,16 @@
 
 /* ---------- Comment identity additions ---------- */
 .comment-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-.comment-flag { font-size: 14px; line-height: 1; }
+.comment-flag {
+  display: inline-block;
+  width: 1.33em;
+  height: 1em;
+  border-radius: 2px;
+  object-fit: cover;
+  vertical-align: -0.15em;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+  background: var(--surface-2);
+}
 a.comment-name { color: var(--text); text-decoration: none; }
 a.comment-name:hover { color: var(--accent); text-decoration: underline; }
 

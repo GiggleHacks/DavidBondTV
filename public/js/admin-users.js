@@ -1,7 +1,7 @@
 // User management: searchable list → click a user for a detail page with
 // profile, IPs, country, subscription, viewing history, watch time, password/
 // recovery status, a password-reset form, and block/unblock.
-import { flagEmoji } from './world-data.js';
+import { flagIcon } from './world-data.js';
 import { requireAdmin } from './god-auth.js';
 
 const $ = (id) => document.getElementById(id);
@@ -34,7 +34,7 @@ function renderList(filter = '') {
     row.innerHTML = `
       <span class="name" data-label="Name">${esc(u.username || '—')}</span>
       <span class="em" data-label="Email">${esc(u.email || '')}</span>
-      <span class="country" data-label="Country">${u.country ? flagEmoji(u.country) + ' ' + u.country : '—'}</span>
+      <span class="country" data-label="Country">${u.country ? flagIcon(u.country) + ' ' + u.country : '—'}</span>
       <span class="watched" data-label="Watched">${u.videosWatched} vids · ${u.minutesWatched}m</span>
       <span class="status" data-label="Status">${statusBadge(u)}</span>`;
     row.addEventListener('click', () => showDetail(u.id));
@@ -56,7 +56,7 @@ async function showDetail(id) {
     <h2>${esc(u.username || 'Unnamed user')} ${d.blocked ? '<span class="badge blk">Blocked</span>' : ''}</h2>
     <div class="kv" style="margin:12px 0 18px">
       <b>Email</b><span>${esc(u.email || '—')}</span>
-      <b>Country</b><span>${s.lastCountry ? flagEmoji(s.lastCountry) + ' ' + s.lastCountry : '—'}</span>
+      <b>Country</b><span>${s.lastCountry ? flagIcon(s.lastCountry) + ' ' + s.lastCountry : '—'}</span>
       <b>IP addresses</b><span class="mono">${(s.ips || []).map(esc).join(', ') || '—'}</span>
       <b>Membership</b><span>${membershipLabel(d.subscribed, u.membership)}</span>
       <b>Verified</b><span>${u.verified ? 'Yes' : 'No'}</span>
