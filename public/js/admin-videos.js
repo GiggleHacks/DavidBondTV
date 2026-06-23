@@ -64,6 +64,8 @@ function renderPager() {
 
 function badges(v) {
   const out = [];
+  if (v.status === 'processing') out.push('<span class="vb vb-proc">Processing</span>');
+  if (v.status === 'failed') out.push('<span class="vb vb-fail">Failed</span>');
   if (v.published === false) out.push('<span class="vb vb-un">Unpublished</span>');
   if (v.visibility === 'premium') out.push('<span class="vb vb-prem">Premium</span>');
   if (v.category && catName(v.category)) out.push(`<span class="vb vb-cat">${esc(catName(v.category))}</span>`);

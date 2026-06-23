@@ -177,6 +177,44 @@ a.tr:hover .name { color: var(--accent); }
 .vb-un { background: color-mix(in srgb, #f59e0b 22%, transparent); color: #fcd34d; }
 .vb-prem { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
 .vb-cat { background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border); }
+.vb-proc { background: color-mix(in srgb, #818cf8 22%, transparent); color: #a5b4fc; }
+.vb-fail { background: color-mix(in srgb, #ef4444 22%, transparent); color: #fca5a5; }
+
+/* Emoji picker (video title naming — upload + edit) */
+.emoji-btn { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 8px; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 10px; min-height: 40px; }
+.emoji-btn:hover { border-color: var(--accent); }
+.emoji-pop { position: absolute; z-index: 50; width: 268px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 36px rgba(0,0,0,.45); padding: 8px; }
+.emoji-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.emoji-tabs button { border: none; background: transparent; cursor: pointer; font-size: 16px; line-height: 1; padding: 4px 5px; border-radius: 6px; opacity: .6; }
+.emoji-tabs button:hover { opacity: 1; background: var(--surface-2); }
+.emoji-tabs button.on { opacity: 1; background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--accent); }
+.emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; max-height: 196px; overflow-y: auto; }
+.emoji-cell { border: none; background: transparent; cursor: pointer; font-size: 20px; line-height: 1; padding: 4px 0; border-radius: 6px; }
+.emoji-cell:hover { background: var(--surface-2); }
+.emoji-note { font-size: 11px; color: var(--text-dim); margin-top: 6px; min-height: 14px; }
+.title-emoji-row { display: flex; gap: 8px; align-items: stretch; }
+.title-emoji-row > input { flex: 1; min-width: 0; }
+
+/* Publish-to-server progress */
+.pub-prog { margin: 10px 0 4px; }
+.pub-cur { font-size: 13px; font-weight: 600; margin-bottom: 6px; min-height: 16px; }
+.pub-bar { position: relative; height: 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.pub-bar > i {
+  display: block; height: 100%; width: 0%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), #60a5fa);
+  transition: width .45s cubic-bezier(.4, 0, .2, 1);
+}
+/* Animated barber-pole stripe while a transfer is active. */
+.pub-bar.active > i {
+  background-image: linear-gradient(90deg, var(--accent), #60a5fa),
+    repeating-linear-gradient(45deg, rgba(255,255,255,.18) 0 10px, rgba(255,255,255,0) 10px 20px);
+  background-size: 100% 100%, 40px 100%;
+  animation: pub-stripe 1s linear infinite;
+}
+@keyframes pub-stripe { from { background-position: 0 0, 0 0; } to { background-position: 0 0, 40px 0; } }
+.pub-pct { position: absolute; top: 50%; right: 10px; transform: translateY(-50%); font-size: 10px; font-weight: 800; color: var(--text); text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.pub-stats { display: flex; gap: 14px; font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+.pub-stats #pub-speed { color: var(--accent); font-weight: 600; }
 
 /* Premium badge (upload + edit visibility options) */
 .badge-premium { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 999px; letter-spacing: .3px; color: #fbbf24; background: linear-gradient(135deg, color-mix(in srgb, #f59e0b 24%, transparent), color-mix(in srgb, var(--accent) 22%, transparent)); border: 1px solid color-mix(in srgb, #f59e0b 45%, transparent); }

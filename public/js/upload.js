@@ -8,6 +8,7 @@
 import { requireAdmin } from './god-auth.js';
 import { listSounds, playSound, getSelected, setSelected, isEnabled, setEnabled, primeAudio } from './upload-sounds.js';
 import { ADMIN_PATHS } from './admin-paths.js';
+import { attachEmojiPicker } from './emoji-picker.js';
 
 // Large uploads must skip Cloudflare's ~100MB proxy cap, so the upload page is
 // served from a DNS-only subdomain. If we're on the main (proxied) host, hand off
@@ -97,7 +98,7 @@ const jobNodes = new Map();
 // Per-row controls so a job can be canceled while queued or uploading.
 const jobControls = new Map();
 
-function renderJob(rowId, name) {
+function renderJob(rowId, name, { editable = false, defaultTitle = '' } = {}) {
   jobsCard.classList.remove('hidden');
   const el = document.createElement('div');
   el.className = 'job queued';
@@ -105,6 +106,10 @@ function renderJob(rowId, name) {
     <span class="dot"></span>
     <div class="jbody">
       <div class="jname"></div>
+      ${editable ? `<div class="title-emoji-row jtitle-edit">
+        <input type="text" class="jtitle-input" maxlength="200" placeholder="Video title" />
+        <button type="button" class="emoji-btn jtitle-emoji" title="Add emoji" aria-label="Add emoji">😊</button>
+      </div>` : ''}
       <div class="jtitle">⏳ Queued…</div>
       <div class="jdesc"></div>
       <div class="bar"><i style="width:0%"></i><b class="bar-pct">0%</b></div>
@@ -112,6 +117,7 @@ function renderJob(rowId, name) {
       <button type="button" class="btn ghost sm job-cancel">✕ Cancel</button>
     </div>`;
   el.querySelector('.jname').textContent = name;
+  if (editable) el.querySelector('.jtitle-input').value = defaultTitle;
   el.querySelector('.job-cancel').addEventListener('click', () => cancelJob(rowId));
   jobNodes.set(rowId, el);
   jobsEl.prepend(el);
@@ -219,13 +225,22 @@ function enqueueFiles(files) {
     const rowId = `row-${Date.now()}-${Math.round(performance.now())}-${Math.random().toString(36).slice(2, 6)}`;
     const tag = visibility === 'premium' ? '  · Premium' : '';
     const when = publishAt ? `  · ⏱ ${new Date(publishAt).toLocaleString()}` : '';
-    renderJob(rowId, `${file.name}${tag}${when}`);
+    // Default the editable title to the filename without its extension.
+    const defaultTitle = file.name.replace(/\.[^.]+$/, '');
+    const el = renderJob(rowId, `${file.name}${tag}${when}`, { editable: true, defaultTitle });
     if (file.size > maxUploadBytes) {
       setState(rowId, 'failed', { title: `Too large — ${fmtSize(file.size)} exceeds the ${fmtSize(maxUploadBytes)} upload limit.` });
       return; // never even attempt the upload
     }
+    // The chosen title is read at /init time, so editing a queued row still applies.
+    const item = { file, rowId, visibility, blur, category, publishAt, title: defaultTitle };
+    const titleInput = el.querySelector('.jtitle-input');
+    if (titleInput) {
+      titleInput.addEventListener('input', () => { item.title = titleInput.value.trim() || defaultTitle; });
+      attachEmojiPicker(titleInput, el.querySelector('.jtitle-emoji'));
+    }
     setStats(rowId, 'Waiting…');
-    uploadQueue.push({ file, rowId, visibility, blur, category, publishAt });
+    uploadQueue.push(item);
   });
   pump();
 }
@@ -298,7 +313,7 @@ async function runUpload(item) {
     // Init a brand-new session.
     if (!item.uploadId) {
       const init = await jsonReq('POST', '/api/admin/upload/init', {
-        name: file.name, size: file.size, type: file.type,
+        name: (item.title && item.title.trim()) || file.name, size: file.size, type: file.type,
         visibility: item.visibility, blur: item.blur, category: item.category, publishAt: item.publishAt,
       }, ctrl);
       if (ctrl.canceled) return;
@@ -307,37 +322,104 @@ async function runUpload(item) {
       item.uploadId = init.data.uploadId;
       item.offset = init.data.offset || 0;
       item.chunkSize = init.data.chunkSize || CHUNK_SIZE_FALLBACK;
+      // Title is committed server-side now — collapse the editable row.
+      const editRow = jobNodes.get(rowId)?.querySelector('.jtitle-edit');
+      if (editRow) editRow.classList.add('hidden');
     }
     const chunkSize = item.chunkSize || CHUNK_SIZE_FALLBACK;
+    const PARALLEL = 4;
 
-    // Upload chunks sequentially, with smoothed MB/s + ETA over the whole file.
-    let speed = 0;
-    const last = { t: performance.now(), loaded: item.offset };
-    while (item.offset < file.size) {
-      if (ctrl.canceled) return;
-      const end = Math.min(item.offset + chunkSize, file.size);
-      const blob = file.slice(item.offset, end);
-      // eslint-disable-next-line no-await-in-loop, no-loop-func
-      const res = await sendChunk(item.uploadId, item.offset, blob, ctrl, (loadedInChunk) => {
-        const loaded = item.offset + loadedInChunk;
-        const now = performance.now();
-        const dt = (now - last.t) / 1000;
-        if (dt > 0.15) {
-          const inst = (loaded - last.loaded) / dt;
-          speed = speed ? speed * 0.7 + inst * 0.3 : inst;
-          last.t = now; last.loaded = loaded;
-        }
-        setProgress(rowId, (loaded / file.size) * 100);
-        const eta = speed > 0 ? (file.size - loaded) / speed : Infinity;
-        setStats(rowId, `⬆️ ${((loaded / file.size) * 100).toFixed(0)}% · ${(speed / 1e6).toFixed(1)} MB/s · ETA ${fmtEta(eta)}`);
-      });
-      if (ctrl.canceled) return;
-      if (res.status === 401) { location.reload(); return; }
-      // Server tells us its true offset on a desync — snap to it and continue.
-      if (res.status === 409 && typeof res.data.expected === 'number') { item.offset = res.data.expected; continue; }
-      if (!res.ok) { bail(res.status, res.data.error); return; }
-      item.offset = typeof res.data.offset === 'number' ? res.data.offset : end;
+    // Build chunk list starting from resume offset.
+    const chunks = [];
+    for (let off = item.offset; off < file.size; off += chunkSize) {
+      chunks.push({ offset: off, end: Math.min(off + chunkSize, file.size), done: false, inFlight: 0 });
     }
+
+    // Parallel chunk uploader with a sliding window.
+    let speed = 0;
+    let completedBytes = item.offset; // bytes confirmed by the server
+    const chunkProgress = new Map(); // chunkIndex → bytes uploaded so far in that chunk
+    const last = { t: performance.now(), loaded: item.offset };
+    let failed = false;
+
+    function totalLoaded() {
+      let p = completedBytes;
+      for (const v of chunkProgress.values()) p += v;
+      return p;
+    }
+    function updateUI() {
+      const loaded = totalLoaded();
+      const now = performance.now();
+      const dt = (now - last.t) / 1000;
+      if (dt > 0.15) {
+        const inst = (loaded - last.loaded) / dt;
+        speed = speed ? speed * 0.7 + inst * 0.3 : inst;
+        last.t = now; last.loaded = loaded;
+      }
+      setProgress(rowId, (loaded / file.size) * 100);
+      const eta = speed > 0 ? (file.size - loaded) / speed : Infinity;
+      setStats(rowId, `⬆️ ${((loaded / file.size) * 100).toFixed(0)}% · ${(speed / 1e6).toFixed(1)} MB/s · ETA ${fmtEta(eta)}`);
+    }
+
+    await new Promise((resolve, reject) => {
+      let nextIdx = 0;
+      let active = 0;
+      const xhrs = [];
+
+      function dispatch() {
+        while (active < PARALLEL && nextIdx < chunks.length && !ctrl.canceled && !failed) {
+          const idx = nextIdx++;
+          const c = chunks[idx];
+          active++;
+          const blob = file.slice(c.offset, c.end);
+          const xhr = new XMLHttpRequest();
+          xhrs.push(xhr);
+          xhr.open('POST', `/api/admin/upload/chunk?id=${encodeURIComponent(item.uploadId)}&offset=${c.offset}`);
+          xhr.upload.onprogress = (e) => { if (e.lengthComputable) { chunkProgress.set(idx, e.loaded); updateUI(); } };
+          xhr.onload = () => {
+            active--;
+            chunkProgress.delete(idx);
+            let data = {}; try { data = JSON.parse(xhr.responseText); } catch { /* */ }
+            if (xhr.status === 401) { location.reload(); return; }
+            if (xhr.status >= 200 && xhr.status < 300) {
+              c.done = true;
+              completedBytes += (c.end - c.offset);
+              updateUI();
+              dispatch();
+              if (active === 0 && (nextIdx >= chunks.length || failed)) resolve();
+            } else {
+              failed = true;
+              for (const x of xhrs) { try { x.abort(); } catch { /* */ } }
+              bail(xhr.status, data.error);
+              resolve();
+            }
+          };
+          xhr.onerror = () => {
+            active--;
+            chunkProgress.delete(idx);
+            failed = true;
+            for (const x of xhrs) { try { x.abort(); } catch { /* */ } }
+            bail(0, null);
+            resolve();
+          };
+          xhr.onabort = () => { active--; chunkProgress.delete(idx); if (active === 0) resolve(); };
+          xhr.send(blob);
+        }
+        if (active === 0 && (nextIdx >= chunks.length || ctrl.canceled || failed)) resolve();
+      }
+
+      // Wire cancel to abort all in-flight XHRs.
+      const origCancelCheck = ctrl.canceled;
+      Object.defineProperty(ctrl, 'canceled', {
+        get() { return this._canceled; },
+        set(v) { this._canceled = v; if (v) for (const x of xhrs) { try { x.abort(); } catch { /* */ } } },
+        enumerable: true, configurable: true,
+      });
+      ctrl._canceled = origCancelCheck;
+
+      dispatch();
+    });
+    if (ctrl.canceled || failed) return;
 
     // Finalize → server transcodes; hand off to the granular processing poller.
     setStats(rowId, 'Finalizing…');
@@ -458,6 +540,44 @@ function initSoundPicker() {
   test.addEventListener('click', () => { primeAudio(); playSound(sel.value); });
 }
 
+// Recover active/recent processing jobs on page load so they survive refreshes.
+async function recoverJobs(statusData) {
+  const jobs = statusData.jobs || [];
+  // A finished job's record can outlive the video (e.g. the video was deleted).
+  // Cross-check against the live library so we don't show "Recent uploads" rows
+  // whose View/Edit would point at nothing.
+  let liveById = null;
+  try {
+    const vids = (await (await fetch(`/api/admin/videos?_=${Date.now()}`)).json()).videos || [];
+    liveById = new Map(vids.map((v) => [v.id, v]));
+  } catch { /* if this fails, fall back to showing everything */ }
+  for (const job of jobs) {
+    if (job.status === 'ready' || job.status === 'failed' || job.status === 'processing') {
+      // Hide finished jobs whose video is gone (processing jobs always show).
+      if (job.status !== 'processing' && liveById && !liveById.has(job.manifestId)) continue;
+      const rowId = `recover-${job.jobId}`;
+      if (jobNodes.has(rowId)) continue;
+      // Prefer the video's CURRENT title (the job's label is frozen at upload
+      // time, so a later rename wouldn't show here otherwise).
+      const liveTitle = liveById && liveById.get(job.manifestId) && liveById.get(job.manifestId).title;
+      const name = liveTitle || job.title || job.manifestId || 'Unknown';
+      renderJob(rowId, name);
+      const cancelBtn = jobNodes.get(rowId)?.querySelector('.job-cancel');
+      if (cancelBtn) cancelBtn.classList.add('hidden');
+      if (job.status === 'processing') {
+        setState(rowId, 'processing', { title: `⚙️ ${job.label || 'Processing…'}` });
+        if (typeof job.pct === 'number') setProgress(rowId, job.pct);
+        pollJob(rowId, job.jobId);
+      } else if (job.status === 'ready') {
+        setState(rowId, 'ready', { title: `✅ ${name}` });
+        addRowActions(rowId, job.manifestId);
+      } else if (job.status === 'failed') {
+        setState(rowId, 'failed', { title: '❌ Processing failed', desc: job.detail || job.error || '' });
+      }
+    }
+  }
+}
+
 async function main() {
   await requireAdmin(); // shows sign-in overlay for non-admins
   initSoundPicker();
@@ -466,6 +586,7 @@ async function main() {
     const data = await (await fetch('/api/admin/status')).json();
     $('ffmpeg-banner').classList.toggle('hidden', data.ffmpeg !== false);
     if (typeof data.maxUploadBytes === 'number' && data.maxUploadBytes > 0) maxUploadBytes = data.maxUploadBytes;
+    await recoverJobs(data);
   } catch { /* ignore */ }
 }
 main();

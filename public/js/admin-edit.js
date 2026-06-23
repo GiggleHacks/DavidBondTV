@@ -6,6 +6,7 @@
 //   POST /api/admin/edit   { id, title, description, visibility, blur, category, thumb }
 import { requireAdmin } from './god-auth.js';
 import { ADMIN_PATHS } from './admin-paths.js';
+import { attachEmojiPicker } from './emoji-picker.js';
 
 const $ = (id) => document.getElementById(id);
 const videoId = new URLSearchParams(location.search).get('v') || '';
@@ -46,6 +47,7 @@ async function main() {
   $('edit-body').classList.remove('hidden');
   document.title = `Edit · ${entry.title || entry.id} — David Bond TV`;
   $('ev-title').value = entry.title || '';
+  attachEmojiPicker($('ev-title'), $('ev-title-emoji'));
   $('ev-desc').value = entry.description || '';
   paintThumb(entry.thumb);
   $('ev-view').href = `/watch?v=${encodeURIComponent(entry.id)}`;

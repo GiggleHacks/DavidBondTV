@@ -27,6 +27,25 @@
     </header>
 
     <main id="app">
+      <section class="card" id="publish-card" hidden>
+        <div class="card-head">
+          <h2>Publish to server</h2>
+          <button id="publish-btn" class="btn sm">⬆ Publish to server</button>
+        </div>
+        <p class="muted" id="publish-target" style="margin:0 0 8px">Pushes processed videos (renditions, thumbnails, previews, storyboards) to production. The server does no transcoding.</p>
+        <div id="publish-progress" class="pub-prog" hidden>
+          <div class="pub-cur" id="pub-cur"></div>
+          <div class="pub-bar"><i id="pub-fill"></i><b class="pub-pct" id="pub-pct">0%</b></div>
+          <div class="pub-stats">
+            <span id="pub-speed">—</span>
+            <span id="pub-eta"></span>
+            <span id="pub-bytes"></span>
+            <span id="pub-count" style="margin-left:auto"></span>
+          </div>
+        </div>
+        <div id="publish-status" class="muted"></div>
+      </section>
+
       <section class="card" id="cats-card">
         <div class="card-head"><h2>Categories</h2></div>
         <div class="cat-add">
@@ -60,5 +79,6 @@
     </main>
   </div>
   <script type="module" src="/js/admin-videos.js"></script>
+  <script type="module" src="/js/publish.js"></script>
 </body>
 </html>

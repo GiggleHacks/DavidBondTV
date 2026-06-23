@@ -57,18 +57,26 @@
       return;
     }
     for (const n of notifications) {
+      const isAccount = n.kind === 'account' || (!n.videoId && !!n.title);
       const item = document.createElement('div');
-      item.className = `bell-item${n.read ? '' : ' unread'}`;
+      item.className = `bell-item${n.read ? '' : ' unread'}${isAccount ? ' bell-account' : ''}`;
       const link = document.createElement('a');
       link.className = 'bell-link';
-      link.href = `/watch?v=${encodeURIComponent(n.videoId)}`;
+      // Account notifications link to their target (default the account page);
+      // video notifications link to the watch page.
+      link.href = isAccount ? (n.link || '/account.html') : `/watch?v=${encodeURIComponent(n.videoId)}`;
+      const icon = isAccount
+        ? '<span class="bell-thumb bell-ico">🎉</span>'
+        : (n.thumb ? `<img class="bell-thumb" loading="lazy" alt="" src="${n.thumb}" />` : '<span class="bell-thumb"></span>');
       link.innerHTML = `
-        ${n.thumb ? `<img class="bell-thumb" loading="lazy" alt="" src="${n.thumb}" />` : '<span class="bell-thumb"></span>'}
+        ${icon}
         <span class="bell-body">
           <span class="bell-title"></span>
+          ${isAccount && n.body ? '<span class="bell-sub"></span>' : ''}
           <span class="bell-time"></span>
         </span>`;
-      link.querySelector('.bell-title').textContent = `New video: ${n.title}`;
+      link.querySelector('.bell-title').textContent = isAccount ? n.title : `New video: ${n.title}`;
+      if (isAccount && n.body) link.querySelector('.bell-sub').textContent = n.body;
       link.querySelector('.bell-time').textContent = timeAgo(n.ts);
       const x = document.createElement('button');
       x.className = 'bell-x';

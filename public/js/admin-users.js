@@ -17,6 +17,7 @@ const fmtDate = (ms) => (ms ? new Date(ms).toLocaleDateString() : '—');
 
 let allUsers = [];
 let hiddenUnverified = 0;
+let currentFilter = 'verified';
 
 function statusBadge(u) {
   if (u.blocked) return '<span class="badge blk">Blocked</span>';
@@ -27,9 +28,7 @@ function statusBadge(u) {
 function renderList(filter = '') {
   const f = filter.toLowerCase();
   const rows = allUsers.filter((u) => !f || (u.username || '').toLowerCase().includes(f) || (u.email || '').toLowerCase().includes(f));
-  $('ucount').textContent = hiddenUnverified
-    ? `(${rows.length}) · ${hiddenUnverified} unverified hidden`
-    : `(${rows.length})`;
+  $('ucount').textContent = `(${rows.length})`;
   $('user-list').innerHTML = rows.length ? '' : '<p class="muted">No users.</p>';
   for (const u of rows) {
     const row = document.createElement('div');
@@ -88,7 +87,13 @@ async function showDetail(id) {
     </div>
     <button id="toggle-block" class="btn sm ghost">${d.blocked ? 'Unblock user' : 'Block user'}</button>
     ${membershipButton(d.subscribed, u.membership)}
+    <button id="delete-user" class="btn sm danger" style="margin-left:auto">Delete user</button>
+
+    <h3 style="margin-top:18px">Product access</h3>
+    <p class="muted" style="margin:-6px 0 10px">Grant or revoke access to a specific course/product, independent of membership.</p>
+    <div id="product-access"><p class="muted">Loading products…</p></div>
   `;
+  renderProductAccess(id, u.ownedProductIds || []);
 
   $('reset-pw').addEventListener('click', async () => {
     const np = $('newpw').value;
@@ -104,6 +109,15 @@ async function showDetail(id) {
     await loadList();
     showDetail(id);
   });
+  $('delete-user').addEventListener('click', async () => {
+    const label = u.username || u.email || 'this user';
+    if (!confirm(`Permanently delete ${label}? This removes the account and cannot be undone. Viewing history and any payment records are kept for accounting but will no longer link to a live user.`)) return;
+    const r = await api(`/api/admin/users/${encodeURIComponent(id)}/delete`, { method: 'POST', body: '{}' });
+    if (r && r.error) { alert(r.error); return; }
+    $('detail-view').classList.add('hidden');
+    $('list-view').classList.remove('hidden');
+    await loadList();
+  });
   const memBtn = $('toggle-member');
   if (memBtn) {
     memBtn.addEventListener('click', async () => {
@@ -114,6 +128,34 @@ async function showDetail(id) {
       showDetail(id);
     });
   }
+}
+
+// Render the per-product grant/revoke controls for the open user. `owned` is the
+// user's ownedProductIds. Fetches the catalog and wires each row's button.
+async function renderProductAccess(userId, owned) {
+  const box = $('product-access');
+  if (!box) return;
+  let products = [];
+  try { products = (await api('/api/admin/products')).products || []; } catch { /* ignore */ }
+  if (!products.length) { box.innerHTML = '<p class="muted">No products defined yet.</p>'; return; }
+  const ownedSet = new Set(owned);
+  box.innerHTML = products.map((p) => {
+    const has = ownedSet.has(p.id);
+    return `<div class="tr" style="align-items:center">
+      <span class="name">${esc(p.name || p.slug || p.id)} ${has ? '<span class="badge sub">Owns</span>' : ''}</span>
+      <button class="btn sm ${has ? 'danger' : ''}" data-pid="${esc(p.id)}" data-op="${has ? 'revoke' : 'grant'}">${has ? 'Revoke' : 'Grant access'}</button>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('button[data-pid]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const r = await api(`/api/admin/users/${encodeURIComponent(userId)}/product`, {
+        method: 'POST', body: JSON.stringify({ productId: btn.dataset.pid, op: btn.dataset.op }),
+      });
+      if (r && r.error) { alert(r.error); btn.disabled = false; return; }
+      showDetail(userId); // re-render with the updated ownership
+    });
+  });
 }
 
 /** Human-readable membership state for the detail view. */
@@ -136,16 +178,29 @@ function membershipButton(active, m) {
 }
 
 async function loadList() {
-  const d = await api('/api/admin/users');
+  const d = await api(`/api/admin/users?filter=${encodeURIComponent(currentFilter)}`);
   allUsers = d.users || [];
-  hiddenUnverified = d.hiddenUnverified || 0;
+  hiddenUnverified = d.unverifiedCount || 0;
+  const vn = $('tab-verified-n'); if (vn) vn.textContent = `· ${d.verifiedCount || 0}`;
+  const un = $('tab-unverified-n'); if (un) un.textContent = `· ${d.unverifiedCount || 0}`;
   renderList($('search').value);
+}
+
+function wireTabs() {
+  document.querySelectorAll('.user-tabs button').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      currentFilter = btn.dataset.filter;
+      document.querySelectorAll('.user-tabs button').forEach((b) => b.classList.toggle('active', b === btn));
+      try { await loadList(); } catch { /* 401 reloads */ }
+    });
+  });
 }
 
 async function main() {
   await requireAdmin();
   $('to-list').addEventListener('click', () => { $('detail-view').classList.add('hidden'); $('list-view').classList.remove('hidden'); });
   $('search').addEventListener('input', (e) => renderList(e.target.value));
+  wireTabs();
   try { await loadList(); } catch { /* a 401 reloads into the gate */ }
 }
 main();

@@ -9,7 +9,9 @@
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/css/admin.css" />
   <link rel="stylesheet" href="/css/deck.css" />
+  <link rel="stylesheet" href="/css/dashboard-themes.css" />
   <script>document.documentElement.classList.add('admin-auth-pending');</script>
+  <script type="module" src="/js/theme-switcher.js"></script>
 </head>
 <body>
   <div class="admin-wrap wide admin-app-shell deck">
@@ -83,7 +85,7 @@
         <div class="grid g-2 row-gap">
           <div class="dpanel">
             <div class="dp-title"><span class="dico">📈</span> VIEWS &amp; WATCH-TIME — LAST 30 DAYS <span class="q" title="Daily rollups summed across every video (analytics/videos.json byDay). Times in server UTC.">?</span></div>
-            <div class="dlegend"><span><i style="background:#5ef08a"></i>Views</span><span><i style="background:#ffc04d"></i>Watch hrs</span></div>
+            <div class="dlegend"><span><i style="background:#818cf8"></i>Views</span><span><i style="background:#f59e0b"></i>Watch hrs</span></div>
             <svg class="dchart" id="trend-chart" viewBox="0 0 640 200" preserveAspectRatio="none" role="img" aria-label="Views and watch-time trend, last 30 days"></svg>
             <div class="dsrc">SOURCE: <b>analytics rollups</b> · 90-day retention window · TZ server UTC</div>
           </div>
@@ -117,6 +119,39 @@
             <div class="dsrc">SOURCE: <b>/api/admin/videos</b> + build manifest</div>
           </div>
         </div>
+
+        <div class="grid g-3 row-gap">
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">💾</span> STORAGE <span class="q" title="Disk usage from content/ and media/ directories. Average original = mean size of uploaded originals before transcoding.">?</span></div>
+            <div class="dvit" id="met-storage">
+              <div><span class="k">CONTENT</span><span class="g" id="met-content">—</span></div>
+              <div><span class="k">MEDIA</span><span class="g" id="met-media">—</span></div>
+              <div><span class="k">TOTAL</span><span class="c" id="met-total">—</span></div>
+              <div><span class="k">AVG ORIGINAL</span><span class="a" id="met-avg">—</span></div>
+            </div>
+            <div class="dsrc">SOURCE: <b>/api/admin/metrics</b> · 30s cache</div>
+          </div>
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">🧠</span> CPU &amp; MEMORY <span class="q" title="Server CPU load averages (1m/5m/15m) and RAM usage from os module.">?</span></div>
+            <div class="dvit" id="met-cpu">
+              <div><span class="k">CORES</span><span class="g" id="met-cores">—</span></div>
+              <div><span class="k">LOAD 1m/5m/15m</span><span class="c" id="met-load">—</span></div>
+              <div><span class="k">RAM USED</span><span class="a" id="met-ram">—</span></div>
+              <div><span class="k">RAM FREE</span><span class="g" id="met-ramfree">—</span></div>
+            </div>
+            <div class="dsrc">SOURCE: <b>os.cpus() · os.loadavg() · os.totalmem()</b></div>
+          </div>
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">⏱️</span> SERVER <span class="q" title="Server uptime, platform, and Node.js version.">?</span></div>
+            <div class="dvit" id="met-server">
+              <div><span class="k">UPTIME</span><span class="g" id="met-uptime">—</span></div>
+              <div><span class="k">PLATFORM</span><span class="c" id="met-platform">—</span></div>
+              <div><span class="k">NODE</span><span class="a" id="met-node">—</span></div>
+              <div><span class="k">PROCESSING</span><span class="c" id="met-proccount">—</span></div>
+            </div>
+            <div class="dsrc">SOURCE: <b>process.uptime() · os.type()</b></div>
+          </div>
+        </div>
       </section>
 
       <!-- ============ TRAFFIC ============ -->
@@ -132,8 +167,8 @@
           <div class="map-wrap">
             <svg id="map" viewBox="0 0 360 180" preserveAspectRatio="xMidYMid meet" aria-label="World map of viewers">
               <g id="graticule">
-                <rect x="0" y="0" width="360" height="180" fill="#0c1a14" rx="3" />
-                <g stroke="#1f3a2e" stroke-width="0.3" fill="none">
+                <rect x="0" y="0" width="360" height="180" fill="#0e0f14" rx="3" />
+                <g stroke="#1e2030" stroke-width="0.3" fill="none">
                   <line x1="30" y1="0" x2="30" y2="180"/><line x1="60" y1="0" x2="60" y2="180"/>
                   <line x1="90" y1="0" x2="90" y2="180"/><line x1="120" y1="0" x2="120" y2="180"/>
                   <line x1="150" y1="0" x2="150" y2="180"/><line x1="210" y1="0" x2="210" y2="180"/>
@@ -142,8 +177,8 @@
                   <line x1="0" y1="30" x2="360" y2="30"/><line x1="0" y1="60" x2="360" y2="60"/>
                   <line x1="0" y1="120" x2="360" y2="120"/><line x1="0" y1="150" x2="360" y2="150"/>
                 </g>
-                <line x1="180" y1="0" x2="180" y2="180" stroke="#1f3a2e" stroke-width="0.5"/>
-                <line x1="0" y1="90" x2="360" y2="90" stroke="#1f3a2e" stroke-width="0.5"/>
+                <line x1="180" y1="0" x2="180" y2="180" stroke="#1e2030" stroke-width="0.5"/>
+                <line x1="0" y1="90" x2="360" y2="90" stroke="#1e2030" stroke-width="0.5"/>
               </g>
             </svg>
             <div class="map-hover" id="map-hover"></div>

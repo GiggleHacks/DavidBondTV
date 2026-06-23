@@ -73,6 +73,64 @@ describe('users-store', () => {
     expect(admin.passwordHash).toBeUndefined();
   });
 
+  it('deletes a user, frees email/username, and survives reload', async () => {
+    const store = createUsersStore(file);
+    const u = (await store.createUser({ email: 'gone@b.com', passwordHash: 'h' })).user;
+    await store.updateUser(u.id, { username: 'gone' });
+    const del = await store.deleteUser(u.id);
+    expect(del.ok).toBe(true);
+    expect(del.user.id).toBe(u.id);
+    expect(store.getById(u.id)).toBeNull();
+    expect(store.getByEmail('gone@b.com')).toBeNull();
+    expect(store.isUsernameTaken('gone')).toBe(false);
+    // Email is reusable for a brand-new signup.
+    expect((await store.createUser({ email: 'gone@b.com', passwordHash: 'h2' })).ok).toBe(true);
+    await store.flush();
+    const reopened = createUsersStore(file);
+    expect(reopened.getById(u.id)).toBeNull();
+  });
+
+  it('deleteUser is a no-op for an unknown id', async () => {
+    const store = createUsersStore(file);
+    const r = await store.deleteUser('nope');
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('not_found');
+  });
+
+  it('defaults a telegram block on new users', async () => {
+    const store = createUsersStore(file);
+    const u = (await store.createUser({ email: 'a@b.com', passwordHash: 'h' })).user;
+    expect(u.telegram).toEqual({ userId: null, username: null, joinedAt: null, invitedAt: null, linkState: 'none' });
+  });
+
+  it('indexes a captured Telegram user id and keeps the index in sync', async () => {
+    const store = createUsersStore(file);
+    const u = (await store.createUser({ email: 'a@b.com', passwordHash: 'h' })).user;
+    expect(store.getByTelegramUserId(555)).toBeNull();
+
+    await store.updateUser(u.id, { telegram: { userId: 555, username: 'tg', linkState: 'joined' } });
+    expect(store.getByTelegramUserId(555).id).toBe(u.id);
+    expect(store.getByTelegramUserId('555').id).toBe(u.id); // string/number agnostic
+
+    // Re-point to a new id: the old key is dropped, the new one resolves.
+    await store.updateUser(u.id, { telegram: { userId: 777, linkState: 'joined' } });
+    expect(store.getByTelegramUserId(555)).toBeNull();
+    expect(store.getByTelegramUserId(777).id).toBe(u.id);
+
+    // Survives a reload (rebuilt from the persisted record).
+    await store.flush();
+    const reopened = createUsersStore(file);
+    expect(reopened.getByTelegramUserId(777).id).toBe(u.id);
+  });
+
+  it('drops the telegram index entry on delete', async () => {
+    const store = createUsersStore(file);
+    const u = (await store.createUser({ email: 'a@b.com', passwordHash: 'h' })).user;
+    await store.updateUser(u.id, { telegram: { userId: 999, linkState: 'joined' } });
+    await store.deleteUser(u.id);
+    expect(store.getByTelegramUserId(999)).toBeNull();
+  });
+
   it('handles concurrent writes without corruption', async () => {
     const store = createUsersStore(file);
     await Promise.all(

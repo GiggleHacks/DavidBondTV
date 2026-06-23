@@ -14,6 +14,17 @@ const ccLabel = (cc) => `${flagIcon(cc)} ${COUNTRY_NAME[cc] ? `${COUNTRY_NAME[cc
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const nf = (n) => Number(n || 0).toLocaleString();
 
+function updateValue(id, newValue) {
+  const el = $(id);
+  if (!el) return;
+  if (el.textContent !== newValue) {
+    el.textContent = newValue;
+    el.classList.remove('update-pulse');
+    void el.offsetWidth; // trigger reflow
+    el.classList.add('update-pulse');
+  }
+}
+
 async function api(path, opts = {}) {
   const headers = opts.body ? { 'Content-Type': 'application/json' } : {};
   const res = await fetch(path, { ...opts, headers });
@@ -71,7 +82,7 @@ function sparkline(svg, values, color) {
 function drawTrend(svg, series) {
   if (!svg) return;
   const W = 640, H = 200, pad = 6;
-  if (!series.length) { svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" fill="#6f9a84" font-size="13" text-anchor="middle" font-family="monospace">awaiting data…</text>`; return; }
+  if (!series.length) { svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" fill="#64748b" font-size="13" text-anchor="middle" font-family="monospace">awaiting data…</text>`; return; }
   const xs = (i) => pad + (i * (W - pad * 2)) / Math.max(series.length - 1, 1);
   const line = (key, color, dash, fill) => {
     const vals = series.map((d) => d[key] || 0);
@@ -84,8 +95,8 @@ function drawTrend(svg, series) {
     return out;
   };
   let grid = '';
-  for (let i = 1; i < 4; i++) grid += `<line x1="0" y1="${(H / 4) * i}" x2="${W}" y2="${(H / 4) * i}" stroke="#1f3a2e" stroke-width="0.5"/>`;
-  svg.innerHTML = grid + line('views', '#5ef08a', false, true) + line('minutes', '#ffc04d', true, false);
+  for (let i = 1; i < 4; i++) grid += `<line x1="0" y1="${(H / 4) * i}" x2="${W}" y2="${(H / 4) * i}" stroke="#1e2030" stroke-width="0.5"/>`;
+  svg.innerHTML = grid + line('views', '#818cf8', false, true) + line('minutes', '#f59e0b', true, false);
 }
 // Donut of top countries into a 220x160 viewBox + a legend list.
 function drawDonut(svg, legendEl, countries) {
@@ -93,13 +104,13 @@ function drawDonut(svg, legendEl, countries) {
     .map(([cc, s]) => [cc, s.views || 0]).filter(([, n]) => n > 0)
     .sort((a, b) => b[1] - a[1]);
   if (!svg) return;
-  if (!entries.length) { svg.innerHTML = `<text x="110" y="80" fill="#6f9a84" font-size="13" text-anchor="middle" font-family="monospace">no traffic yet</text>`; if (legendEl) legendEl.innerHTML = ''; return; }
+  if (!entries.length) { svg.innerHTML = `<text x="110" y="80" fill="#64748b" font-size="13" text-anchor="middle" font-family="monospace">no traffic yet</text>`; if (legendEl) legendEl.innerHTML = ''; return; }
   const top = entries.slice(0, 4);
   const otherN = entries.slice(4).reduce((a, [, n]) => a + n, 0);
   const slices = top.slice();
   if (otherN > 0) slices.push(['others', otherN]);
   const total = slices.reduce((a, [, n]) => a + n, 0) || 1;
-  const colors = ['#5ef08a', '#46d6ef', '#ffc04d', '#ff66cc', '#6f9bff'];
+  const colors = ['#818cf8', '#22d3ee', '#f59e0b', '#a78bfa', '#60a5fa'];
   const cx = 110, cy = 78, r = 58, rin = 36;
   let a0 = -Math.PI / 2, paths = '';
   slices.forEach(([, n], i) => {
@@ -109,10 +120,10 @@ function drawDonut(svg, legendEl, countries) {
     const xi1 = cx + rin * Math.cos(a1), yi1 = cy + rin * Math.sin(a1);
     const xi0 = cx + rin * Math.cos(a0), yi0 = cy + rin * Math.sin(a0);
     const large = (a1 - a0) > Math.PI ? 1 : 0;
-    paths += `<path d="M${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} L${xi1.toFixed(1)},${yi1.toFixed(1)} A${rin},${rin} 0 ${large} 0 ${xi0.toFixed(1)},${yi0.toFixed(1)} Z" fill="${colors[i % colors.length]}" stroke="#0a0f0d" stroke-width="1.5"/>`;
+    paths += `<path d="M${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} L${xi1.toFixed(1)},${yi1.toFixed(1)} A${rin},${rin} 0 ${large} 0 ${xi0.toFixed(1)},${yi0.toFixed(1)} Z" fill="${colors[i % colors.length]}" stroke="#0e0f14" stroke-width="1.5"/>`;
     a0 = a1;
   });
-  svg.innerHTML = paths + `<text x="${cx}" y="${cy - 2}" fill="#cfe9d8" font-size="18" text-anchor="middle" font-family="monospace">${nf(total)}</text><text x="${cx}" y="${cy + 12}" fill="#6f9a84" font-size="9" text-anchor="middle" font-family="monospace">VIEWS</text>`;
+  svg.innerHTML = paths + `<text x="${cx}" y="${cy - 2}" fill="#e2e8f0" font-size="18" text-anchor="middle" font-family="monospace">${nf(total)}</text><text x="${cx}" y="${cy + 12}" fill="#64748b" font-size="9" text-anchor="middle" font-family="monospace">VIEWS</text>`;
   if (legendEl) {
     legendEl.innerHTML = slices.map(([cc, n], i) => {
       const pct = Math.round((n / total) * 100);
@@ -128,18 +139,17 @@ let countryData = { viewers: {}, subscribers: {}, blocked: {} };
 async function loadOverview() {
   const d = await api('/api/admin/analytics/overview');
   const series = d.series || [];
-  $('kpi-views').textContent = nf(d.totals.views);
-  $('kpi-hours').textContent = nf(d.totals.hours);
-  $('kpi-users').textContent = nf(d.userCount);
-  $('kpi-blocked').textContent = nf((d.blocked && d.blocked.total) || 0);
+  updateValue('kpi-views', nf(d.totals.views));
+  updateValue('kpi-hours', nf(d.totals.hours));
+  updateValue('kpi-users', nf(d.userCount));
+  updateValue('kpi-blocked', nf((d.blocked && d.blocked.total) || 0));
   setTrend('trend-views', trendPct(series.map((s) => s.views)));
   setTrend('trend-hours', trendPct(series.map((s) => s.minutes)));
   setTrend('trend-blocked', trendPct(series.map((s) => s.blocked)));
-  sparkline($('spark-views'), series.map((s) => s.views), '#5ef08a');
-  sparkline($('spark-hours'), series.map((s) => s.minutes), '#ffc04d');
-  sparkline($('spark-blocked'), series.map((s) => s.blocked), '#ff66cc');
-  // cumulative users sparkline (rough upward shape from the views series length)
-  sparkline($('spark-users'), series.map((_, i) => i + 1), '#46d6ef');
+  sparkline($('spark-views'), series.map((s) => s.views), '#818cf8');
+  sparkline($('spark-hours'), series.map((s) => s.minutes), '#f59e0b');
+  sparkline($('spark-blocked'), series.map((s) => s.blocked), '#fb7185');
+  sparkline($('spark-users'), series.map((_, i) => i + 1), '#22d3ee');
   drawTrend($('trend-chart'), series);
   const stamp = new Date(d.generatedAt || Date.now()).toUTCString().slice(17, 25) + ' UTC';
   ['upd-1', 'upd-2', 'upd-3', 'upd-4'].forEach((id) => { const el = $(id); if (el) el.textContent = 'UPDATED ' + stamp; });
@@ -190,8 +200,11 @@ async function loadVisitors() {
   const d = await api('/api/admin/analytics/visitors?limit=200');
   const events = d.events || [];
   const head = '<div class="h"><span>When</span><span>IP</span><span>User · video</span><span>Watch</span></div>';
-  if (!events.length) { box.innerHTML = head + '<div class="row"><span class="ts">—</span><span></span><span class="who">No visitor activity recorded yet.</span><span></span></div>'; return; }
-  box.innerHTML = head + events.map((e) => {
+  if (!events.length) { 
+    if (!box.innerHTML.includes('No visitor activity')) box.innerHTML = head + '<div class="row"><span class="ts">—</span><span></span><span class="who">No visitor activity recorded yet.</span><span></span></div>'; 
+    return; 
+  }
+  const newHTML = head + events.map((e) => {
     const loc = e.cc ? flagIcon(e.cc) : '';
     const who = e.blocked ? '<span class="blk">⛔ blocked</span>' : (e.user ? esc(e.user) : 'guest');
     const vid = e.video ? ' · ' + esc(e.video) : (e.reason ? ' · ' + esc(e.reason) : '');
@@ -202,6 +215,9 @@ async function loadVisitors() {
       <span class="sec">${e.seconds ? e.seconds + 's' : '—'}</span>
     </div>`;
   }).join('');
+  if (box.innerHTML !== newHTML) {
+    box.innerHTML = newHTML;
+  }
 }
 
 async function loadExtras() {
@@ -321,13 +337,52 @@ function wireMapModes() {
   });
 }
 
+// ---------- system metrics panel ----------
+function fmtBytes(b) {
+  if (b == null) return '—';
+  const gb = b / (1024 ** 3);
+  if (gb >= 1) return `${gb.toFixed(1)} GB`;
+  const mb = b / (1024 ** 2);
+  return `${mb.toFixed(0)} MB`;
+}
+function fmtUptime(sec) {
+  if (sec == null) return '—';
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+async function loadMetrics() {
+  try {
+    const m = await api('/api/admin/metrics');
+    const s = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+    s('met-content', fmtBytes(m.disk?.content));
+    s('met-media', fmtBytes(m.disk?.media));
+    s('met-total', fmtBytes(m.disk?.total));
+    s('met-avg', fmtBytes(m.videos?.avgOriginalSize));
+    s('met-cores', `${m.cpu?.cores || '—'} × ${(m.cpu?.model || '').split(/\s+/).slice(0, 3).join(' ')}`);
+    const ld = m.cpu?.load;
+    s('met-load', ld ? ld.map((l) => l.toFixed(2)).join(' / ') : '—');
+    s('met-ram', fmtBytes(m.memory?.used));
+    s('met-ramfree', fmtBytes(m.memory?.free));
+    s('met-uptime', fmtUptime(m.uptime));
+    s('met-platform', m.platform || '—');
+    s('met-node', m.nodeVersion || '—');
+    s('met-proccount', `${m.videos?.processing || 0} active · ${m.videos?.failed || 0} failed`);
+  } catch { /* ignore */ }
+}
+
 async function main() {
   await requireAdmin();
   wireTabs(); wireMapModes(); wireGeo();
   tickClock(); setInterval(tickClock, 1000);
-  setInterval(() => { loadVisitors().catch(() => {}); }, 15000); // live-ish feed refresh
+  setInterval(() => { loadOverview().catch(() => {}); }, 10000);
+  setInterval(() => { loadVisitors().catch(() => {}); }, 10000);
+  setInterval(() => { loadMetrics().catch(() => {}); }, 10000);
   try {
-    await Promise.all([loadOverview(), loadCountries('viewers'), loadGeo(), loadExtras(), loadVisitors()]);
+    await Promise.all([loadOverview(), loadCountries('viewers'), loadGeo(), loadExtras(), loadVisitors(), loadMetrics()]);
   } catch { /* a 401 mid-flight reloads into the gate */ }
 }
 main();

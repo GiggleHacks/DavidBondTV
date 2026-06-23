@@ -18,10 +18,28 @@ const shortDay = (d) => {
     : dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
 
+function updateValue(id, newValue) {
+  const el = $(id);
+  if (!el) return;
+  if (el.textContent !== newValue) {
+    el.textContent = newValue;
+    el.classList.remove('update-pulse');
+    void el.offsetWidth; // trigger reflow
+    el.classList.add('update-pulse');
+  }
+}
+
+
+let lastChartData = '';
 function renderChart(byDay) {
   const bars = $('va-bars');
   const days = (byDay || []).slice(-30);
   if (!days.length) { bars.classList.add('hidden'); $('va-empty').classList.remove('hidden'); return; }
+  
+  const currentChartData = JSON.stringify(days);
+  if (lastChartData === currentChartData) return;
+  lastChartData = currentChartData;
+
   const max = Math.max(1, ...days.map((d) => d.views));
   bars.replaceChildren(...days.map((d) => {
     const bar = document.createElement('div');
@@ -37,23 +55,30 @@ function renderChart(byDay) {
   }));
 }
 
-async function main() {
-  await requireAdmin();
-  if (!videoId) { $('va-title').textContent = 'No video selected'; return; }
+async function loadData() {
+  if (!videoId) return;
   let d;
   try {
     const res = await fetch(`/api/admin/analytics/video?id=${encodeURIComponent(videoId)}`);
     if (res.status === 401) { location.reload(); return; }
     d = await res.json();
-  } catch { $('va-title').textContent = 'Could not load analytics'; return; }
+  } catch { return; }
 
   $('va-title').textContent = d.title || videoId;
   document.title = `Analytics · ${d.title || videoId} — David Bond TV`;
-  $('va-views').textContent = (d.views || 0).toLocaleString();
-  $('va-minutes').textContent = (d.minutes || 0).toLocaleString();
-  $('va-avg').textContent = fmtMmSs(d.avgSeconds);
+  updateValue('va-views', (d.views || 0).toLocaleString());
+  updateValue('va-minutes', (d.minutes || 0).toLocaleString());
+  updateValue('va-avg', fmtMmSs(d.avgSeconds));
   $('va-view').href = `/watch?v=${encodeURIComponent(videoId)}`;
   $('va-edit').href = `${ADMIN_PATHS.edit}?v=${encodeURIComponent(videoId)}`;
   renderChart(d.byDay);
+}
+
+async function main() {
+  await requireAdmin();
+  if (!videoId) { $('va-title').textContent = 'No video selected'; return; }
+  
+  await loadData();
+  setInterval(loadData, 10000);
 }
 main();

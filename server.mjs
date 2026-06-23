@@ -9,7 +9,7 @@ import { createChallenge, verifyChallenge } from './lib/challenge.js';
 import { createRateLimiter } from './lib/rate-limit.js';
 import { validateComment, addComment, listComments, deleteComment, readAllComments } from './lib/comments-store.js';
 import { getCounts, getUserVote, setVote } from './lib/reactions-store.js';
-import { adminConfigured } from './lib/admin-auth.js';
+import { adminConfigured, verifyBearerSecret } from './lib/admin-auth.js';
 import { createAdminAccount } from './lib/admin-account.js';
 import { serializeCookie } from './lib/cookies.js';
 import { hashPassword, verifyPassword } from './lib/password.js';
@@ -21,18 +21,22 @@ import { createCommentGuard, DEFAULT_BANNED } from './lib/comment-guard.js';
 import { adminUser } from './lib/users-store.js';
 import { createPaymentsStore } from './lib/payments-store.js';
 import { createStripePayments } from './lib/stripe-payments.js';
-import { createTelegramNotifier } from './lib/telegram-bot.js';
+import { createTelegramNotifier, createTelegramGroupGate } from './lib/telegram-bot.js';
+import { createTelegramAccess } from './lib/telegram-access.js';
 import { hasActiveMembership } from './lib/membership.js';
 import { avatarUrl } from './lib/avatars.js';
 import {
   enqueue, getJob, listJobs, newUploadTarget, acceptableUpload, bootSweep, deleteVideo,
   editVideo, thumbTarget, setThumb, isKnownVideo, bulkAction, videoVisibility,
-  releaseScheduled, videoPublic, listManifest,
+  releaseScheduled, videoPublic, listManifest, checkDuplicate, getSystemMetrics,
+  mergeManifestEntry,
 } from './lib/ingest.mjs';
 import {
   listForUser as listNotifications, markSeen as markNotificationsSeen,
   dismiss as dismissNotification, clearAll as clearNotifications,
+  addAccountNotification,
 } from './lib/notifications-store.js';
+import { sendMembershipGrantedEmail, sendProductGrantedEmail } from './lib/mailer.js';
 import { hasFfmpeg } from './lib/media.mjs';
 import * as categories from './lib/categories.js';
 import * as uploads from './lib/upload-sessions.mjs';
@@ -43,6 +47,9 @@ import { createRequestContext } from './lib/request-context.mjs';
 import { createAnalytics } from './lib/analytics-store.mjs';
 import { createGeoGate } from './lib/geo-gate.mjs';
 import { PUBLIC_DIR, MEDIA_DIR, MANIFEST, resolveAssetPath } from './lib/paths.js';
+import { sha256File } from './lib/hash-file.mjs';
+import { diffManifest } from './lib/sync-diff.mjs';
+import { startPublish, getPublishJob } from './lib/sync-client.mjs';
 import { ADMIN_ROUTE_PREFIX, isLegacyAdminRoute, isPrettyAdminRoute, resolveAdminFilePath } from './lib/admin-routes.js';
 import { sanitizePlaybackVideo, sanitizePublicVideo } from './lib/video-manifest.js';
 
@@ -78,6 +85,13 @@ const SECRET = crypto.randomBytes(32).toString('hex');
 // Admin token signing key. Set ADMIN_SECRET to keep tokens valid across restarts;
 // otherwise a fresh random key logs admins out on each restart (fine for one admin).
 const ADMIN_SECRET = process.env.ADMIN_SECRET || crypto.randomBytes(32).toString('hex');
+// Local→server video publish. SYNC_TOKEN authenticates machine-to-machine pushes
+// (set identically on both ends); when unset, the /api/sync/* receive endpoints
+// 404 so an unconfigured server never accepts pushes. SYNC_TARGET_URL is only set
+// on the LOCAL instance — the production address it publishes to.
+const SYNC_TOKEN = process.env.SYNC_TOKEN || '';
+const SYNC_TARGET_URL = (process.env.SYNC_TARGET_URL || '').replace(/\/+$/, '');
+const ALLOWED_SYNC_PREFIXES = ['/thumbs/', '/previews/', '/videos/', '/storyboards/'];
 const limiter = createRateLimiter(60_000, 3); // up to 3 comments/min per IP
 // Comment anti-spam: per-account limits, duplicate/flood detection, link controls,
 // banned-word blocklist. Extra blocked words can be added in data/comment-blocklist.json
@@ -175,6 +189,27 @@ const stripePayments = createStripePayments({
   telegramNotifier,
 });
 
+// --- Private Telegram group access gate ---
+// Paid users get a one-time, single-use invite to a private Telegram group; the
+// group link is never exposed publicly. Ships dark unless the bot is configured
+// with a group chat id + webhook secret + bot username (otherwise the routes
+// return 503 and the revocation sweep doesn't run). Reuses the alerts bot token.
+const telegramGate = createTelegramGroupGate({
+  botToken: process.env.TELEGRAM_BOT_TOKEN,
+  groupChatId: process.env.TELEGRAM_GROUP_CHAT_ID || '',
+  inviteTtlMs: Number(process.env.TELEGRAM_INVITE_TTL_MS) || 10 * 60_000,
+});
+const telegramAccess = createTelegramAccess({
+  store: accounts.store,
+  currentUser: accounts.currentUser,
+  gate: telegramGate,
+  paymentsStore,
+  tokenSecret: AUTH_SECRET,
+  botUsername: process.env.TELEGRAM_BOT_USERNAME || '',
+  webhookToken: process.env.TELEGRAM_WEBHOOK_SECRET || '',
+  linkTokenTtlMs: Number(process.env.TELEGRAM_LINK_TOKEN_TTL_MS) || 15 * 60_000,
+});
+
 // --- analytics + per-request context ---
 // Trust Cloudflare's CF-* headers only when the origin actually sits behind it.
 const TRUST_CLOUDFLARE = process.env.TRUST_CLOUDFLARE === '1';
@@ -193,6 +228,12 @@ const geoGate = createGeoGate(GEO_RULES_FILE);
 function isAdminReq(req) {
   const u = accounts.currentUser(req);
   return !!(u && Array.isArray(u.roles) && u.roles.includes('admin'));
+}
+
+// Machine-to-machine sync auth: a static Bearer SYNC_TOKEN, or a logged-in admin
+// (so the owner can also hit /api/sync/* from a browser session for debugging).
+function isSyncAuthed(req) {
+  return verifyBearerSecret(SYNC_TOKEN, req) || isAdminReq(req);
 }
 
 /**
@@ -721,6 +762,157 @@ async function handleApi(req, res, ctx) {
     return true;
   }
 
+  // GET /api/admin/metrics → system stats (CPU, memory, disk, video stats)
+  if (req.method === 'GET' && url.pathname === '/api/admin/metrics') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    try {
+      const metrics = await getSystemMetrics();
+      sendJson(res, 200, metrics);
+    } catch (err) {
+      sendJson(res, 500, { error: 'Failed to collect metrics' });
+    }
+    return true;
+  }
+
+  // ===================== Local→server video publish =====================
+  // SERVER side: receive endpoints (/api/sync/*). Disabled (404) unless SYNC_TOKEN
+  // is set. Auth: static Bearer SYNC_TOKEN or a logged-in admin.
+  if (url.pathname.startsWith('/api/sync/')) {
+    if (!SYNC_TOKEN) { sendJson(res, 404, { error: 'Not found' }); return true; }
+    if (!isSyncAuthed(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+
+    // POST /api/sync/diff { videos:[{id,fingerprint}] } → { present, changed, missing }
+    if (req.method === 'POST' && url.pathname === '/api/sync/diff') {
+      let body; try { body = JSON.parse(await readBody(req, 1 << 20)); } catch { body = null; }
+      const incoming = body && Array.isArray(body.videos) ? body.videos : [];
+      sendJson(res, 200, diffManifest(listManifest(), incoming));
+      return true;
+    }
+
+    // POST /api/sync/artifact/init { relPath, size, sha256 } → { uploadId, offset, chunkSize }
+    if (req.method === 'POST' && url.pathname === '/api/sync/artifact/init') {
+      let body; try { body = JSON.parse(await readBody(req, 8192)); } catch { body = null; }
+      const relPath = body && typeof body.relPath === 'string' ? body.relPath : '';
+      const size = body ? Number(body.size) : NaN;
+      const sha256 = body && typeof body.sha256 === 'string' ? body.sha256 : '';
+      if (!relPath || !Number.isFinite(size) || size < 0 || !sha256) { sendJson(res, 400, { error: 'Invalid request.' }); return true; }
+      if (!ALLOWED_SYNC_PREFIXES.some((p) => relPath.startsWith(p))) { sendJson(res, 400, { error: 'Path not allowed.' }); return true; }
+      const dest = resolveAssetPath(relPath); // null if it escapes its content root
+      if (!dest) { sendJson(res, 400, { error: 'Unsafe path.' }); return true; }
+      if (size > UPLOAD_MAX_BYTES) { sendJson(res, 413, { error: 'Artifact too large.' }); return true; }
+      const partPath = `${dest}.part`;
+      await fsp.mkdir(path.dirname(dest), { recursive: true });
+      await fsp.unlink(partPath).catch(() => {});
+      const fh = await fsp.open(partPath, 'w');
+      await fh.truncate(size);
+      await fh.close();
+      const id = crypto.randomUUID();
+      uploads.createSession(id, { partPath, savedPath: dest, name: relPath, size, sha256 });
+      sendJson(res, 200, { uploadId: id, offset: 0, chunkSize: UPLOAD_CHUNK_SIZE });
+      return true;
+    }
+
+    // POST /api/sync/artifact/chunk?id=&offset=  (positional write; same as upload)
+    if (req.method === 'POST' && url.pathname === '/api/sync/artifact/chunk') {
+      const id = url.searchParams.get('id') || '';
+      const offset = Number(url.searchParams.get('offset'));
+      const session = uploads.getSession(id);
+      const declaredLen = Number(req.headers['content-length']) || 0;
+      const check = uploads.validateChunk(session, offset, declaredLen, UPLOAD_MAX_BYTES);
+      if (!check.ok) { try { req.resume(); } catch { /* drain */ } sendJson(res, check.status, { error: check.error }); return true; }
+      if (check.skip) { uploads.touch(session); try { req.resume(); } catch { /* drain */ } sendJson(res, 200, { received: session.received }); return true; }
+      const buf = await readRawBody(req, declaredLen + 1024);
+      if (buf === null) { sendJson(res, 500, { error: 'Could not receive that chunk.' }); return true; }
+      try {
+        const fh = await fsp.open(session.partPath, 'r+');
+        await fh.write(buf, 0, buf.length, offset);
+        await fh.close();
+        uploads.addRange(session, offset, offset + buf.length);
+        uploads.touch(session);
+        sendJson(res, 200, { received: session.received });
+      } catch { sendJson(res, 500, { error: 'Could not save that chunk.' }); }
+      return true;
+    }
+
+    // POST /api/sync/artifact/complete?id=  → verify sha256, commit .part → dest
+    if (req.method === 'POST' && url.pathname === '/api/sync/artifact/complete') {
+      const id = url.searchParams.get('id') || '';
+      const session = uploads.getSession(id);
+      const check = uploads.validateComplete(session);
+      if (!check.ok) { sendJson(res, check.status, { error: check.error }); return true; }
+      try {
+        const actual = await sha256File(session.partPath);
+        if (session.sha256 && actual !== session.sha256) {
+          await fsp.unlink(session.partPath).catch(() => {});
+          uploads.deleteSession(id);
+          sendJson(res, 422, { error: 'Checksum mismatch — artifact corrupted in transit.' });
+          return true;
+        }
+        await fsp.rename(session.partPath, session.savedPath);
+        uploads.deleteSession(id);
+        sendJson(res, 200, { ok: true });
+      } catch { sendJson(res, 500, { error: 'Could not finalize artifact.' }); }
+      return true;
+    }
+
+    // POST /api/sync/manifest { entry } → merge into the manifest (commit point)
+    if (req.method === 'POST' && url.pathname === '/api/sync/manifest') {
+      let body; try { body = JSON.parse(await readBody(req, 1 << 20)); } catch { body = null; }
+      const entry = body && body.entry;
+      if (!entry || typeof entry !== 'object' || !entry.id) { sendJson(res, 400, { error: 'Invalid entry.' }); return true; }
+      await mergeManifestEntry(entry);
+      console.log(`[sync] merged manifest entry id=${entry.id} title="${entry.title || ''}"`);
+      sendJson(res, 200, { ok: true });
+      return true;
+    }
+
+    // POST /api/sync/delete { ids:[...] } → remove exactly those videos. Only the
+    // ids the client deleted locally (tombstones) are sent, so server-only videos
+    // (e.g. phone uploads) are never affected. tombstone:false → receiving a delete
+    // doesn't create a new tombstone on this machine.
+    if (req.method === 'POST' && url.pathname === '/api/sync/delete') {
+      let body; try { body = JSON.parse(await readBody(req, 1 << 20)); } catch { body = null; }
+      const ids = body && Array.isArray(body.ids) ? body.ids.filter((x) => typeof x === 'string') : [];
+      const deleted = [];
+      const notFound = [];
+      for (const id of ids) {
+        const r = await deleteVideo(id, { tombstone: false });
+        if (r.ok) { deleted.push(id); console.log(`[sync] deleted id=${id}`); }
+        else notFound.push(id);
+      }
+      sendJson(res, 200, { deleted, notFound });
+      return true;
+    }
+
+    sendJson(res, 404, { error: 'Not found' });
+    return true;
+  }
+
+  // LOCAL side: drive a publish to the configured SYNC_TARGET_URL. Admin-only;
+  // SYNC_TOKEN/target never reach the browser.
+  if (req.method === 'POST' && url.pathname === '/api/admin/publish/start') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    if (!SYNC_TARGET_URL || !SYNC_TOKEN) {
+      sendJson(res, 400, { error: 'Publishing is not configured — set SYNC_TARGET_URL and SYNC_TOKEN on this machine.' });
+      return true;
+    }
+    const { jobId } = startPublish({ targetUrl: SYNC_TARGET_URL, token: SYNC_TOKEN });
+    sendJson(res, 200, { jobId, target: SYNC_TARGET_URL });
+    return true;
+  }
+  if (req.method === 'GET' && url.pathname === '/api/admin/publish/status') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const job = getPublishJob(url.searchParams.get('job') || '');
+    if (!job) { sendJson(res, 404, { error: 'No such publish job.' }); return true; }
+    sendJson(res, 200, { job });
+    return true;
+  }
+  if (req.method === 'GET' && url.pathname === '/api/admin/publish/config') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    sendJson(res, 200, { configured: !!(SYNC_TARGET_URL && SYNC_TOKEN), target: SYNC_TARGET_URL || null });
+    return true;
+  }
+
   // POST /api/admin/delete  { id } → { ok }
   if (req.method === 'POST' && url.pathname === '/api/admin/delete') {
     if (!isAdminReq(req)) {
@@ -1027,16 +1219,19 @@ async function handleApi(req, res, ctx) {
     const rest = url.pathname.slice('/api/admin/users'.length).replace(/^\//, '');
     const [userId, action] = rest.split('/');
 
-    // GET list
+    // GET list — ?filter=verified|unverified|all (default verified). Unverified
+    // accounts are pending/fake signups; the owner can review and purge them.
     if (req.method === 'GET' && !userId) {
       const ustats = analytics.getAllUserStats();
       const blockedIds = new Set(geoGate.getRules().blockedUserIds);
       const all = accounts.store.listAll();
-      // Only show users who have completed email verification — pending/fake
-      // signups stay out of the directory until their email is confirmed.
-      const verifiedUsers = all.filter((u) => u.verified);
-      const hiddenUnverified = all.length - verifiedUsers.length;
-      const users = verifiedUsers.map((u) => {
+      const verifiedCount = all.filter((u) => u.verified).length;
+      const unverifiedCount = all.length - verifiedCount;
+      const filter = url.searchParams.get('filter') || 'verified';
+      const picked = filter === 'all' ? all
+        : filter === 'unverified' ? all.filter((u) => !u.verified)
+          : all.filter((u) => u.verified);
+      const users = picked.map((u) => {
         const s = ustats[u.id] || {};
         return {
           id: u.id, username: u.username, email: u.email,
@@ -1049,7 +1244,8 @@ async function handleApi(req, res, ctx) {
           verified: u.verified, createdAt: u.createdAt,
         };
       });
-      sendJson(res, 200, { users, hiddenUnverified });
+      // `hiddenUnverified` kept for backward-compat with older clients.
+      sendJson(res, 200, { users, filter, verifiedCount, unverifiedCount, hiddenUnverified: unverifiedCount });
       return true;
     }
 
@@ -1114,6 +1310,13 @@ async function handleApi(req, res, ctx) {
         };
         await accounts.store.updateUser(userId, { membership, hasPurchased: true });
         await paymentsStore.addTxn(userId, { kind: 'admin.grant', ts: Date.now(), by: admin ? admin.id : null });
+        // Let the user know — in-app bell + email.
+        addAccountNotification(userId, {
+          title: 'Membership activated 🎉',
+          body: 'You now have full access to all exclusive videos.',
+          link: '/account.html',
+        }).catch(() => {});
+        if (u.email) sendMembershipGrantedEmail(u.email, `${BASE_URL}/videos`);
         sendJson(res, 200, { ok: true, subscribed: true });
         return true;
       }
@@ -1126,6 +1329,60 @@ async function handleApi(req, res, ctx) {
       await accounts.store.updateUser(userId, { membership: null, hasPurchased: false });
       await paymentsStore.addTxn(userId, { kind: 'admin.revoke', ts: Date.now(), by: admin ? admin.id : null });
       sendJson(res, 200, { ok: true, subscribed: false });
+      return true;
+    }
+
+    // POST delete — permanently remove the account. Refuses active Stripe
+    // members (cancel via the billing portal first, so we never orphan a payer).
+    // Analytics rollups + payment history are intentionally left intact; they're
+    // historical/financial records and simply no longer resolve to a live user.
+    if (req.method === 'POST' && action === 'delete') {
+      if (u.membership && u.membership.provider === 'stripe' && hasActiveMembership(u)) {
+        sendJson(res, 400, { error: 'This user has an active Stripe subscription — cancel it from the billing portal before deleting.' });
+        return true;
+      }
+      const result = await accounts.store.deleteUser(userId);
+      if (!result.ok) { sendJson(res, 404, { error: 'User not found' }); return true; }
+      // Cross-store cleanup: drop any geo-block rule + free-follow subscription.
+      await geoGate.unblockUser(userId).catch(() => {});
+      try { subscribers.unsubscribe(userId); } catch { /* best effort */ }
+      sendJson(res, 200, { ok: true, deleted: true });
+      return true;
+    }
+
+    // POST product — grant/revoke access to a specific product (course/bundle/
+    // digital), independent of membership. Body: { productId, op:'grant'|'revoke' }.
+    // An admin grant mirrors the Stripe purchase entitlement shape with
+    // provider:'admin', so playback's ownership check treats it identically.
+    if (req.method === 'POST' && action === 'product') {
+      const admin = accounts.currentUser(req);
+      let body; try { body = JSON.parse(await readBody(req, 4096)); } catch { body = null; }
+      const productId = body && typeof body.productId === 'string' ? body.productId : '';
+      const op = body && body.op === 'revoke' ? 'revoke' : 'grant';
+      const product = productId ? products.getById(productId) : null;
+      if (!product) { sendJson(res, 404, { error: 'Product not found.' }); return true; }
+
+      const owned = Array.isArray(u.products) ? u.products.slice() : [];
+      if (op === 'grant') {
+        if (!owned.some((p) => p && p.productId === productId)) {
+          owned.push({ productId, provider: 'admin', grantedBy: admin ? admin.id : null, purchasedAt: Date.now() });
+          await accounts.store.updateUser(userId, { products: owned });
+          await paymentsStore.addTxn(userId, { kind: 'admin.product.grant', ts: Date.now(), productId, by: admin ? admin.id : null });
+          addAccountNotification(userId, {
+            title: `Access granted: ${product.name} 🎉`,
+            body: 'It’s now unlocked in your library.',
+            link: product.slug ? `/course.html?slug=${encodeURIComponent(product.slug)}` : '/account.html',
+          }).catch(() => {});
+          if (u.email) sendProductGrantedEmail(u.email, product.name, `${BASE_URL}/`);
+        }
+        sendJson(res, 200, { ok: true, owns: true });
+        return true;
+      }
+      // revoke: drop every entitlement for this product id.
+      const next = owned.filter((p) => !(p && p.productId === productId));
+      await accounts.store.updateUser(userId, { products: next });
+      await paymentsStore.addTxn(userId, { kind: 'admin.product.revoke', ts: Date.now(), productId, by: admin ? admin.id : null });
+      sendJson(res, 200, { ok: true, owns: false });
       return true;
     }
 
@@ -1187,6 +1444,10 @@ async function handleApi(req, res, ctx) {
     const publishAt = Number.isFinite(pa) && pa > Date.now() && pa < Date.now() + UPLOAD_SCHEDULE_MAX_MS ? pa : 0;
     const { id, savedPath, partPath } = newUploadTarget(name);
     await fsp.unlink(partPath).catch(() => {}); // clear any stale .part for this id
+    // Pre-allocate the .part file so parallel chunks can do positional writes.
+    const fh = await fsp.open(partPath, 'w');
+    await fh.truncate(size);
+    await fh.close();
     uploads.createSession(id, { partPath, savedPath, name, size, visibility, blur, category, publishAt });
     console.log(`[upload] INIT id=${id} name="${name}" size=${(size / 1e6).toFixed(1)}MB visibility=${visibility}`);
     sendJson(res, 200, { uploadId: id, offset: 0, chunkSize: UPLOAD_CHUNK_SIZE });
@@ -1197,7 +1458,7 @@ async function handleApi(req, res, ctx) {
     if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
     const session = uploads.getSession(url.searchParams.get('id') || '');
     if (!session) { sendJson(res, 404, { error: 'Upload session not found — start the upload again.' }); return true; }
-    sendJson(res, 200, { offset: session.received, size: session.size });
+    sendJson(res, 200, { offset: uploads.contiguousBytes(session), received: session.received, size: session.size });
     return true;
   }
 
@@ -1214,6 +1475,13 @@ async function handleApi(req, res, ctx) {
       sendJson(res, check.status, { error: check.error, expected: check.expected });
       return true;
     }
+    // Already received (idempotent retry) — skip the write.
+    if (check.skip) {
+      uploads.touch(session);
+      try { req.resume(); } catch { /* drain */ }
+      sendJson(res, 200, { offset: session.received, received: session.received });
+      return true;
+    }
     const buf = await readRawBody(req, declaredLen + 1024); // small slack over declared length
     if (buf === null) {
       console.error(`[upload] chunk FAIL id=${id} offset=${offset}: body read error/overflow`);
@@ -1221,10 +1489,13 @@ async function handleApi(req, res, ctx) {
       return true;
     }
     try {
-      await fsp.appendFile(session.partPath, buf);
-      session.received += buf.length;
+      // Positional write — parallel chunks write to different offsets safely.
+      const fh = await fsp.open(session.partPath, 'r+');
+      await fh.write(buf, 0, buf.length, offset);
+      await fh.close();
+      uploads.addRange(session, offset, offset + buf.length);
       uploads.touch(session);
-      sendJson(res, 200, { offset: session.received });
+      sendJson(res, 200, { offset: session.received, received: session.received });
     } catch (err) {
       console.error(`[upload] chunk FAIL id=${id} offset=${offset}: ${(err && (err.code || err.message)) || 'error'}`);
       sendJson(res, 500, { error: 'Could not save that chunk — Retry to resume.' });
@@ -1240,6 +1511,17 @@ async function handleApi(req, res, ctx) {
     if (!check.ok) { sendJson(res, check.status, { error: check.error, expected: check.expected }); return true; }
     try {
       await fsp.rename(session.partPath, session.savedPath);
+      // Duplicate detection: fingerprint the completed file and check against manifest.
+      const dupCheck = await checkDuplicate(session.savedPath, session.size);
+      if (dupCheck.duplicate) {
+        await fsp.unlink(session.savedPath).catch(() => {});
+        uploads.deleteSession(id);
+        sendJson(res, 409, {
+          error: `Duplicate — this video matches "${dupCheck.existingTitle}" already in your library.`,
+          existingId: dupCheck.existingId,
+        });
+        return true;
+      }
       const { jobId, manifestId } = enqueue(session.savedPath, session.name, {
         visibility: session.visibility, blur: session.blur,
         category: session.category, publishAt: session.publishAt,
@@ -1461,6 +1743,11 @@ async function handleApi(req, res, ctx) {
   // Payments (/api/pay/stripe/*). Before accounts so the public webhook (no
   // session) is reached; the webhook reads the raw body for signature checking.
   if (await stripePayments.handle(req, res, url)) return true;
+
+  // Private Telegram group gate (/api/telegram/*). The bot webhook is session-less
+  // (authenticated by ?token=), so it shares the pre-accounts slot; the link/status
+  // routes resolve the session themselves via currentUser.
+  if (await telegramAccess.handle(req, res, url)) return true;
 
   // User accounts + profiles (/api/auth/*, /api/profile/*, /api/users/*)
   if (await accounts.handle(req, res, url)) return true;
@@ -1791,6 +2078,13 @@ server.listen(PORT, async () => {
 // Scheduled-release worker: publish due "slow-drip" videos (and notify viewers)
 // roughly every minute. unref() so it never holds the process open.
 setInterval(() => { releaseScheduled().catch(() => {}); }, 60_000).unref();
+
+// Telegram access worker: remove group members whose access has lapsed (no active
+// membership and no owned products). Only runs when the gate is configured.
+// unref() so it never holds the process open.
+if (telegramAccess.configured) {
+  setInterval(() => { telegramAccess.sweep().catch(() => {}); }, 60_000).unref();
+}
 
 // Reclaim disk from chunked uploads that stalled and were never finished:
 // drop idle sessions and unlink their orphaned .part files. Runs every 30 min.

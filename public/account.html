@@ -61,6 +61,15 @@
       <h2 style="margin-top:0">Membership</h2>
       <p class="acc-sub" id="billing-status">&nbsp;</p>
       <button class="acc-btn" id="billing-action" type="button" hidden></button>
+      <button class="acc-btn" id="billing-cancel" type="button" hidden
+        style="margin-top:8px;background:transparent;border:1px solid color-mix(in srgb,#ef4444 45%,transparent);color:#fca5a5">Cancel membership</button>
+    </div>
+
+    <div class="acc-card" id="telegram-card" style="margin-top:16px" hidden>
+      <h2 style="margin-top:0">Private Telegram group</h2>
+      <p class="acc-sub" id="telegram-status">&nbsp;</p>
+      <button class="acc-btn" id="telegram-action" type="button" hidden></button>
+      <p class="acc-msg" id="telegram-msg" hidden></p>
     </div>
 
     <div class="acc-card" id="connections-card" style="margin-top:16px">
@@ -99,7 +108,7 @@
   </div>
 
   <script type="module">
-    import { fetchMe, postJSON, initialAvatarDataUri, fetchAuthConfig, mountSecretReveal } from '/js/account.js';
+    import { fetchMe, postJSON, getJSON, initialAvatarDataUri, fetchAuthConfig, mountSecretReveal } from '/js/account.js';
     import { deriveBillingView } from '/js/billing-view.js';
     const $ = (id) => document.getElementById(id);
     const fmtDate = (ms) => (ms ? new Date(ms).toLocaleDateString() : '—');
@@ -161,27 +170,102 @@
     function renderBilling(user) {
       const status = $('billing-status');
       const action = $('billing-action');
+      const cancelBtn = $('billing-cancel');
       const view = deriveBillingView(user);
+      const m = (user && user.membership) || null;
       status.textContent = view.status;
+      action.hidden = true; action.onclick = null;
+      cancelBtn.hidden = true; cancelBtn.onclick = null;
 
-      if (view.action === 'manage') {
-        action.textContent = 'Manage billing';
-        action.hidden = false;
-        action.onclick = async () => {
-          action.disabled = true;
-          const r = await postJSON('/api/pay/stripe/portal', {});
-          if (r.ok && r.data.url) { window.location.href = r.data.url; return; }
-          action.disabled = false;
-          setMsg(r.data.error || 'Could not open the billing portal.', 'error');
-        };
-      } else if (view.action === 'join') {
+      if (view.action === 'join') {
         action.textContent = 'Become a member';
         action.hidden = false;
         action.onclick = () => { window.location.href = '/membership.html'; };
-      } else {
-        action.hidden = true;
-        action.onclick = null;
+        return;
       }
+      if (view.action !== 'manage') return; // admin-access / nothing to manage
+
+      // Comped membership (granted by the team) has no Stripe billing to manage.
+      if (m && m.provider === 'admin') {
+        status.textContent = 'Your membership was granted by the team — contact us if you need any changes.';
+        return;
+      }
+
+      // Stripe member: always offer "Manage billing" (cards, invoices, portal cancel).
+      action.textContent = 'Manage billing';
+      action.hidden = false;
+      action.onclick = async () => {
+        action.disabled = true;
+        const r = await postJSON('/api/pay/stripe/portal', {});
+        if (r.ok && r.data.url) { window.location.href = r.data.url; return; }
+        action.disabled = false;
+        setMsg(r.data.error || 'Could not open the billing portal.', 'error');
+      };
+
+      // Direct in-app cancel for an active sub that isn't already ending.
+      if (m && m.provider === 'stripe' && m.active && !m.cancelAtPeriodEnd) {
+        cancelBtn.hidden = false;
+        cancelBtn.onclick = async () => {
+          const ends = m.currentPeriodEnd ? new Date(m.currentPeriodEnd).toLocaleDateString() : 'the end of your paid period';
+          if (!window.confirm(`Cancel your membership? You'll keep full access until ${ends}, then it won't renew.`)) return;
+          cancelBtn.disabled = true;
+          const r = await postJSON('/api/pay/stripe/cancel', {});
+          if (r.ok && r.data.ok) {
+            const end = r.data.currentPeriodEnd ? new Date(r.data.currentPeriodEnd).toLocaleDateString() : null;
+            status.textContent = end ? `Membership ends ${end} — you keep access until then.` : 'Your membership will not renew.';
+            cancelBtn.hidden = true;
+            setMsg('Membership cancelled — you keep access until it ends.', 'success');
+          } else {
+            cancelBtn.disabled = false;
+            setMsg((r.data && r.data.error) || 'Could not cancel — try “Manage billing”.', 'error');
+          }
+        };
+      }
+    }
+
+    function setTgMsg(t, kind) {
+      const m = $('telegram-msg');
+      if (!t) { m.hidden = true; return; }
+      m.hidden = false; m.textContent = t; m.className = `acc-msg ${kind || ''}`.trim();
+    }
+
+    async function renderTelegram() {
+      const card = $('telegram-card');
+      const statusEl = $('telegram-status');
+      const action = $('telegram-action');
+      const st = await getJSON('/api/telegram/status');
+      // Hidden entirely when the feature isn't configured server-side.
+      if (!st || !st.enabled) { card.hidden = true; return; }
+      card.hidden = false;
+      setTgMsg('');
+
+      if (!st.eligible) {
+        statusEl.textContent = 'Members and course owners get access to our private Telegram group. Join to unlock it.';
+        action.textContent = 'See membership';
+        action.hidden = false;
+        action.onclick = () => { window.location.href = '/membership.html'; };
+        return;
+      }
+
+      statusEl.textContent = st.linkState === 'joined'
+        ? 'You’re linked to the group. Need back in? Generate a fresh single-use invite below.'
+        : 'You have access! Tap below for your personal, single-use invite link.';
+      action.textContent = 'Get my invite link';
+      action.hidden = false;
+      action.onclick = async () => {
+        action.disabled = true;
+        setTgMsg('');
+        const r = await postJSON('/api/telegram/link', {});
+        if (r.ok && r.data.deepLink) {
+          setTgMsg('Opening Telegram — tap “Start” there to receive your invite.', 'ok');
+          window.open(r.data.deepLink, '_blank', 'noopener');
+        } else {
+          setTgMsg(r.data.error === 'not_eligible'
+            ? 'We couldn’t verify a purchase on your account.'
+            : (r.data.error || 'Could not generate a link. Try again shortly.'), 'error');
+        }
+        action.disabled = false;
+      };
     }
 
     function setConnMsg(t, kind) {
@@ -298,6 +382,7 @@
       $('current').src = me.avatarUrl || initialAvatarDataUri(me.username);
       $('view-profile').href = `/u/${encodeURIComponent(me.username)}`;
       renderBilling(me);
+      renderTelegram();
       authCfg = await fetchAuthConfig();
       renderConnections(me);
       renderSetPw(me);

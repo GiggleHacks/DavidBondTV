@@ -24,6 +24,24 @@ ssh root@72.62.241.93 'systemctl restart davidbondtv && systemctl is-active davi
 
 > ⚠️ Do **NOT** include `data/` in a normal redeploy — it would clobber live accounts/analytics. `data/` was only seeded once at launch.
 
+## Publishing videos (local → server)
+Transcoding is heavy, so process videos on the **local** machine and push the finished
+artifacts to production over HTTPS — the server does no ffmpeg work.
+
+**One-time setup:**
+1. Generate a shared secret: `openssl rand -hex 32`.
+2. On the **server**, add `SYNC_TOKEN=<secret>` to the service env (e.g. a systemd drop-in
+   `/etc/systemd/system/davidbondtv.service.d/sync.conf` with `[Service]` / `Environment=SYNC_TOKEN=…`),
+   then `systemctl daemon-reload && systemctl restart davidbondtv`. When `SYNC_TOKEN` is unset
+   the `/api/sync/*` endpoints stay 404 (disabled).
+3. On the **local** machine's `.env`, set the SAME `SYNC_TOKEN` plus `SYNC_TARGET_URL=https://davidbondtv.com`.
+
+**Each time:** upload + let videos process locally, then open the Videos admin page →
+**Publish to server**. It diffs against the server (by id + fingerprint), uploads only
+missing/changed videos' artifacts in resumable chunks (each verified by SHA-256), and merges
+the manifest entry last. Re-running is safe/idempotent; a mid-push interruption resumes cleanly.
+Only the manifest + content artifacts sync — never users, payments, comments, analytics, or config.
+
 ## Content wipe (server)
 `node scripts/wipe-content.mjs --yes` on the server, OR the manual equivalent: set `public/thumbs/videos.json` to `[]`, `rm -rf public/{videos,previews,storyboards}/*`, empty `data/{comments,reactions}.json` and `data/analytics/*`. Preserves accounts.
 
