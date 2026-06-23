@@ -10,6 +10,10 @@ const STAR = '<svg viewBox="0 0 24 24"><path d="M12 17.27l5.18 3.14-1.37-5.9L20.
 const TAG = '<svg viewBox="0 0 24 24"><path d="M21.41 11.58l-9-9A2 2 0 0011 2H4a2 2 0 00-2 2v7a2 2 0 00.59 1.42l9 9a2 2 0 002.82 0l7-7a2 2 0 000-2.84zM6.5 8A1.5 1.5 0 118 6.5 1.5 1.5 0 016.5 8z"/></svg>';
 const CAP = '<svg viewBox="0 0 24 24"><path d="M12 3 1 9l11 6 9-4.91V17h2V9zM5 13.18v4L12 21l7-3.82v-4L12 17z"/></svg>';
 
+// A category's optional country flag (SVG from the self-hosted set), sized like
+// the nav icon. Self-removes if the flag file is missing.
+const flagImg = (code) => `<img class="sb-flag" src="/vendor/flags/4x3/${code}.svg" alt="" loading="lazy" onerror="this.remove()">`;
+
 function itemHTML(section, category, label, icon, active) {
   return `<button class="sb-item${active ? ' active' : ''}" data-section="${section}" data-category="${category}">
     <span class="sb-ico">${icon}</span><span>${label}</span></button>`;
@@ -43,7 +47,7 @@ async function build() {
     courses = prods.filter((p) => p.type === 'course');
   } catch { /* none */ }
 
-  const catItems = cats.map((c) => itemHTML('all', c.slug, c.name, TAG, false)).join('');
+  const catItems = cats.map((c) => itemHTML('all', c.slug, c.name, c.flag ? flagImg(c.flag) : TAG, false)).join('');
   const courseItems = courses.map((p) => itemHTML('courses', p.slug, p.name, CAP, false)).join('');
   nav.innerHTML = `
     <a class="sb-brand" href="/" aria-label="David Bond TV — home">

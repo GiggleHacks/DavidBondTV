@@ -285,7 +285,7 @@ function generateSitemap() {
   
   // Videos
   try {
-    const videos = listManifest().filter((v) => v.published !== false && v.status === 'ready');
+    const videos = listManifest().filter((v) => v.published !== false && v.status === 'ready' && !v.unlisted);
     for (const v of videos) {
       urls.push({
         loc: `${BASE_URL}/watch?v=${v.id}`,
@@ -1155,8 +1155,9 @@ async function handleApi(req, res, ctx) {
         let body; try { body = JSON.parse(raw); } catch { body = null; }
         if (!body || !body.action) { sendJson(res, 400, { error: 'Invalid request' }); return true; }
         let result;
-        if (body.action === 'add') result = categories.add(body.name);
+        if (body.action === 'add') result = categories.add(body.name, body.flag);
         else if (body.action === 'rename') result = categories.rename(body.slug, body.name);
+        else if (body.action === 'setflag') result = categories.setFlag(body.slug, body.flag);
         else if (body.action === 'remove') result = categories.remove(body.slug);
         else result = { ok: false, error: 'Unknown action.' };
         sendJson(res, result.ok ? 200 : 400, { ...result, categories: categories.list() });
@@ -1569,6 +1570,14 @@ const server = http.createServer(async (req, res) => {
     res.end('Server error');
   }
 });
+
+// Large video uploads stream straight through nginx into Node (the upload vhost
+// sets proxy_request_buffering off), and over a slow/lossy link a single upload
+// can run for many minutes. Node's default requestTimeout (5 min) would abort
+// such a request mid-stream with a 408, so disable the per-request cap. Header
+// reads are still bounded (headersTimeout) since headers arrive in milliseconds.
+server.requestTimeout = 0;
+server.headersTimeout = 60_000;
 
 server.listen(PORT, async () => {
   // Seed the David Bond admin account on first boot; surface the password once.

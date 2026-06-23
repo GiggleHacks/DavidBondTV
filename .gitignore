@@ -20,3 +20,9 @@ data/
 # Secrets (Gmail App Password, AUTH_SECRET, etc.) — keep .env.example tracked
 .env
 .deploy-data/
+
+# Whisper model binary + generated transcripts/ingest state — large/runtime,
+# regenerated on the box, never committed.
+whisper/
+build/transcripts/
+build/ingest-course.state.json

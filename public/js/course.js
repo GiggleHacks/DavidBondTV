@@ -33,6 +33,11 @@ function paintBranding(product) {
   root.style.setProperty('--course-accent', b.accent || '#22d3ee');
   if (b.logo) { $('cl-logo').src = b.logo; $('cl-logo').hidden = false; }
   $('cl-name').textContent = product.name || 'Course';
+  if (product.trailerVideoId) {
+    // Reuse the real site player (chrome-free build) via an embed iframe.
+    $('cl-video').src = `/embed.html?v=${encodeURIComponent(product.trailerVideoId)}`;
+    $('cl-trailer').hidden = false;
+  }
   const sales = product.sales || {};
   $('cl-headline').textContent = sales.headline || '';
   $('cl-body').textContent = sales.body || product.description || '';
@@ -48,6 +53,9 @@ function paintBranding(product) {
 function showOwned() {
   $('buy-btn').hidden = true;
   $('owned-view').hidden = false;
+  // Owners don't need the sales trailer — they're here to watch the course.
+  const tr = $('cl-trailer');
+  if (tr) tr.hidden = true;
 }
 
 async function render() {

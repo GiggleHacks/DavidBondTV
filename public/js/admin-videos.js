@@ -3,6 +3,7 @@
 // (delete / publish / unpublish / premium / free) plus per-row edit, thumbnail
 // replace, and delete.
 import { requireAdmin } from './god-auth.js';
+import { COUNTRIES } from './countries.js';
 
 const $ = (id) => document.getElementById(id);
 const PAGE = 50;
@@ -25,6 +26,23 @@ async function load() {
 }
 
 const catName = (slug) => (cats.find((c) => c.slug === slug) || {}).name || '';
+const catFlag = (slug) => (cats.find((c) => c.slug === slug) || {}).flag || '';
+
+/** A small flag <img> for a lowercase ISO code, or '' if no code. Self-removes if the SVG is missing. */
+const flagImg = (code, cls) => (code
+  ? `<img class="${cls}" src="/vendor/flags/4x3/${code}.svg" alt="" loading="lazy" onerror="this.remove()" />`
+  : '');
+
+/** Country <select> with a "no flag" option; `selected` is a lowercase code or ''. */
+function countrySelect(selected) {
+  const opts = ['<option value="">— No flag —</option>'].concat(
+    COUNTRIES.map((c) => {
+      const code = c.code.toLowerCase();
+      return `<option value="${code}"${code === selected ? ' selected' : ''}>${esc(c.name)}</option>`;
+    }),
+  );
+  return `<select class="cat-flag-sel">${opts.join('')}</select>`;
+}
 
 function applyFilter() {
   const q = $('search').value.trim().toLowerCase();
@@ -59,7 +77,7 @@ function badges(v) {
   const out = [];
   if (v.published === false) out.push('<span class="vb vb-un">Unpublished</span>');
   if (v.visibility === 'premium') out.push('<span class="vb vb-prem">Premium</span>');
-  if (v.category && catName(v.category)) out.push(`<span class="vb vb-cat">${esc(catName(v.category))}</span>`);
+  if (v.category && catName(v.category)) out.push(`<span class="vb vb-cat">${flagImg(catFlag(v.category), 'vb-flag')}${esc(catName(v.category))}</span>`);
   return out.join(' ');
 }
 
@@ -124,10 +142,17 @@ function renderCats() {
   for (const c of cats) {
     const row = document.createElement('div');
     row.className = 'cat-row';
-    row.innerHTML = `<input class="cat-name" value="${esc(c.name)}" maxlength="40" />
+    row.innerHTML = `<span class="cat-flag-cell">${flagImg(c.flag, 'cat-flag-img') || '<span class="cat-flag-none"></span>'}</span>
+      <input class="cat-name" value="${esc(c.name)}" maxlength="40" />
       <span class="muted cat-slug">${esc(c.slug)}</span>
+      ${countrySelect(c.flag || '')}
       <button class="btn sm ghost cat-save">Rename</button>
       <button class="btn sm danger cat-del">Remove</button>`;
+    row.querySelector('.cat-flag-sel').addEventListener('change', async (e) => {
+      const d = await catAction({ action: 'setflag', slug: c.slug, flag: e.target.value });
+      if (d && d.ok) { cats = d.categories; render(); renderCats(); }
+      else if (d) alert(d.error || 'Could not set flag.');
+    });
     row.querySelector('.cat-save').addEventListener('click', async () => {
       const name = row.querySelector('.cat-name').value.trim();
       const d = await catAction({ action: 'rename', slug: c.slug, name });
@@ -146,11 +171,21 @@ function renderCats() {
 function wireCats() {
   const btn = $('cat-add-btn');
   if (!btn) return;
+  // Inject a flag picker into the add row (next to the name input), so a new
+  // category can be created with its flag in one step.
+  let flagSel = $('cat-new-flag');
+  if (!flagSel) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = countrySelect('');
+    flagSel = tmp.firstChild;
+    flagSel.id = 'cat-new-flag';
+    $('cat-new').insertAdjacentElement('afterend', flagSel);
+  }
   const submit = async () => {
     const name = $('cat-new').value.trim();
     if (!name) return;
-    const d = await catAction({ action: 'add', name });
-    if (d && d.ok) { cats = d.categories; $('cat-new').value = ''; $('cat-msg').textContent = ''; render(); renderCats(); }
+    const d = await catAction({ action: 'add', name, flag: flagSel.value });
+    if (d && d.ok) { cats = d.categories; $('cat-new').value = ''; flagSel.value = ''; $('cat-msg').textContent = ''; render(); renderCats(); }
     else if (d) $('cat-msg').textContent = d.error || 'Could not add.';
   };
   btn.addEventListener('click', submit);

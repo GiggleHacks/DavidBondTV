@@ -168,6 +168,7 @@ a.tr:hover .name { color: var(--accent); }
 .vb-un { background: color-mix(in srgb, #f59e0b 22%, transparent); color: #fcd34d; }
 .vb-prem { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
 .vb-cat { background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border); }
+.vb-flag { width: 14px; height: 10px; border-radius: 2px; object-fit: cover; margin-right: 4px; vertical-align: -1px; }
 
 /* Premium badge (upload + edit visibility options) */
 .badge-premium { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 999px; letter-spacing: .3px; color: #fbbf24; background: linear-gradient(135deg, color-mix(in srgb, #f59e0b 24%, transparent), color-mix(in srgb, var(--accent) 22%, transparent)); border: 1px solid color-mix(in srgb, #f59e0b 45%, transparent); }
@@ -180,6 +181,10 @@ a.tr:hover .name { color: var(--accent); }
 .cat-row { display: flex; align-items: center; gap: 10px; }
 .cat-row .cat-name { width: 220px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; }
 .cat-row .cat-slug { font-size: 12px; font-family: ui-monospace, monospace; }
+.cat-flag-cell { flex: none; width: 26px; display: inline-flex; align-items: center; justify-content: center; }
+.cat-flag-img { width: 24px; height: 18px; border-radius: 3px; object-fit: cover; }
+.cat-flag-none { display: inline-block; width: 24px; height: 18px; border: 1px dashed var(--border); border-radius: 3px; }
+.cat-flag-sel, #cat-new-flag { max-width: 170px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; }
 .lib-actions { display: flex; gap: 8px; flex: none; }
 .btn-edit { flex: none; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
 .btn-edit:hover { background: color-mix(in srgb, var(--accent) 18%, var(--surface-2)); }

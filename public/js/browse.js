@@ -29,7 +29,7 @@ let hoverTimer = null;
 const state = {
   videos: [], sort: 'recent', section: 'all', category: '',
   isAdmin: false, isMember: false, loggedIn: false,
-  me: null, products: [], videoCourseMap: new Map(),
+  me: null, products: [], videoCourseMap: new Map(), categoryMap: new Map(),
 };
 
 /** Published product ids this video is assigned to (for the access gate). */
@@ -126,6 +126,23 @@ function card(v) {
   a.querySelector('.vdesc').textContent = v.description || '';
   a.querySelector('.vstats').textContent = v.uploaded || '';
 
+  // Category flag row (only when the video's category has a flag assigned):
+  // a small country flag + the category name, just under the channel line.
+  const cat = v.category ? state.categoryMap.get(v.category) : null;
+  if (cat && cat.flag) {
+    const row = document.createElement('div');
+    row.className = 'vcat';
+    const img = document.createElement('img');
+    img.src = `/vendor/flags/4x3/${cat.flag}.svg`;
+    img.alt = '';
+    img.loading = 'lazy';
+    img.onerror = function onerr() { this.remove(); };
+    const name = document.createElement('span');
+    name.textContent = cat.name;
+    row.append(img, name);
+    a.querySelector('.vchannel').insertAdjacentElement('afterend', row);
+  }
+
   // A locked card opens the right unlock modal instead of navigating: the
   // branded course modal for course-gated videos, else the membership modal.
   if (locked) {
@@ -185,7 +202,9 @@ function render() {
   // Only surface fully-processed videos publicly. Records still `processing`
   // or `failed` are kept in the manifest (visible/deletable in admin) but must
   // never appear in the public grid. Missing status = legacy `ready`.
-  let list = state.videos.filter((v) => v.published !== false && (v.status || 'ready') === 'ready');
+  // `unlisted` videos (e.g. a course trailer) never appear as grid cards — they
+  // only surface as the course sales-page hero and on their direct watch URL.
+  let list = state.videos.filter((v) => v.published !== false && (v.status || 'ready') === 'ready' && !v.unlisted);
   const activeCourse = state.section === 'courses' ? state.products.find((p) => p.slug === state.category) : null;
   renderCourseHeader(activeCourse);
   if (state.section === 'exclusive') list = list.filter((v) => v.visibility === 'premium');
@@ -282,32 +301,58 @@ function renderCourseHeader(product) {
     grid.before(banner);
   }
   const b = product.branding || {};
+  const sales = product.sales || {};
   const owned = ownsCourse(product) || state.isAdmin;
   banner.style.setProperty('--course-primary', b.primary || '#7c3aed');
   banner.style.setProperty('--course-accent', b.accent || '#22d3ee');
+
+  // Owners (and admins) skip the whole sales pitch — no trailer, no copy — and go
+  // straight to their unlocked videos below. They just get a slim title bar.
+  if (owned) {
+    banner.classList.add('cb-owned-mode');
+    banner.innerHTML = `
+      <div class="cb-owned-bar">
+        ${b.logo ? `<img class="cb-logo" src="${b.logo}" alt="" />` : ''}
+        <h2 class="cb-name"></h2>
+        <span class="cb-owned">✓ You own this course</span>
+      </div>`;
+    banner.querySelector('.cb-name').textContent = product.name || '';
+    return;
+  }
+
+  // The trailer entry lives in the loaded manifest (it's only hidden from the
+  // grid, not from the data) so the embed player can resolve it.
+  banner.classList.remove('cb-owned-mode');
+  const trailer = product.trailerVideoId ? state.videos.find((v) => v.id === product.trailerVideoId) : null;
   banner.innerHTML = `
     <div class="cb-inner">
-      ${b.logo ? `<img class="cb-logo" src="${b.logo}" alt="" />` : ''}
-      <div class="cb-text">
-        <h2 class="cb-name"></h2>
-        <p class="cb-headline"></p>
-        <p class="cb-body"></p>
+      ${trailer ? `<div class="cb-trailer"><iframe class="cb-video" src="/embed.html?v=${encodeURIComponent(product.trailerVideoId)}" title="Course trailer" loading="lazy" allow="fullscreen; encrypted-media" allowfullscreen></iframe></div>` : ''}
+      <div class="cb-main">
+        ${b.logo ? `<img class="cb-logo" src="${b.logo}" alt="" />` : ''}
+        <div class="cb-text">
+          <span class="cb-kicker">Premium Course</span>
+          <h2 class="cb-name"></h2>
+          <p class="cb-headline"></p>
+          <p class="cb-body"></p>
+          <ul class="cb-bullets"></ul>
+        </div>
+        <div class="cb-cta"></div>
       </div>
-      <div class="cb-cta"></div>
     </div>`;
   banner.querySelector('.cb-name').textContent = product.name || '';
-  banner.querySelector('.cb-headline').textContent = (product.sales && product.sales.headline) || '';
-  banner.querySelector('.cb-body').textContent = (product.sales && product.sales.body) || product.description || '';
-  const cta = banner.querySelector('.cb-cta');
-  if (owned) {
-    cta.innerHTML = '<span class="cb-owned">✓ You own this course</span>';
-  } else {
-    const btn = document.createElement('button');
-    btn.className = 'cb-buy gold-cta';
-    btn.textContent = (product.sales && product.sales.ctaLabel) || `Purchase ${fmtMoney(product.price, product.currency)}`;
-    btn.addEventListener('click', () => startPurchase(product, '', btn));
-    cta.appendChild(btn);
-  }
+  banner.querySelector('.cb-headline').textContent = sales.headline || '';
+  banner.querySelector('.cb-body').textContent = sales.body || product.description || '';
+  const bullets = banner.querySelector('.cb-bullets');
+  (sales.bullets || []).forEach((t) => {
+    const li = document.createElement('li');
+    li.textContent = t;
+    bullets.appendChild(li);
+  });
+  const btn = document.createElement('button');
+  btn.className = 'cb-buy gold-cta';
+  btn.textContent = sales.ctaLabel || `Purchase ${fmtMoney(product.price, product.currency)}`;
+  btn.addEventListener('click', () => startPurchase(product, '', btn));
+  banner.querySelector('.cb-cta').appendChild(btn);
 }
 
 /** Branded, per-course unlock modal (the course's colors / copy / price). */
@@ -402,6 +447,10 @@ async function init() {
     }
     state.videoCourseMap = map;
   } catch { /* no products */ }
+  try {
+    const list = (await (await fetch('/api/categories')).json()).categories || [];
+    state.categoryMap = new Map(list.map((c) => [c.slug, c]));
+  } catch { /* no categories */ }
   try {
     const res = await fetch('/thumbs/videos.json');
     state.videos = await res.json();
