@@ -34,7 +34,7 @@ import {
 import {
   listForUser as listNotifications, markSeen as markNotificationsSeen,
   dismiss as dismissNotification, clearAll as clearNotifications,
-  addAccountNotification,
+  addAccountNotification, decorateForViewer as decorateNotificationsForViewer,
 } from './lib/notifications-store.js';
 import { sendMembershipGrantedEmail, sendProductGrantedEmail } from './lib/mailer.js';
 import { hasFfmpeg } from './lib/media.mjs';
@@ -1759,8 +1759,11 @@ async function handleApi(req, res, ctx) {
     if (!u) { sendJson(res, 401, { error: 'Sign in to see notifications.' }); return true; }
     // Only count notifications for videos that still exist and are published, so
     // deleted/unpublished videos can't inflate the badge.
-    const liveIds = new Set(listManifest().filter((v) => v.published !== false).map((v) => v.id));
-    sendJson(res, 200, listNotifications(u.id, liveIds));
+    const liveVideos = listManifest().filter((v) => v.published !== false);
+    const liveIds = new Set(liveVideos.map((v) => v.id));
+    const feed = listNotifications(u.id, liveIds);
+    const canViewPremium = isAdminReq(req) || hasActiveMembership(u);
+    sendJson(res, 200, decorateNotificationsForViewer(feed, liveVideos, { canViewPremium }));
     return true;
   }
   // POST /api/notifications/seen → mark all current notifications as read.

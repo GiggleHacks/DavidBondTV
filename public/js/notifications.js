@@ -59,7 +59,7 @@
     for (const n of notifications) {
       const isAccount = n.kind === 'account' || (!n.videoId && !!n.title);
       const item = document.createElement('div');
-      item.className = `bell-item${n.read ? '' : ' unread'}${isAccount ? ' bell-account' : ''}`;
+      item.className = `bell-item${n.read ? '' : ' unread'}${isAccount ? ' bell-account' : ''}${n.premiumLocked ? ` bell-premium-locked blur-${n.blur || 'medium'}` : ''}`;
       const link = document.createElement('a');
       link.className = 'bell-link';
       // Account notifications link to their target (default the account page);

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  addNotification, addAccountNotification, listForUser, markSeen, dismiss,
+  addNotification, addAccountNotification, listForUser, markSeen, dismiss, decorateForViewer,
 } from '../lib/notifications-store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -53,5 +53,26 @@ describe('notifications store — account + video notifications', () => {
   it('ignores account notifications with no title', async () => {
     await addAccountNotification('alice', { body: 'no title' });
     expect(listForUser('alice').notifications).toHaveLength(0);
+  });
+
+  it('marks premium video notification thumbnails as locked for unpaid viewers', async () => {
+    const feed = {
+      notifications: [
+        { id: 'n1', kind: 'video', videoId: 'premium', title: 'Exclusive', thumb: '/p.jpg' },
+        { id: 'n2', kind: 'video', videoId: 'free', title: 'Free', thumb: '/f.jpg' },
+      ],
+      unread: 2,
+    };
+    const videos = [
+      { id: 'premium', visibility: 'premium', blur: 'strong' },
+      { id: 'free', visibility: 'free' },
+    ];
+
+    const unpaid = decorateForViewer(feed, videos, { canViewPremium: false });
+    expect(unpaid.notifications[0]).toMatchObject({ premiumLocked: true, blur: 'strong' });
+    expect(unpaid.notifications[1].premiumLocked).toBeUndefined();
+
+    const paid = decorateForViewer(feed, videos, { canViewPremium: true });
+    expect(paid.notifications[0].premiumLocked).toBeUndefined();
   });
 });
