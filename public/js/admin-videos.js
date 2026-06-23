@@ -48,6 +48,7 @@ async function load() {
     cats = (await (await fetch('/api/categories')).json()).categories || [];
   } catch { cats = []; }
   renderCatFilter();
+  renderBulkCatSelect();
   applyFilter();
 }
 
@@ -57,8 +58,11 @@ function applyFilter() {
   const q = $('search').value.trim().toLowerCase();
   const cat = $('cat-filter') ? $('cat-filter').value : '';
   const state = $('state-filter') ? $('state-filter').value : '';
+  const access = $('access-filter') ? $('access-filter').value : '';
   filtered = all.filter((v) => {
     if (state && stateOf(v) !== state) return false;
+    if (access === 'free' && v.visibility === 'premium') return false;
+    if (access === 'premium' && v.visibility !== 'premium') return false;
     const vcat = v.category || '';
     if (cat === '__none__') { if (vcat) return false; }
     else if (cat && vcat !== cat) return false;
@@ -81,6 +85,14 @@ function renderCatFilter() {
   if (all.some((v) => !v.category)) opts.push('<option value="__none__">— Uncategorized —</option>');
   sel.innerHTML = opts.join('');
   sel.value = [...sel.options].some((o) => o.value === cur) ? cur : '';
+}
+
+function renderBulkCatSelect() {
+  const sel = $('bulk-cat-select');
+  if (!sel) return;
+  const opts = ['<option value="">— category —</option>', '<option value="__none__">Uncategorized</option>']
+    .concat(cats.map((c) => `<option value="${esc(c.slug)}">${esc(c.name)}</option>`));
+  sel.innerHTML = opts.join('');
 }
 
 function render() {
@@ -186,6 +198,7 @@ function startQuickEdit(row, v) {
 function libRow(v) {
   const row = document.createElement('div');
   row.className = 'lib-row';
+  row.dataset.vid = v.id;
   row.innerHTML = `
     <input type="checkbox" class="row-check" ${selected.has(v.id) ? 'checked' : ''} />
     <img alt="" ${v.thumb ? `src="${v.thumb}?_=${Date.now()}"` : ''} />
@@ -240,6 +253,19 @@ async function runBulk(action) {
   if (action === 'delete' && !confirm(`Delete ${ids.length} video(s)? This permanently removes them and their files.`)) return;
   if (action === 'publish' && !confirm(`Publish ${ids.length} video(s)? They go live immediately.`)) return;
   try { await bulkChunked(ids, action); } catch (e) { alert(e.message || 'Bulk action failed.'); return; }
+  selected.clear();
+  await load();
+}
+
+async function runBulkSetCategory() {
+  const sel = $('bulk-cat-select');
+  if (!sel) return;
+  const slug = sel.value;
+  if (!slug) { alert('Choose a category first.'); return; }
+  const ids = [...selected];
+  if (!ids.length) { alert('Select at least one video.'); return; }
+  const catSlug = slug === '__none__' ? '' : slug;
+  try { await bulkChunked(ids, `set-category:${catSlug}`); } catch (e) { alert(e.message || 'Bulk action failed.'); return; }
   selected.clear();
   await load();
 }
@@ -338,6 +364,7 @@ function wire() {
   $('search').addEventListener('input', applyFilter);
   $('cat-filter')?.addEventListener('change', applyFilter);
   $('state-filter')?.addEventListener('change', applyFilter);
+  $('access-filter')?.addEventListener('change', applyFilter);
   $('review-all')?.addEventListener('click', () => startReview(all.filter(isUnapprovedDraft).map((v) => v.id)));
   $('review-selected')?.addEventListener('click', () => startReview([...selected]));
   $('publish-approved')?.addEventListener('click', publishApproved);
@@ -347,9 +374,71 @@ function wire() {
     render();
   });
   document.querySelectorAll('[data-bulk]').forEach((b) => b.addEventListener('click', () => runBulk(b.dataset.bulk)));
-  // Bulk thumbnail blur: the level dropdown + Apply button map to a `blur-<level>`
-  // action handled by the same /api/admin/bulk endpoint.
   $('bulk-blur-apply')?.addEventListener('click', () => runBulk(`blur-${$('bulk-blur-level').value}`));
+  $('bulk-cat-apply')?.addEventListener('click', runBulkSetCategory);
+  wireRubberBand();
+}
+
+function wireRubberBand() {
+  const lib = $('library');
+  if (!lib) return;
+
+  const band = document.createElement('div');
+  band.style.cssText = 'position:fixed;display:none;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);pointer-events:none;z-index:200;border-radius:3px;';
+  document.body.appendChild(band);
+
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+
+  lib.addEventListener('mousedown', (e) => {
+    // Only start a drag on the library background or a row — not on buttons/inputs/links
+    const tag = e.target.tagName;
+    if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'A' || tag === 'SELECT' || tag === 'IMG') return;
+    if (e.button !== 0) return;
+    dragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    band.style.display = 'block';
+    band.style.left = `${startX}px`;
+    band.style.top = `${startY}px`;
+    band.style.width = '0';
+    band.style.height = '0';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const x = Math.min(e.clientX, startX);
+    const y = Math.min(e.clientY, startY);
+    band.style.left = `${x}px`;
+    band.style.top = `${y}px`;
+    band.style.width = `${Math.abs(e.clientX - startX)}px`;
+    band.style.height = `${Math.abs(e.clientY - startY)}px`;
+  });
+
+  document.addEventListener('mouseup', (e) => {
+    if (!dragging) return;
+    dragging = false;
+    band.style.display = 'none';
+    const bandLeft = Math.min(e.clientX, startX);
+    const bandTop = Math.min(e.clientY, startY);
+    const bandRight = Math.max(e.clientX, startX);
+    const bandBottom = Math.max(e.clientY, startY);
+    // Skip trivial clicks (< 8px drag)
+    if (bandRight - bandLeft < 8 && bandBottom - bandTop < 8) return;
+    lib.querySelectorAll('.lib-row').forEach((row) => {
+      const r = row.getBoundingClientRect();
+      const hits = r.left < bandRight && r.right > bandLeft && r.top < bandBottom && r.bottom > bandTop;
+      if (!hits) return;
+      const vid = row.dataset.vid;
+      if (!vid) return;
+      selected.add(vid);
+      const check = row.querySelector('.row-check');
+      if (check) check.checked = true;
+    });
+    updateSel();
+  });
 }
 
 async function main() {

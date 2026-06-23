@@ -11,7 +11,7 @@ import { validateComment, addComment, listComments, deleteComment, readAllCommen
 import { getCounts, getUserVote, setVote } from './lib/reactions-store.js';
 import { adminConfigured, verifyBearerSecret } from './lib/admin-auth.js';
 import { createAdminAccount } from './lib/admin-account.js';
-import { serializeCookie } from './lib/cookies.js';
+import { serializeCookie, parseCookies } from './lib/cookies.js';
 import { hashPassword, verifyPassword } from './lib/password.js';
 import { createGeoip } from './lib/geoip.js';
 import { createAccounts } from './lib/accounts.js';
@@ -86,6 +86,11 @@ const SECRET = crypto.randomBytes(32).toString('hex');
 // Admin token signing key. Set ADMIN_SECRET to keep tokens valid across restarts;
 // otherwise a fresh random key logs admins out on each restart (fine for one admin).
 const ADMIN_SECRET = process.env.ADMIN_SECRET || crypto.randomBytes(32).toString('hex');
+// Temporary site-wide password gate. Set SITE_PASSWORD='' (empty) to open the site to the public.
+const SITE_PASSWORD = process.env.SITE_PASSWORD ?? 'testing123lol';
+const SITE_AUTH_VALUE = SITE_PASSWORD
+  ? crypto.createHmac('sha256', ADMIN_SECRET).update(SITE_PASSWORD).digest('hex')
+  : '';
 // Local→server video publish. SYNC_TOKEN authenticates machine-to-machine pushes
 // (set identically on both ends); when unset, the /api/sync/* receive endpoints
 // 404 so an unconfigured server never accepts pushes. SYNC_TARGET_URL is only set
@@ -493,6 +498,21 @@ function injectMetaTags(html, reqUrl) {
 /** Handle API routes. Returns true if the request was handled, false to fall through. */
 async function handleApi(req, res, ctx) {
   const url = new URL(req.url, 'http://localhost');
+
+  // POST /api/auth/sitepass { password } → { ok } — site password gate login.
+  if (req.method === 'POST' && url.pathname === '/api/auth/sitepass') {
+    if (!SITE_PASSWORD) { sendJson(res, 200, { ok: true }); return true; }
+    let body; try { body = JSON.parse(await readBody(req, 256)); } catch { body = null; }
+    if (body?.password === SITE_PASSWORD) {
+      res.setHeader('Set-Cookie', serializeCookie('siteauth', SITE_AUTH_VALUE, {
+        maxAge: 30 * 24 * 60 * 60, httpOnly: true, sameSite: 'Lax', secure: COOKIE_SECURE,
+      }));
+      sendJson(res, 200, { ok: true });
+    } else {
+      sendJson(res, 401, { ok: false, error: 'Wrong password.' });
+    }
+    return true;
+  }
 
   // POST /api/track  — watch heartbeat. Body: { v, vid, dt, pos, dur }.
   // High-frequency: keep it cheap, never error the client, drop bots.
@@ -1939,6 +1959,27 @@ const server = http.createServer(async (req, res) => {
   try {
     // Derive IP / country / user / admin-bypass / bot once for this request.
     const ctx = buildRequestContext(req);
+
+    // Site password gate. Active when SITE_PASSWORD is set. Admins always pass.
+    // The password page, its API endpoint, and bare static assets bypass the gate.
+    if (SITE_PASSWORD && !ctx.isAdmin) {
+      const rawPath = (req.url || '/').split('?')[0];
+      const gateBypass = rawPath === '/password.html' || rawPath === '/api/auth/sitepass'
+        || rawPath === '/favicon.ico' || rawPath === '/styles.css' || rawPath.startsWith('/css/')
+        || rawPath.startsWith('/fonts/');
+      if (!gateBypass) {
+        const cookies = parseCookies(req.headers['cookie'] || '');
+        if (cookies['siteauth'] !== SITE_AUTH_VALUE) {
+          if (rawPath.startsWith('/api/')) {
+            sendJson(res, 401, { error: 'Site password required.' });
+          } else {
+            res.writeHead(302, { Location: `/password.html?return=${encodeURIComponent(rawPath)}` });
+            res.end();
+          }
+          return;
+        }
+      }
+    }
 
     // API routes take priority
     if (req.url.startsWith('/api/')) {
