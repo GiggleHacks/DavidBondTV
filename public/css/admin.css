@@ -208,6 +208,18 @@ a.tr:hover .name { color: var(--accent); }
 .vb-upload { background: color-mix(in srgb, #a855f7 24%, transparent); color: #d8b4fe; }  /* violet — uploaded, in review */
 .vb-rej { background: color-mix(in srgb, #64748b 28%, transparent); color: #cbd5e1; }     /* slate — rejected */
 
+/* Dashboard date-range filter bar (Overview tab). */
+.range-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 16px; }
+.range-bar .range-label { font-size: 12px; font-weight: 700; letter-spacing: .4px; color: var(--text-dim); text-transform: uppercase; }
+.range-bar .range-custom { display: inline-flex; align-items: center; gap: 8px; }
+.range-bar .range-custom[hidden] { display: none; }
+.range-bar input[type=date] {
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; color-scheme: dark;
+}
+.range-bar .range-dash { color: var(--text-dim); }
+.range-bar .range-note { font-size: 12px; }
+
 /* Encoding progress: a slim bar + % inside the (indigo) processing badge. */
 .enc-badge { display: inline-flex; align-items: center; gap: 7px; }
 .enc-track { width: 84px; height: 6px; border-radius: 999px; background: rgba(255,255,255,.16); overflow: hidden; }

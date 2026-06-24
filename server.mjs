@@ -1146,37 +1146,98 @@ async function handleApi(req, res, ctx) {
   // GET /api/admin/analytics/overview → totals + top videos + countries + blocked.
   if (req.method === 'GET' && url.pathname === '/api/admin/analytics/overview') {
     if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
-    const totals = analytics.getTotals();
-    const vids = analytics.getAllVideoStats();
+    const DAY = 86400000;
+    const now = Date.now();
+    const utcDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+    const rangeParam = (url.searchParams.get('range') || '30d').toLowerCase();
     const titles = manifestTitleMap();
-    const topVideos = Object.entries(vids)
-      .map(([id, s]) => ({ id, title: titles[id] || id, views: s.views, minutes: Math.round(s.totalSeconds / 60) }))
-      .sort((a, b) => b.views - a.views).slice(0, 20);
-    const blocked = analytics.getBlockedStats();
-    // Site-wide daily series (last 30 days) for the trend chart + KPI sparklines —
-    // summed across every video's byDay rollup, plus the blocked-by-day series.
-    const byDay = {};
-    for (const s of Object.values(vids)) {
-      for (const [day, d] of Object.entries(s.byDay || {})) {
-        const e = (byDay[day] ||= { views: 0, minutes: 0, blocked: 0 });
-        e.views += d.views || 0;
-        e.minutes += Math.round((d.seconds || 0) / 60);
-      }
-    }
-    for (const [day, n] of Object.entries(blocked.byDay || {})) {
-      (byDay[day] ||= { views: 0, minutes: 0, blocked: 0 }).blocked += n;
-    }
-    const series = Object.keys(byDay).sort().slice(-30)
-      .map((day) => ({ day, views: byDay[day].views, minutes: byDay[day].minutes, blocked: byDay[day].blocked }));
     const verifiedUsers = accounts.store.listAll().filter((u) => u.verified).length;
+    const countries = analytics.getCountryStats(); // all-time (no per-day country rollup yet)
+
+    // 24h → hourly buckets from raw events. Raw has no viewId, so a "view" here is
+    // approximated as a distinct ip|video pair within the window (minutes are exact).
+    if (rangeParam === '24h') {
+      const since = now - DAY;
+      const evs = analytics.getRecentEvents(50000).filter((e) => e.t >= since);
+      const buckets = {};
+      const seen = new Set();
+      const vidAgg = {};
+      let totViews = 0, totSeconds = 0, totBlocked = 0;
+      for (const e of evs) {
+        const hk = new Date(e.t).toISOString().slice(0, 13); // YYYY-MM-DDTHH
+        const b = (buckets[hk] ||= { views: 0, _sec: 0, blocked: 0 });
+        if (e.blocked) { b.blocked += 1; totBlocked += 1; continue; }
+        b._sec += e.dt || 0; totSeconds += e.dt || 0;
+        if (e.video) { const va = (vidAgg[e.video] ||= { views: 0, seconds: 0 }); va.seconds += e.dt || 0; }
+        const vkey = `${e.ip || '?'}|${e.video || '?'}`;
+        if (!seen.has(vkey)) {
+          seen.add(vkey); b.views += 1; totViews += 1;
+          if (e.video) vidAgg[e.video].views += 1;
+        }
+      }
+      const series = Object.keys(buckets).sort().map((hk) => ({
+        day: hk.slice(11) + ':00', views: buckets[hk].views,
+        minutes: Math.round(buckets[hk]._sec / 60), blocked: buckets[hk].blocked,
+      }));
+      const topVideos = Object.entries(vidAgg)
+        .map(([id, s]) => ({ id, title: titles[id] || id, views: s.views, minutes: Math.round(s.seconds / 60) }))
+        .sort((a, b) => b.views - a.views).slice(0, 20);
+      sendJson(res, 200, {
+        range: '24h', granularity: 'hour', countriesAllTime: true,
+        totals: { views: totViews, minutes: Math.round(totSeconds / 60), hours: Math.round(totSeconds / 360) / 10 },
+        topVideos, countries,
+        blocked: { total: totBlocked, byCountry: analytics.getBlockedStats().byCountry, byDay: {} },
+        userCount: verifiedUsers, series, generatedAt: now,
+      });
+      return true;
+    }
+
+    // Day ranges (7d/30d/90d/custom) → window the byDay rollups.
+    let toDay = utcDay(now), fromDay;
+    if (rangeParam === 'custom') {
+      const valid = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+      const f = url.searchParams.get('from'), t = url.searchParams.get('to');
+      fromDay = valid(f) ? f : utcDay(now - 29 * DAY);
+      if (valid(t)) toDay = t;
+      if (fromDay > toDay) { const tmp = fromDay; fromDay = toDay; toDay = tmp; }
+    } else {
+      const days = rangeParam === '7d' ? 7 : rangeParam === '90d' ? 90 : 30;
+      fromDay = utcDay(now - (days - 1) * DAY);
+    }
+    const inWindow = (day) => day >= fromDay && day <= toDay;
+
+    const vids = analytics.getAllVideoStats();
+    const byDay = {};
+    const vidAgg = {};
+    for (const [id, s] of Object.entries(vids)) {
+      let vv = 0, vs = 0;
+      for (const [day, d] of Object.entries(s.byDay || {})) {
+        if (!inWindow(day)) continue;
+        const e = (byDay[day] ||= { views: 0, minutes: 0, blocked: 0 });
+        e.views += d.views || 0; e.minutes += Math.round((d.seconds || 0) / 60);
+        vv += d.views || 0; vs += d.seconds || 0;
+      }
+      if (vv || vs) vidAgg[id] = { views: vv, seconds: vs };
+    }
+    const blockedStats = analytics.getBlockedStats();
+    let blockedTotal = 0;
+    for (const [day, n] of Object.entries(blockedStats.byDay || {})) {
+      if (!inWindow(day)) continue;
+      (byDay[day] ||= { views: 0, minutes: 0, blocked: 0 }).blocked += n;
+      blockedTotal += n;
+    }
+    const series = Object.keys(byDay).sort().map((day) => ({ day, ...byDay[day] }));
+    const totViews = series.reduce((a, s) => a + s.views, 0);
+    const totMinutes = series.reduce((a, s) => a + s.minutes, 0);
+    const topVideos = Object.entries(vidAgg)
+      .map(([id, s]) => ({ id, title: titles[id] || id, views: s.views, minutes: Math.round(s.seconds / 60) }))
+      .sort((a, b) => b.views - a.views).slice(0, 20);
     sendJson(res, 200, {
-      totals: { views: totals.views, minutes: Math.round(totals.seconds / 60), hours: Math.round(totals.seconds / 360) / 10 },
-      topVideos,
-      countries: analytics.getCountryStats(),
-      blocked,
-      userCount: verifiedUsers,
-      series,
-      generatedAt: Date.now(),
+      range: rangeParam, granularity: 'day', from: fromDay, to: toDay, countriesAllTime: true,
+      totals: { views: totViews, minutes: totMinutes, hours: Math.round((totMinutes / 60) * 10) / 10 },
+      topVideos, countries,
+      blocked: { total: blockedTotal, byCountry: blockedStats.byCountry, byDay: blockedStats.byDay },
+      userCount: verifiedUsers, series, generatedAt: now,
     });
     return true;
   }

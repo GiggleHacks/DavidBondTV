@@ -148,9 +148,72 @@ function drawDonut(svg, legendEl, countries) {
 // ---------- data loaders ----------
 let countryData = { viewers: {}, subscribers: {}, blocked: {} };
 
+// ---------- date-range filter ----------
+const RANGES = [
+  { key: '24h', label: '24h' },
+  { key: '7d', label: '7d' },
+  { key: '30d', label: '30d' },
+  { key: '90d', label: '90d' },
+  { key: 'custom', label: 'Custom' },
+];
+let currentRange = '30d';
+let customFrom = '';
+let customTo = '';
+
+function rangeQuery() {
+  if (currentRange === 'custom' && customFrom && customTo) {
+    return `?range=custom&from=${encodeURIComponent(customFrom)}&to=${encodeURIComponent(customTo)}`;
+  }
+  return `?range=${encodeURIComponent(currentRange)}`;
+}
+
+// Inject the segmented range control + custom date inputs at the top of the
+// Overview panel and re-load on change.
+function mountRangeBar() {
+  const panel = document.querySelector('[data-panel="overview"]');
+  if (!panel || $('range-bar')) return;
+  const bar = document.createElement('div');
+  bar.id = 'range-bar';
+  bar.className = 'range-bar';
+  const today = new Date().toISOString().slice(0, 10);
+  if (!customTo) customTo = today;
+  if (!customFrom) customFrom = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
+  bar.innerHTML = `
+    <span class="range-label">📅 Range</span>
+    <span class="seg" id="range-seg">${RANGES.map((r) => `<button type="button" data-range="${r.key}"${r.key === currentRange ? ' class="active"' : ''}>${r.label}</button>`).join('')}</span>
+    <span class="range-custom" id="range-custom" ${currentRange === 'custom' ? '' : 'hidden'}>
+      <input type="date" id="range-from" value="${customFrom}" max="${today}" />
+      <span class="range-dash">→</span>
+      <input type="date" id="range-to" value="${customTo}" max="${today}" />
+    </span>
+    <span class="range-note muted" id="range-note"></span>`;
+  panel.insertBefore(bar, panel.firstChild);
+  $('range-seg').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-range]');
+    if (!btn) return;
+    currentRange = btn.dataset.range;
+    [...$('range-seg').children].forEach((b) => b.classList.toggle('active', b === btn));
+    $('range-custom').hidden = currentRange !== 'custom';
+    if (currentRange !== 'custom' || (customFrom && customTo)) loadOverview().catch(() => {});
+  });
+  const onCustom = () => {
+    customFrom = $('range-from').value || customFrom;
+    customTo = $('range-to').value || customTo;
+    if (currentRange === 'custom' && customFrom && customTo) loadOverview().catch(() => {});
+  };
+  $('range-from').addEventListener('change', onCustom);
+  $('range-to').addEventListener('change', onCustom);
+}
+
 async function loadOverview() {
-  const d = await api('/api/admin/analytics/overview');
+  const d = await api('/api/admin/analytics/overview' + rangeQuery());
   const series = d.series || [];
+  const note = $('range-note');
+  if (note) {
+    note.textContent = d.granularity === 'hour'
+      ? 'hourly · last 24h'
+      : (d.from ? `${d.from} → ${d.to}` : '');
+  }
   updateValue('kpi-views', nf(d.totals.views));
   updateValue('kpi-hours', nf(d.totals.hours));
   updateValue('kpi-users', nf(d.userCount));
@@ -401,6 +464,7 @@ async function main() {
     sec.dataset.layout = currentLayout;
   }
 
+  mountRangeBar();
   wireTabs(); wireMapModes(); wireGeo();
   tickClock(); setInterval(tickClock, 1000);
   setInterval(() => { loadOverview().catch(() => {}); }, 10000);
