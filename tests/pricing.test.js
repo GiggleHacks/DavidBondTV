@@ -76,4 +76,29 @@ describe('pricing store', () => {
     expect(pub.intervals.year).toBe(false);
     expect(pub.prices.year).toBe(null);
   });
+
+  it('exposes editable offer copy with sane defaults', () => {
+    const c = pricing.getConfig();
+    expect(c.offer.badge).toBe('★ Members only');
+    expect(c.offer.ctaLabel).toBe('Unlock Now');
+    expect(pricing.publicConfig().offer).toMatchObject({ headline: c.offer.headline });
+  });
+
+  it('updates offer copy field-by-field, trims, and falls back blanks to default', () => {
+    let r = pricing.update({ offer: { headline: '  Unlock This Video  ', ctaLabel: 'Join now' } });
+    expect(r.ok).toBe(true);
+    expect(r.config.offer.headline).toBe('Unlock This Video'); // trimmed
+    expect(r.config.offer.ctaLabel).toBe('Join now');
+    expect(r.config.offer.body).toBe(pricing.getConfig().offer.body); // untouched field preserved
+    // A blank field reverts to the default copy (never renders empty).
+    r = pricing.update({ offer: { headline: '   ' } });
+    expect(r.config.offer.headline).toBe("You're one tap from the good stuff");
+    // Updating offer must not disturb prices.
+    expect(pricing.getConfig().monthly.amount).toBe(1700);
+  });
+
+  it('clamps over-long offer copy to its max length', () => {
+    const r = pricing.update({ offer: { headline: 'x'.repeat(500) } });
+    expect(r.config.offer.headline.length).toBe(120);
+  });
 });

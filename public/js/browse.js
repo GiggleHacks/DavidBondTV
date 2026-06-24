@@ -6,6 +6,7 @@
 import { canWatchVideo } from '/js/viewer-access.js';
 import { startPurchase, fmtMoney } from '/js/course-buy.js';
 import { categoryDisplayName, categoryVisualMarkup, resolveCategoryVisual } from '/js/category-visuals.js';
+import { getOfferCopy } from '/js/offer-copy.js';
 const PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
 const LOCK = '<svg viewBox="0 0 24 24"><path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2v-9a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm3 8H9V6a3 3 0 016 0v3z"/></svg>';
 // Polished gold padlock for the premium unlock modal (richer than the card LOCK).
@@ -114,8 +115,13 @@ function card(v) {
   // Per-video thumbnail blur level (admin-configured). Default medium for premium.
   const blur = ['strongest', 'strong', 'medium', 'off'].includes(v.blur) ? v.blur
     : (v.visibility === 'premium' ? 'medium' : 'off');
+  // Premium cards always carry their blur level (even when unlocked) so the
+  // header "eye" toggle can preview the exact blur a non-subscriber would see.
+  const isPremium = v.visibility === 'premium';
   const a = document.createElement('a');
-  a.className = `vcard${status !== 'ready' ? ` is-${status}` : ''}${locked ? ` is-locked blur-${blur}` : ''}`;
+  a.className = `vcard${status !== 'ready' ? ` is-${status}` : ''}`
+    + `${isPremium || locked ? ` blur-${blur}` : ''}`
+    + `${isPremium ? ' is-premium' : ''}${locked ? ' is-locked' : ''}`;
   // Locked cards get NO real href, so middle-click / ctrl-click can't open the
   // watch page in a new tab and skip the lock; they act as a button instead.
   if (locked) { a.setAttribute('role', 'button'); a.tabIndex = 0; }
@@ -251,11 +257,11 @@ function openPremiumModal(v) {
     modal.innerHTML = `
       <div class="pm-card" role="dialog" aria-modal="true" aria-labelledby="pm-title">
         <button class="pm-close" aria-label="Close">×</button>
-        <span class="pm-badge">★ Members only</span>
+        <span class="pm-badge"></span>
         <div class="pm-lock">${PREMIUM_LOCK('pm')}</div>
-        <h2 id="pm-title">Unlock the full library</h2>
+        <h2 id="pm-title"></h2>
         <p class="pm-body"></p>
-        <button class="pm-sub gold-cta">Unlock Now</button>
+        <button class="pm-sub gold-cta"></button>
         <a class="pm-alt" href="#">Already a member? Sign in</a>
       </div>`;
     document.body.appendChild(modal);
@@ -281,8 +287,13 @@ function openPremiumModal(v) {
   }
   const videoUrl = `/watch?v=${encodeURIComponent(v.id)}`;
   modal._membershipUrl = `/membership.html?next=${encodeURIComponent(videoUrl)}`;
-  modal.querySelector('.pm-body').textContent =
-    `"${v.title || 'This video'}" is part of David Bond TV membership. Join to stream it and every exclusive — new drops first, no ads, cancel anytime.`;
+  // Fill the admin-editable offer copy (shared with the watch-page gate).
+  getOfferCopy().then((o) => {
+    modal.querySelector('.pm-badge').textContent = o.badge;
+    modal.querySelector('#pm-title').textContent = o.headline;
+    modal.querySelector('.pm-body').textContent = o.body;
+    modal.querySelector('.pm-sub').textContent = o.ctaLabel;
+  });
   modal.classList.add('show');
 }
 

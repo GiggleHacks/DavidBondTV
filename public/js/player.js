@@ -13,6 +13,7 @@ import { initShare } from './share.js';
 import { initWatchTracker } from './watch-tracker.js';
 import { canUserWatchPremium, isAdminUser, canWatchVideo } from './viewer-access.js';
 import { startPurchase, fmtMoney } from './course-buy.js';
+import { getOfferCopy } from './offer-copy.js';
 import { ADMIN_PATHS } from './admin-paths.js';
 
 const $ = (id) => document.getElementById(id);
@@ -91,14 +92,22 @@ function showPremiumGate(container, entry) {
   if (entry.thumb) gate.style.backgroundImage = `url("${entry.thumb}")`;
   gate.innerHTML = `
     <div class="pg-inner">
-      <span class="pg-badge">★ Members only</span>
+      <span class="pg-badge"></span>
       <div class="pg-lock">${PREMIUM_LOCK('pg')}</div>
-      <h2>You're one tap from the good stuff</h2>
-      <p>Unlock this video — and the entire David Bond TV exclusive library — the moment you join. New drops first, no ads, cancel anytime.</p>
-      <button class="pg-sub gold-cta">Unlock Now</button>
+      <h2 class="pg-headline"></h2>
+      <p class="pg-body"></p>
+      <button class="pg-sub gold-cta"></button>
       <a class="pg-alt" href="#">Already a member? Sign in</a>
     </div>`;
   container.appendChild(gate);
+  // Fill the offer copy from admin-editable pricing config (falls back to the
+  // default copy in offer-copy.js if the request fails).
+  getOfferCopy().then((o) => {
+    gate.querySelector('.pg-badge').textContent = o.badge;
+    gate.querySelector('.pg-headline').textContent = o.headline;
+    gate.querySelector('.pg-body').textContent = o.body;
+    gate.querySelector('.pg-sub').textContent = o.ctaLabel;
+  });
   const videoUrl = location.pathname + location.search;
   const membershipUrl = `/membership.html?next=${encodeURIComponent(videoUrl)}`;
   gate.querySelector('.pg-sub').addEventListener('click', () => goToUnlock(videoUrl));
