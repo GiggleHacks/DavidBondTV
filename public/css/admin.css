@@ -11,11 +11,33 @@ body.admin-gated { overflow: hidden; }
 .admin-bar .logo-wm { font-family: Arial, Helvetica, sans-serif; font-weight: 800; font-size: 22px; letter-spacing: -.6px; }
 .admin-bar .wm-pre { color: var(--text); }
 .admin-bar .wm-box { background: var(--accent); color: var(--accent-contrast); border-radius: 5px; padding: 1px 7px 2px; margin-left: 4px; }
-.admin-nav { display: flex; gap: 6px; align-items: center; flex: 1; flex-wrap: wrap; }
-.admin-nav a { color: var(--text-dim); text-decoration: none; font-size: 14px; font-weight: 600; padding: 7px 12px; border-radius: 999px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
-.admin-nav a:hover { background: var(--surface-2); color: var(--text); }
-.admin-nav a.active { background: var(--accent); color: var(--accent-contrast); }
-.admin-nav a.back { margin-left: auto; }
+.admin-nav { display: flex; gap: 4px; align-items: center; flex: 1; flex-wrap: wrap; }
+/* Colour-coded, icon'd nav items (rendered by js/admin-shell.js). Each item
+   carries its own --i-accent / --i-ink so every section reads at a glance. */
+.admin-nav a.admin-nav-item {
+  position: relative; display: inline-flex; align-items: center; gap: 7px;
+  color: var(--text-dim); text-decoration: none; font-size: 13.5px; font-weight: 600;
+  padding: 8px 12px; border-radius: 999px; min-height: 40px;
+  border: 1px solid transparent;
+  transition: color .16s ease, background .16s ease, border-color .16s ease, transform .12s ease, box-shadow .16s ease;
+}
+.admin-nav a.admin-nav-item .nav-ico { display: inline-flex; color: var(--i-accent, var(--text-dim)); transition: transform .18s ease; }
+.admin-nav a.admin-nav-item .nav-ico svg { width: 17px; height: 17px; }
+.admin-nav a.admin-nav-item:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--i-accent, var(--accent)) 14%, transparent);
+  border-color: color-mix(in srgb, var(--i-accent, var(--accent)) 35%, transparent);
+  transform: translateY(-1px);
+}
+.admin-nav a.admin-nav-item:hover .nav-ico { transform: translateY(-1px) scale(1.08); }
+.admin-nav a.admin-nav-item.active {
+  color: var(--i-ink, #fff); background: var(--i-accent, var(--accent)); border-color: transparent;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--i-accent, var(--accent)) 40%, transparent);
+}
+.admin-nav a.admin-nav-item.active .nav-ico { color: var(--i-ink, #fff); }
+.admin-nav a.admin-nav-item.back { margin-left: auto; color: var(--text-dim); }
+.admin-nav a.admin-nav-item.back .nav-ico { color: var(--text-dim); }
+.admin-nav a.admin-nav-item:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--i-accent, var(--accent)) 40%, transparent); }
 
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 18px; }
 .card h2 { margin: 0 0 14px; font-size: 16px; }
@@ -605,4 +627,70 @@ a.tr:hover .name { color: var(--accent); }
   .ru-w {
     text-align: left;
   }
+}
+
+/* ============================================================
+   Backend visual redesign — section identity, page header, motion
+   Shared shell: js/admin-shell.js + js/section-visuals.js.
+   --section-accent / --section-ink are set per page by the shell.
+   ============================================================ */
+:root { --section-accent: var(--accent); --section-ink: #fff; }
+
+/* Standardized page-header band injected at the top of <main> */
+.page-header {
+  display: flex; align-items: center; gap: 14px;
+  padding: 2px 2px 16px; margin: 0 0 18px;
+  border-bottom: 1px solid var(--border); position: relative;
+}
+.page-header::after {
+  content: ""; position: absolute; left: 0; bottom: -1px; width: 64px; height: 3px; border-radius: 3px;
+  background: linear-gradient(90deg, var(--section-accent), color-mix(in srgb, var(--section-accent) 15%, transparent));
+}
+.ph-icon {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 46px; height: 46px; border-radius: 13px; color: var(--section-accent);
+  background: color-mix(in srgb, var(--section-accent) 16%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--section-accent) 40%, transparent);
+}
+.ph-text { min-width: 0; }
+.ph-title { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -.3px; color: var(--text); }
+.ph-desc { margin: 2px 0 0; font-size: 13px; color: var(--text-dim); }
+
+/* Primary action buttons + focus adopt the active section's accent */
+.admin-app-shell .btn:not(.ghost):not(.danger) {
+  background: var(--section-accent, var(--accent)); color: var(--section-ink, #fff);
+  transition: filter .15s ease, transform .08s ease, box-shadow .15s ease;
+}
+.admin-app-shell .btn:not(.ghost):not(.danger):hover { filter: brightness(1.08); box-shadow: 0 6px 16px color-mix(in srgb, var(--section-accent) 35%, transparent); }
+.admin-app-shell .btn:active { transform: scale(.97); }
+.admin-app-shell .btn.ghost { transition: background .15s ease, border-color .15s ease, transform .08s ease; }
+.admin-app-shell .btn.ghost:hover { border-color: color-mix(in srgb, var(--section-accent) 45%, var(--border)); background: color-mix(in srgb, var(--section-accent) 10%, var(--surface-2)); }
+
+/* Card hover keyed to the section accent */
+.admin-app-shell .card { transition: border-color .16s ease, box-shadow .16s ease; }
+.admin-app-shell .card:hover { border-color: color-mix(in srgb, var(--section-accent) 22%, var(--border)); }
+
+/* Inputs adopt the section accent on focus */
+.admin-app-shell input:focus, .admin-app-shell select:focus, .admin-app-shell textarea:focus {
+  outline: none; border-color: var(--section-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--section-accent) 22%, transparent);
+}
+
+/* Mobile: collapse nav labels to icons (back keeps its label) */
+@media (max-width: 720px) {
+  .admin-nav a.admin-nav-item .nav-label { display: none; }
+  .admin-nav a.admin-nav-item.back .nav-label { display: inline; }
+  .admin-nav a.admin-nav-item { padding: 8px 10px; }
+  .page-header { gap: 11px; }
+  .ph-icon { width: 40px; height: 40px; }
+  .ph-title { font-size: 17px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-nav a.admin-nav-item,
+  .admin-nav a.admin-nav-item .nav-ico,
+  .admin-app-shell .btn,
+  .admin-app-shell .card { transition: none !important; }
+  .admin-nav a.admin-nav-item:hover,
+  .admin-nav a.admin-nav-item:hover .nav-ico { transform: none; }
 }

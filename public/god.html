@@ -13,24 +13,9 @@
   <script>document.documentElement.classList.add('admin-auth-pending');</script>
   <script type="module" src="/js/theme-switcher.js"></script>
 </head>
-<body>
+<body data-admin-no-header>
   <div class="admin-wrap wide admin-app-shell deck">
-    <header class="admin-bar">
-      <a class="logo" href="/" title="Back to site" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
-      <nav class="admin-nav">
-        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789" class="active">Dashboard</a>
-        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-upload.html">Upload</a>
-        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-videos.html">Videos</a>
-        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-products.html">Products</a>
-        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-pricing.html">Pricing</a>
-        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-categories.html">Categories</a>
-        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-coupons.html">Coupons</a>
-        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-users.html">Users</a>
-        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-community.html">Community</a>
-        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-telegram.html">Telegram</a>
-        <a class="back" href="/">← Site</a>
-      </nav>
-    </header>
+    <header class="admin-bar" id="admin-shell"></header>
 
     <main id="app">
       <!-- ============ header strip ============ -->
@@ -149,5 +134,6 @@
     </main>
   </div>
   <script type="module" src="/js/admin-analytics.js"></script>
+  <script type="module" src="/js/admin-shell.js"></script>
 </body>
 </html>
