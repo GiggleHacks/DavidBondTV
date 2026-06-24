@@ -18,6 +18,16 @@
     }
     .pr-hint { font-size: 12px; color: var(--text-dim); margin: 4px 0 0; }
     .pr-actions { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+    .pr-secret { display: flex; gap: 6px; align-items: center; }
+    .pr-secret input { flex: 1; }
+    .pr-secret input[readonly] { color: var(--text-dim); letter-spacing: .5px; }
+    .icon-btn {
+      background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1; cursor: pointer;
+      white-space: nowrap; transition: border-color .15s, color .15s;
+    }
+    .icon-btn:hover { border-color: var(--section-accent, var(--accent)); }
+    .icon-btn.ok { color: var(--ok, #34d399); border-color: currentColor; }
   </style>
 </head>
 <body>
@@ -31,7 +41,7 @@
           
           <div class="pr-field">
             <label>Telegram Bot Token (TELEGRAM_BOT_TOKEN)</label>
-            <input id="f-bot-token" type="text" placeholder="1234567890:AAHxyz..." />
+            <input id="f-bot-token" type="text" placeholder="1234567890:AAHxyz..." data-secret />
             <p class="pr-hint">Get this from @BotFather on Telegram.</p>
           </div>
 
@@ -55,7 +65,7 @@
 
           <div class="pr-field">
             <label>Webhook Secret (TELEGRAM_WEBHOOK_SECRET)</label>
-            <input id="f-webhook-secret" type="text" placeholder="RandomSecureString" />
+            <input id="f-webhook-secret" type="text" placeholder="RandomSecureString" data-secret />
             <p class="pr-hint">A secure random string used to verify incoming webhooks from Telegram.</p>
           </div>
 
@@ -69,7 +79,7 @@
       </section>
     </main>
   </div>
-  <script type="module" src="/js/admin-telegram.js?v=2"></script>
+  <script type="module" src="/js/admin-telegram.js?v=3"></script>
   <script type="module" src="/js/admin-shell.js"></script>
 </body>
 </html>
