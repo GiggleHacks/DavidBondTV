@@ -234,6 +234,19 @@ describe('handleUpdate', () => {
     await access._test.handleUpdate({ message: { text: '/start abc' } });
     expect(gate._calls.dms.length).toBe(0);
   });
+
+  it('ignores group/supergroup messages so it never spams the VIP group', async () => {
+    const { access, gate } = make();
+    await access._test.handleUpdate({ message: { from: { id: 9 }, chat: { type: 'supergroup' }, text: 'hello everyone' } });
+    await access._test.handleUpdate({ message: { from: { id: 9 }, chat: { type: 'group' }, text: '/start' } });
+    expect(gate._calls.dms.length).toBe(0);
+  });
+
+  it('still replies in a private chat', async () => {
+    const { access, gate } = make();
+    await access._test.handleUpdate({ message: { from: { id: 7 }, chat: { type: 'private' }, text: '/start' } });
+    expect(gate._calls.dms.length).toBe(1);
+  });
 });
 
 // --- configured flag --------------------------------------------------------
