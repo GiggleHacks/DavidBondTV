@@ -6,7 +6,6 @@
 // The Overview tab supports swappable *layouts* (Command Center, Mission Control,
 // Analytics Grid, Executive Brief) — each a different visualization philosophy
 // showing the same underlying data. See dashboard-layouts.js for the builders.
-import { renderMap } from './admin-map.js';
 import { flagIcon } from './world-data.js';
 import { COUNTRIES } from './countries.js';
 import { requireAdmin } from './god-auth.js';
@@ -147,6 +146,10 @@ function drawDonut(svg, legendEl, countries) {
 
 // ---------- data loaders ----------
 let countryData = { viewers: {}, subscribers: {}, blocked: {} };
+let trafficMarkers = [];
+let disposeGlobe = null;
+let selectedTrafficMarker = null;
+let renderGlobe = null;
 
 // ---------- date-range filter ----------
 const RANGES = [
@@ -243,22 +246,73 @@ function mapCounts(mode) {
   for (const [cc, s] of Object.entries(countryData.viewers || {})) out[cc] = s.views || 0;
   return out;
 }
+function trafficLabel(m) {
+  if (!m) return '';
+  const loc = [m.city, m.region, m.country || m.cc].filter(Boolean).join(', ') || 'Unknown';
+  return `${m.cc ? flagIcon(m.cc) : ''} ${esc(loc)} · ${esc(m.username || 'guest')}`;
+}
+function renderTrafficDetail(m) {
+  selectedTrafficMarker = m || null;
+  const box = $('traffic-detail');
+  if (!box) return;
+  if (!m) { box.innerHTML = '<p class="muted">Select a marker to inspect visitor, subscriber, device, and session details.</p>'; return; }
+  const ip = m.ip ? `<code>${esc(m.ip)}</code> <a class="ip-btn" href="https://ipinfo.io/${encodeURIComponent(m.ip)}" target="_blank" rel="noopener">lookup</a>` : '—';
+  box.innerHTML = `
+    <div class="ti-head"><span class="badge ${m.type === 'blocked' ? 'blk' : m.subscriber ? 'sub' : 'none'}">${esc(m.type === 'blocked' ? 'Blocked' : m.subscriber ? 'Subscriber' : 'Viewer')}</span><b>${esc(m.username || 'Guest')}</b></div>
+    <div class="kv">
+      <b>Location</b><span>${trafficLabel(m)}</span>
+      <b>Precision</b><span>${m.precise === false ? 'Country-level estimate' : 'City / coordinate'}</span>
+      <b>IP</b><span>${ip}</span>
+      <b>Content</b><span>${esc(m.videoTitle || m.reason || '—')}</span>
+      <b>Device</b><span>${esc(m.deviceId || m.device?.type || '—')}</span>
+      <b>Session</b><span><code>${esc(m.sessionId || '—')}</code></span>
+      <b>Watched</b><span>${m.seconds ? Math.round(m.seconds) + 's' : '—'}</span>
+    </div>`;
+}
 function drawMap(mode) {
   const counts = mapCounts(mode);
-  renderMap($('map'), counts, { onHover: (t) => { $('map-hover').innerHTML = t; } });
-  const rows = Object.entries(counts).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  const markers = mode === 'blocked'
+    ? trafficMarkers.filter((m) => m.type === 'blocked')
+    : mode === 'subscribers'
+      ? trafficMarkers.filter((m) => m.subscriber && m.type !== 'blocked')
+      : trafficMarkers.filter((m) => m.type !== 'blocked');
+  if (disposeGlobe) { disposeGlobe(); disposeGlobe = null; }
+  if (renderGlobe) {
+    disposeGlobe = renderGlobe($('map'), markers, {
+      onHover: (m) => { $('map-hover').innerHTML = m ? trafficLabel(m) : ''; },
+      onSelect: renderTrafficDetail,
+    });
+  } else {
+    const map = $('map');
+    if (map) map.innerHTML = '<div class="globe-fallback"><p class="muted">Traffic globe is unavailable. Marker details remain available below.</p></div>';
+  }
+  const markerCounts = {};
+  for (const m of markers) {
+    const key = m.city ? `${m.city}, ${m.region || m.cc || ''}` : (m.cc || 'Unknown');
+    markerCounts[key] = (markerCounts[key] || 0) + 1;
+  }
+  const rows = Object.entries(markerCounts).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
   const max = rows.length ? rows[0][1] : 1;
   $('country-rank').innerHTML = rows.length
-    ? rows.map(([cc, n]) => `
+    ? rows.map(([label, n]) => `
       <div class="rank-row">
-        <span>${flagIcon(cc)} ${cc}</span>
+        <span>${esc(label)}</span>
         <span class="bar"><i style="width:${Math.round((n / max) * 100)}%"></i></span>
         <span class="n">${nf(n)}</span>
       </div>`).join('')
-    : '<p class="muted">No data yet for this view.</p>';
+    : '<p class="muted">No precise marker data yet for this view.</p>';
+  if (!markers.includes(selectedTrafficMarker)) renderTrafficDetail(markers[0] || null);
 }
 async function loadCountries(mode) {
-  countryData = await api('/api/admin/analytics/countries');
+  if (!renderGlobe) {
+    try { ({ renderGlobe } = await import('./admin-map.js')); } catch { renderGlobe = null; }
+  }
+  const [countries, traffic] = await Promise.all([
+    api('/api/admin/analytics/countries'),
+    api('/api/admin/analytics/traffic?limit=1000'),
+  ]);
+  countryData = countries;
+  trafficMarkers = traffic.markers || [];
   drawMap(mode);
   drawDonut($('donut'), $('donut-legend'), countryData.viewers);
 }
@@ -275,7 +329,7 @@ async function loadVisitors() {
   if (!box) return;
   const d = await api('/api/admin/analytics/visitors?limit=200');
   const events = d.events || [];
-  const head = '<div class="h"><span>When</span><span>IP</span><span>User · video</span><span>Watch</span></div>';
+  const head = `<div class="h"><span>When</span><span>IP</span><span>User · video</span><span><a href="${ADMIN_PATHS.logs}">Logs →</a></span></div>`;
   if (!events.length) {
     if (!box.innerHTML.includes('No visitor activity')) box.innerHTML = head + '<div class="row"><span class="ts">—</span><span></span><span class="who">No visitor activity recorded yet.</span><span></span></div>';
     return;
@@ -428,40 +482,46 @@ function fmtUptime(sec) {
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
 }
-// ---------- live server monitoring (rings + graphs) ----------
-const MON_CAP = 48; // ~2 min of history at 2.5s
-const metHist = { cpu: [], mem: [] };
+// ---------- live server monitoring (compact CPU/RAM/Disk/Net strip) ----------
+const MON_CAP = 60; // ~2.5 min of history at 2.5s
+const metHist = { cpu: [], mem: [], disk: [], net: [] };
 
-// Green < 60, amber 60–85, red > 85.
+// Per-cell accent (matches the markup --mc) — graph + value use it; CPU/RAM/Disk
+// shift toward red as they fill so a hot resource still reads at a glance.
+const MON_TINT = { cpu: '#a3e635', ram: '#ec4899', disk: '#22d3ee', net: '#eab308' };
 function loadColor(pct) {
   if (pct == null) return '#64748b';
-  if (pct >= 85) return '#fb7185';
-  if (pct >= 60) return '#f59e0b';
-  return '#34d399';
+  if (pct >= 90) return '#fb7185';
+  if (pct >= 75) return '#f59e0b';
+  return null; // use the cell's own tint
+}
+function fmtRate(bps) {
+  if (bps == null) return '0 B/s';
+  if (bps >= 1e6) return `${(bps / 1e6).toFixed(2)} MB/s`;
+  if (bps >= 1e3) return `${(bps / 1e3).toFixed(0)} KB/s`;
+  return `${Math.round(bps)} B/s`;
 }
 
-// Set a gauge arc + recolor its arc/value by threshold.
-function setRing(id, pct) {
-  setGauge(id, (pct || 0) / 100);
-  const arc = $(`gauge-${id}`);
-  const val = $(`gauge-${id}-val`);
-  const col = loadColor(pct);
-  if (arc) arc.setAttribute('stroke', col);
-  if (val) { val.textContent = pct == null ? '—' : `${Math.round(pct)}%`; val.style.color = col; }
-}
-
-// Draw a filled live area graph (newest on the right) into an SVG.
-function monGraph(svg, values, color) {
+// Filled area spark, newest on the right. maxVal fixes the y-scale (100 for %),
+// or null to auto-scale (network throughput).
+function monGraph(svg, values, color, maxVal) {
   if (!svg) return;
-  const W = 220, H = 70;
+  const W = 200, H = 44;
   const v = values.length ? values : [0];
-  const max = 100; // percentages
+  const max = maxVal != null ? maxVal : Math.max(...v, 1);
   const step = v.length > 1 ? W / (v.length - 1) : W;
-  const pts = v.map((y, i) => [Math.round(i * step), Math.round(H - (Math.min(max, y) / max) * (H - 6) - 3)]);
+  const y = (val) => Math.round(H - (Math.min(max, val) / (max || 1)) * (H - 4) - 2);
+  const pts = v.map((val, i) => [Math.round(i * step), y(val)]);
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0]} ${p[1]}`).join(' ');
   const area = `${line} L${pts[pts.length - 1][0]} ${H} L${pts[0][0]} ${H} Z`;
-  svg.innerHTML = `<path d="${area}" fill="${color}" fill-opacity="0.14"/>`
-    + `<path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  svg.innerHTML = `<path d="${area}" fill="${color}" fill-opacity="0.18"/>`
+    + `<path d="${line}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>`;
+}
+
+// Update one cell: big value, colour, sublabel.
+function setCell(key, valueText, color, sub) {
+  const v = $(`mon-${key}-val`); if (v) { v.textContent = valueText; if (color) v.style.color = color; }
+  const s = $(`mon-${key}-sub`); if (s && sub != null) s.textContent = sub;
 }
 
 async function loadLive() {
@@ -471,10 +531,20 @@ async function loadLive() {
     const memPct = (m.memory && m.memory.total) ? Math.round((m.memory.used / m.memory.total) * 100) : null;
     if (cpuPct != null) { metHist.cpu.push(cpuPct); if (metHist.cpu.length > MON_CAP) metHist.cpu.shift(); }
     if (memPct != null) { metHist.mem.push(memPct); if (metHist.mem.length > MON_CAP) metHist.mem.shift(); }
-    setRing('cpu', cpuPct);
-    setRing('mem', memPct);
-    monGraph($('graph-cpu'), metHist.cpu, loadColor(cpuPct));
-    monGraph($('graph-mem'), metHist.mem, loadColor(memPct));
+    const cpuCol = loadColor(cpuPct) || MON_TINT.cpu;
+    const ramCol = loadColor(memPct) || MON_TINT.ram;
+    setCell('cpu', cpuPct == null ? '—' : `${cpuPct}%`, cpuCol, `${(m.cpu && m.cpu.cores) || '—'} cores`);
+    setCell('ram', memPct == null ? '—' : `${memPct}%`, ramCol,
+      m.memory ? `${fmtBytes(m.memory.used)} / ${fmtBytes(m.memory.total)}` : '—');
+    monGraph($('graph-cpu'), metHist.cpu, cpuCol, 100);
+    monGraph($('graph-mem'), metHist.mem, ramCol, 100);
+    const net = m.net || {};
+    const rx = typeof net.rxPerSec === 'number' ? net.rxPerSec : null;
+    const tx = typeof net.txPerSec === 'number' ? net.txPerSec : null;
+    const total = (rx || 0) + (tx || 0);
+    if (rx != null || tx != null) { metHist.net.push(total); if (metHist.net.length > MON_CAP) metHist.net.shift(); }
+    setCell('net', (rx == null && tx == null) ? '—' : fmtRate(total), MON_TINT.net, `↓ ${fmtRate(rx)} · ↑ ${fmtRate(tx)}`);
+    monGraph($('graph-net'), metHist.net, MON_TINT.net, null);
   } catch { /* ignore */ }
 }
 
@@ -482,7 +552,13 @@ async function loadMetrics() {
   try {
     const m = await api('/api/admin/metrics');
     rawMetrics = m;
-    if (m.storage) setRing('storage', m.storage.pctUsed);
+    if (m.storage) {
+      const dp = m.storage.pctUsed;
+      metHist.disk.push(dp); if (metHist.disk.length > MON_CAP) metHist.disk.shift();
+      const col = loadColor(dp) || MON_TINT.disk;
+      setCell('disk', `${dp}%`, col, `${fmtBytes(m.storage.used)} / ${fmtBytes(m.storage.total)}`);
+      monGraph($('graph-disk'), metHist.disk, col, 100);
+    }
     const s = (id, v) => { const el = $(id); if (el) el.textContent = v; };
     s('met-content', fmtBytes(m.disk?.content));
     s('met-media', fmtBytes(m.disk?.media));

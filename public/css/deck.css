@@ -164,6 +164,16 @@
 
 /* Live monitoring panels (Command Center) — ring gauge + live area graph. */
 .deck .span3 { grid-column: span 3; }
+.mon-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 12px; }
+.mon-cell {
+  min-width: 0; background: color-mix(in srgb, var(--mc) 8%, var(--d-panel2));
+  border: 1px solid color-mix(in srgb, var(--mc) 26%, var(--d-edge)); border-radius: 10px; padding: 11px;
+}
+.mon-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.mon-name { color: var(--d-dim); font-size: 10px; font-weight: 800; letter-spacing: .1em; }
+.mon-val { color: var(--mc); font-size: 18px; font-weight: 850; font-variant-numeric: tabular-nums; }
+.mon-spark { width: 100%; height: 44px; display: block; }
+.mon-sub { color: var(--d-dim); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 5px; }
 .mon-panel .mon-row { display: flex; align-items: center; gap: 14px; margin: 6px 0 2px; }
 .mon-panel .gauge { width: 96px; height: 96px; flex: none; }
 .mon-graph { flex: 1; min-width: 0; height: 70px; display: block; }
@@ -232,4 +242,9 @@
   .eb-stats { grid-template-columns: 1fr; }
   .eb-hero-num { font-size: 48px; }
   .layout-picker { justify-content: center; width: 100%; }
+  .mon-strip { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 560px) {
+  .mon-strip { grid-template-columns: 1fr; }
 }

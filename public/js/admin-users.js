@@ -14,6 +14,14 @@ async function api(path, opts = {}) {
 }
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmtDate = (ms) => (ms ? new Date(ms).toLocaleDateString() : '—');
+function fmtAgo(t) {
+  if (!t) return 'Never';
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60); if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
 
 let allUsers = [];
 let hiddenUnverified = 0;
@@ -44,6 +52,11 @@ function renderList(filter = '') {
   const f = filter.toLowerCase();
   const rows = allUsers.filter((u) => !f || (u.username || '').toLowerCase().includes(f) || (u.email || '').toLowerCase().includes(f));
   $('ucount').textContent = `(${rows.length})`;
+  const totalMinutes = allUsers.reduce((sum, u) => sum + (u.minutesWatched || 0), 0);
+  $('ui-total').textContent = allUsers.length.toLocaleString();
+  $('ui-members').textContent = allUsers.filter((u) => u.subscribed).length.toLocaleString();
+  $('ui-blocked').textContent = allUsers.filter((u) => u.blocked).length.toLocaleString();
+  $('ui-watch').textContent = `${totalMinutes.toLocaleString()}m`;
   const list = $('user-list');
   if (!rows.length) { list.innerHTML = '<p class="muted">No users.</p>'; return; }
   list.innerHTML = '';
@@ -52,7 +65,7 @@ function renderList(filter = '') {
     row.className = 'user-row';
     row.innerHTML = `
       ${avatar(u)}
-      <span class="uname" data-label="User"><span class="un-main">${esc(u.username || '—')}</span><span class="un-sub">${esc(u.email || '')}</span></span>
+      <span class="uname" data-label="User"><span class="un-main">${esc(u.username || '—')}</span><span class="un-sub">${esc(u.email || '')} · ${fmtAgo(u.lastSeen)}</span></span>
       <span class="ucountry" data-label="Country">${u.country ? flagIcon(u.country) + ' ' + u.country : '<span class="muted">—</span>'}</span>
       <span class="uwatched" data-label="Watched">${u.videosWatched} vids · ${u.minutesWatched}m</span>
       <span class="ustatus" data-label="Status">${statusBadges(u)}</span>`;
@@ -70,6 +83,9 @@ async function showDetail(id) {
   const history = d.history.length
     ? d.history.map((h) => `<div class="tr"><span class="name"><a href="/watch?v=${encodeURIComponent(h.id)}" target="_blank">${esc(h.title)}</a></span><span class="num">${h.minutes}m</span></div>`).join('')
     : '<div class="tr"><span class="muted">No viewing history.</span></div>';
+  const activity = (d.activity || []).length
+    ? (d.activity || []).map((a) => `<div class="activity-row"><span class="badge ${a.type === 'blocked' ? 'blk' : a.type === 'watch' ? 'sub' : 'none'}">${esc(a.type)}</span><b>${esc(a.videoTitle || a.reason || a.ip || 'Activity')}</b><small>${fmtAgo(a.t)} · ${esc(a.city || a.cc || '')}</small></div>`).join('')
+    : '<p class="muted">No recent activity.</p>';
 
   const isAdmin = Array.isArray(u.roles) && u.roles.includes('admin');
   const ipChips = (s.ips || []).length
@@ -77,6 +93,9 @@ async function showDetail(id) {
         + `<a class="ip-btn" href="https://ipinfo.io/${encodeURIComponent(ip)}" target="_blank" rel="noopener" title="Look up ${esc(ip)} on ipinfo.io">lookup ↗</a>`
         + `<button type="button" class="ip-btn ip-copy" data-ip="${esc(ip)}" title="Copy IP">copy</button></span>`).join('')
     : '<span class="muted">—</span>';
+  const deviceChips = (s.devices || []).length
+    ? (s.devices || []).map((dev) => `<span class="device-chip"><b>${esc(dev.label || 'Device')}</b><code>${esc(dev.id || '')}</code><small>${fmtAgo(dev.lastSeen)}</small></span>`).join('')
+    : '<span class="muted">No devices recorded.</span>';
 
   $('detail').innerHTML = `
     <div class="u-head">
@@ -107,6 +126,10 @@ async function showDetail(id) {
           <div class="ip-label">IP addresses</div>
           <div class="ipchips">${ipChips}</div>
         </div>
+        <div class="ip-block">
+          <div class="ip-label">Devices</div>
+          <div class="device-chips">${deviceChips}</div>
+        </div>
       </section>
       <section class="u-sec">
         <h3>🔐 Security</h3>
@@ -126,6 +149,11 @@ async function showDetail(id) {
     <section class="u-sec">
       <h3>🎬 Viewing history</h3>
       <div class="tbl">${history}</div>
+    </section>
+
+    <section class="u-sec">
+      <h3>Activity timeline</h3>
+      <div class="activity-list">${activity}</div>
     </section>
 
     <section class="u-sec">

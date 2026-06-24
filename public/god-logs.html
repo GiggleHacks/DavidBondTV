@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>David Bond TV — Logs</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+  <script>document.documentElement.classList.add('admin-auth-pending');</script>
+</head>
+<body>
+  <div class="admin-wrap wide admin-app-shell">
+    <header class="admin-bar" id="admin-shell"></header>
+
+    <main id="app">
+      <section class="logs-shell">
+        <div class="logs-toolbar">
+          <div class="logs-search">
+            <input id="log-q" type="search" placeholder="Search user, IP, city, video, device…" autocomplete="off" />
+          </div>
+          <select id="log-type" aria-label="Activity type">
+            <option value="">All activity</option>
+            <option value="watch">Watch activity</option>
+            <option value="blocked">Blocked visits</option>
+            <option value="admin.user.block">User blocks</option>
+            <option value="admin.membership.grant">Membership grants</option>
+            <option value="admin.product.grant">Product grants</option>
+          </select>
+          <select id="log-subscriber" aria-label="Subscriber filter">
+            <option value="">Everyone</option>
+            <option value="true">Subscribers</option>
+            <option value="false">Non-subscribers</option>
+          </select>
+          <input id="log-from" type="date" aria-label="From date" />
+          <input id="log-to" type="date" aria-label="To date" />
+          <button id="log-export" class="btn sm ghost" type="button">Export CSV</button>
+        </div>
+
+        <div class="logs-metrics" id="logs-metrics">
+          <div><b id="log-count">0</b><span>Shown</span></div>
+          <div><b id="log-watch">0</b><span>Watch</span></div>
+          <div><b id="log-blocked">0</b><span>Blocked</span></div>
+          <div><b id="log-devices">0</b><span>Devices</span></div>
+        </div>
+
+        <div class="logs-layout">
+          <section class="logs-list-panel">
+            <div class="logs-head">
+              <span>Time</span><span>Visitor</span><span>Location</span><span>Activity</span><span>Device</span>
+            </div>
+            <div id="logs-list" class="logs-list"></div>
+            <button id="logs-more" class="btn ghost sm logs-more" type="button">Load more</button>
+          </section>
+
+          <aside id="log-detail" class="log-detail">
+            <div class="log-empty">Select an event to inspect visitor, device, session, and content details.</div>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="/js/admin-logs.js"></script>
+  <script type="module" src="/js/admin-shell.js"></script>
+</body>
+</html>

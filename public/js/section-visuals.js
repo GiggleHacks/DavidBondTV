@@ -17,6 +17,7 @@ export const SECTIONS = [
   { key: 'categories', label: 'Categories', route: '-categories', icon: 'folder',    accent: '#a855f7', nav: true,  desc: 'Organize videos with icons and flags.' },
   { key: 'coupons',    label: 'Coupons',    route: '-coupons',    icon: 'ticket',    accent: '#fb7185', nav: true,  desc: 'Discount codes and promotions.' },
   { key: 'users',      label: 'Users',      route: '-users',      icon: 'users',     accent: '#2dd4bf', nav: true,  dark: true,  desc: 'Members, subscribers, and access.' },
+  { key: 'logs',       label: 'Logs',       route: '-logs',       icon: 'analytics', accent: '#eab308', nav: true,  dark: true,  desc: 'Activity history, visitors, devices, and security events.' },
   { key: 'community',  label: 'Community',  route: '-community',  icon: 'community', accent: '#fb923c', nav: true,  dark: true,  desc: 'Comments and viewer engagement.' },
   { key: 'telegram',   label: 'Telegram',   route: '-telegram',   icon: 'telegram',  accent: '#38bdf8', nav: true,  dark: true,  desc: 'Bot configuration and group access.' },
   { key: 'review',     label: 'Review',     route: '-review',     icon: 'review',    accent: '#a3e635', nav: true,  dark: true,  desc: 'Approve or reject the draft queue.' },

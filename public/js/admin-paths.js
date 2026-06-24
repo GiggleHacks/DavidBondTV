@@ -5,6 +5,7 @@ export const ADMIN_PATHS = {
   upload: `${ADMIN_ROUTE_PREFIX}-upload.html`,
   videos: `${ADMIN_ROUTE_PREFIX}-videos.html`,
   users: `${ADMIN_ROUTE_PREFIX}-users.html`,
+  logs: `${ADMIN_ROUTE_PREFIX}-logs.html`,
   community: `${ADMIN_ROUTE_PREFIX}-community.html`,
   products: `${ADMIN_ROUTE_PREFIX}-products.html`,
   pricing: `${ADMIN_ROUTE_PREFIX}-pricing.html`,

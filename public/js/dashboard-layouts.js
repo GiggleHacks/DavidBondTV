@@ -120,33 +120,27 @@ function buildCommandCenter() {
       </div>
     </div>
     <div class="grid g-3 row-gap">
-      <div class="dpanel mon-panel">
-        <div class="dp-title"><span class="dico">🧠</span> CPU <span class="mon-live">● live</span></div>
-        <div class="mon-row">
-          ${gaugeRing('cpu', 'CPU', '#22d3ee', 96, 9)}
-          <svg class="mon-graph" id="graph-cpu" viewBox="0 0 220 70" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div class="dpanel span3 mon-strip">
+        <div class="mon-cell" style="--mc:#a3e635">
+          <div class="mon-head"><span class="mon-name">CPU</span><span class="mon-val" id="mon-cpu-val">—</span></div>
+          <svg class="mon-spark" id="graph-cpu" viewBox="0 0 200 44" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div class="mon-sub" id="mon-cpu-sub">—</div>
         </div>
-        <div class="mon-foot"><span id="met-cores">—</span> · load <span id="met-load">—</span></div>
-      </div>
-      <div class="dpanel mon-panel">
-        <div class="dp-title"><span class="dico">🧮</span> MEMORY <span class="mon-live">● live</span></div>
-        <div class="mon-row">
-          ${gaugeRing('mem', 'RAM', '#a855f7', 96, 9)}
-          <svg class="mon-graph" id="graph-mem" viewBox="0 0 220 70" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <div class="mon-cell" style="--mc:#ec4899">
+          <div class="mon-head"><span class="mon-name">RAM</span><span class="mon-val" id="mon-ram-val">—</span></div>
+          <svg class="mon-spark" id="graph-mem" viewBox="0 0 200 44" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div class="mon-sub" id="mon-ram-sub">—</div>
         </div>
-        <div class="mon-foot">used <span id="met-ram">—</span> · free <span id="met-ramfree">—</span></div>
-      </div>
-      <div class="dpanel mon-panel">
-        <div class="dp-title"><span class="dico">📀</span> STORAGE</div>
-        <div class="mon-row">
-          ${gaugeRing('storage', 'DISK', '#34d399', 96, 9)}
-          <div class="mon-meta">
-            <div><b id="met-stused">—</b><span>used</span></div>
-            <div><b id="met-stcap">—</b><span>capacity</span></div>
-            <div><b id="met-stfree">—</b><span>free</span></div>
-          </div>
+        <div class="mon-cell" style="--mc:#22d3ee">
+          <div class="mon-head"><span class="mon-name">DISK</span><span class="mon-val" id="mon-disk-val">—</span></div>
+          <svg class="mon-spark" id="graph-disk" viewBox="0 0 200 44" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div class="mon-sub" id="mon-disk-sub">—</div>
         </div>
-        <div class="mon-foot">content <span id="met-content">—</span> · media <span id="met-media">—</span> · avg <span id="met-avg">—</span></div>
+        <div class="mon-cell" style="--mc:#eab308">
+          <div class="mon-head"><span class="mon-name">NET</span><span class="mon-val" id="mon-net-val">—</span></div>
+          <svg class="mon-spark" id="graph-net" viewBox="0 0 200 44" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div class="mon-sub" id="mon-net-sub">—</div>
+        </div>
       </div>
     </div>
     <div class="grid g-3 row-gap">

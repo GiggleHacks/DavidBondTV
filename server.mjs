@@ -54,6 +54,7 @@ import { diffManifest } from './lib/sync-diff.mjs';
 import { startPublish, getPublishJob, latestPublishJob, controlPublishJob } from './lib/sync-client.mjs';
 import { ADMIN_ROUTE_PREFIX, isLegacyAdminRoute, isPrettyAdminRoute, resolveAdminFilePath } from './lib/admin-routes.js';
 import { sanitizePlaybackVideo, sanitizePublicVideo } from './lib/video-manifest.js';
+import { CENTROIDS } from './public/js/world-data.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 8080;
@@ -103,11 +104,28 @@ function cpuPercentDelta() {
   return Math.max(0, Math.min(100, Math.round((1 - di / dt) * 100)));
 }
 
-// Temporary site-wide password gate. Set SITE_PASSWORD='' (empty) to open the site to the public.
-const SITE_PASSWORD = process.env.SITE_PASSWORD ?? 'testing123lol';
-const SITE_AUTH_VALUE = SITE_PASSWORD
-  ? crypto.createHmac('sha256', ADMIN_SECRET).update(SITE_PASSWORD).digest('hex')
-  : '';
+// Network throughput (bytes/sec) from /proc/net/dev deltas between calls (Linux).
+// Returns nulls on non-Linux (no /proc) or the first call (no baseline yet).
+let _netLast = null;
+function netThroughput() {
+  let rx = 0, tx = 0;
+  try {
+    const data = fs.readFileSync('/proc/net/dev', 'utf8');
+    for (const line of data.split('\n')) {
+      const m = line.match(/^\s*([^:]+):\s*(\d+)(?:\s+\d+){7}\s+(\d+)/);
+      if (!m || m[1].trim() === 'lo') continue;
+      rx += Number(m[2]); tx += Number(m[3]);
+    }
+  } catch { return { rxPerSec: null, txPerSec: null }; }
+  const now = _netNow();
+  const prev = _netLast;
+  _netLast = { rx, tx, t: now };
+  if (!prev || now <= prev.t) return { rxPerSec: null, txPerSec: null };
+  const dt = (now - prev.t) / 1000;
+  return { rxPerSec: Math.max(0, (rx - prev.rx) / dt), txPerSec: Math.max(0, (tx - prev.tx) / dt) };
+}
+function _netNow() { return Number(process.hrtime.bigint() / 1000000n); }
+
 // Local→server video publish. SYNC_TOKEN authenticates machine-to-machine pushes
 // (set identically on both ends); when unset, the /api/sync/* receive endpoints
 // 404 so an unconfigured server never accepts pushes. SYNC_TARGET_URL is only set
@@ -239,7 +257,8 @@ const telegramAccess = createTelegramAccess({
 const TRUST_CLOUDFLARE = process.env.TRUST_CLOUDFLARE === '1';
 const analytics = createAnalytics({
   dir: path.join(__dirname, 'data', 'analytics'),
-  rawRetentionDays: Number(process.env.ANALYTICS_RAW_DAYS) || 7,
+  rawRetentionDays: Number(process.env.ANALYTICS_RAW_DAYS) || 30,
+  dayWindow: Number(process.env.ANALYTICS_ROLLUP_DAYS) || 365,
 });
 const buildRequestContext = createRequestContext({
   geoip, accounts, trustCloudflare: TRUST_CLOUDFLARE,
@@ -318,6 +337,31 @@ function manifestTitleMap() {
   } catch {
     return {};
   }
+}
+
+function userNameMap() {
+  return new Map(accounts.store.listAll().map((u) => [u.id, u.username || u.email || u.id]));
+}
+
+function decorateLogEvent(e, titles = manifestTitleMap(), names = userNameMap()) {
+  if (!e || typeof e !== 'object') return e;
+  const videoId = e.videoId || e.video || null;
+  const userId = e.userId || null;
+  return {
+    ...e,
+    videoId,
+    videoTitle: e.videoTitle || (videoId ? titles[videoId] || videoId : null),
+    username: e.username || (userId ? names.get(userId) || 'deleted user' : null),
+  };
+}
+
+function logFiltersFromUrl(url) {
+  const out = {};
+  for (const key of ['from', 'to', 'q', 'type', 'userId', 'videoId', 'ip', 'cc', 'subscriber', 'limit', 'cursor']) {
+    const v = url.searchParams.get(key);
+    if (v != null && v !== '') out[key] = v;
+  }
+  return out;
 }
 
 function resolveFile(urlPath) {
@@ -516,21 +560,6 @@ function injectMetaTags(html, reqUrl) {
 async function handleApi(req, res, ctx) {
   const url = new URL(req.url, 'http://localhost');
 
-  // POST /api/auth/sitepass { password } → { ok } — site password gate login.
-  if (req.method === 'POST' && url.pathname === '/api/auth/sitepass') {
-    if (!SITE_PASSWORD) { sendJson(res, 200, { ok: true }); return true; }
-    let body; try { body = JSON.parse(await readBody(req, 256)); } catch { body = null; }
-    if (body?.password === SITE_PASSWORD) {
-      res.setHeader('Set-Cookie', serializeCookie('siteauth', SITE_AUTH_VALUE, {
-        maxAge: 30 * 24 * 60 * 60, httpOnly: true, sameSite: 'Lax', secure: COOKIE_SECURE,
-      }));
-      sendJson(res, 200, { ok: true });
-    } else {
-      sendJson(res, 401, { ok: false, error: 'Wrong password.' });
-    }
-    return true;
-  }
-
   // POST /api/track  — watch heartbeat. Body: { v, vid, dt, pos, dur }.
   // High-frequency: keep it cheap, never error the client, drop bots.
   if (req.method === 'POST' && url.pathname === '/api/track') {
@@ -539,9 +568,32 @@ async function handleApi(req, res, ctx) {
       const raw = await readBody(req, 2048);
       let body; try { body = JSON.parse(raw); } catch { body = null; }
       if (body && isKnownVideo(body.v)) {
+        const u = ctx.user || null;
         analytics.record({
-          t: Date.now(), video: body.v, viewId: body.vid,
-          userId: ctx.user ? ctx.user.id : null, ip: ctx.ip, cc: ctx.country, dt: body.dt,
+          t: Date.now(),
+          video: body.v,
+          viewId: body.vid,
+          sessionId: body.sid,
+          userId: u ? u.id : null,
+          username: u ? (u.username || u.email || u.id) : null,
+          subscriber: !!(u && hasActiveMembership(u)),
+          ip: ctx.ip,
+          cc: ctx.country,
+          country: ctx.geo && ctx.geo.countryName,
+          city: ctx.geo && ctx.geo.city,
+          region: ctx.geo && ctx.geo.region,
+          lat: ctx.geo && ctx.geo.lat,
+          lon: ctx.geo && ctx.geo.lon,
+          dt: body.dt,
+          pos: body.pos,
+          dur: body.dur,
+          deviceId: body.did,
+          device: {
+            ...(ctx.device || {}),
+            id: body.did,
+            viewport: body.vp,
+            type: body.devType || (ctx.device && ctx.device.type),
+          },
         });
       }
     } catch { /* never surface tracking errors to the client */ }
@@ -824,6 +876,7 @@ async function handleApi(req, res, ctx) {
       t: Date.now(),
       cpu: { percent: cpuPercentDelta(), cores: os.cpus().length, load: os.loadavg() },
       memory: mem,
+      net: netThroughput(),
     });
     return true;
   }
@@ -1313,26 +1366,93 @@ async function handleApi(req, res, ctx) {
     return true;
   }
 
+  // GET /api/admin/analytics/traffic → marker-level traffic events for the 3D globe.
+  if (req.method === 'GET' && url.pathname === '/api/admin/analytics/traffic') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const mode = url.searchParams.get('mode') || 'viewers';
+    const filters = logFiltersFromUrl(url);
+    if (mode === 'subscribers') filters.subscriber = 'true';
+    if (mode === 'blocked') filters.type = 'blocked';
+    const titles = manifestTitleMap();
+    const names = userNameMap();
+    const markers = analytics.getTrafficMarkers(filters).map((m) => decorateLogEvent(m, titles, names));
+    const preciseKeys = new Set(markers.map((m) => `${m.t}|${m.ip || ''}|${m.videoId || ''}|${m.type || ''}`));
+    const approximate = analytics.queryLogs({ ...filters, limit: 5000 }).events
+      .filter((e) => (e.type === 'watch' || e.type === 'blocked') && (e.lat == null || e.lon == null))
+      .map((e, i) => {
+        const key = `${e.t}|${e.ip || ''}|${e.videoId || ''}|${e.type || ''}`;
+        if (preciseKeys.has(key)) return null;
+        const c = e.cc && CENTROIDS[e.cc];
+        if (!c) return null;
+        return decorateLogEvent({
+          ...e,
+          id: `approx-${e.t}-${i}`,
+          lat: c[0],
+          lon: c[1],
+          precise: false,
+        }, titles, names);
+      }).filter(Boolean);
+    markers.push(...approximate);
+    sendJson(res, 200, { markers, mode, generatedAt: Date.now() });
+    return true;
+  }
+
   // GET /api/admin/analytics/visitors?limit= → recent individual viewer events
   // with IP + country + user + video (newest first), for the analytics panel.
   if (req.method === 'GET' && url.pathname === '/api/admin/analytics/visitors') {
     if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '200', 10) || 200, 1), 1000);
     const titles = manifestTitleMap();
-    const names = new Map(accounts.store.listAll().map((u) => [u.id, u.username || u.email || u.id]));
-    const events = analytics.getRecentEvents(limit).map((e) => ({
+    const names = userNameMap();
+    const events = analytics.getRecentEvents(limit).map((raw) => {
+      const e = decorateLogEvent(raw, titles, names);
+      return {
       t: e.t,
       ip: e.ip,
       cc: e.cc,
-      user: e.userId ? (names.get(e.userId) || 'deleted user') : null,
+      country: e.country,
+      city: e.city,
+      region: e.region,
+      user: e.username || null,
       userId: e.userId,
-      video: e.video ? (titles[e.video] || e.video) : null,
-      videoId: e.video,
-      seconds: e.dt,
+      video: e.videoTitle || null,
+      videoId: e.videoId,
+      seconds: e.seconds || e.dt,
+      position: e.position,
+      duration: e.duration,
+      deviceId: e.deviceId,
+      device: e.device,
+      sessionId: e.sessionId,
+      viewId: e.viewId,
       blocked: e.blocked,
+      type: e.type,
       reason: e.reason,
-    }));
+    }; });
     sendJson(res, 200, { events });
+    return true;
+  }
+
+  // GET /api/admin/logs → searchable historical activity logs.
+  if (req.method === 'GET' && url.pathname === '/api/admin/logs') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const titles = manifestTitleMap();
+    const names = userNameMap();
+    const result = analytics.queryLogs(logFiltersFromUrl(url));
+    result.events = result.events.map((e) => decorateLogEvent(e, titles, names));
+    sendJson(res, 200, { ...result, generatedAt: Date.now() });
+    return true;
+  }
+
+  // GET /api/admin/logs/export → CSV export for current log filters.
+  if (req.method === 'GET' && url.pathname === '/api/admin/logs/export') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const csv = analytics.exportLogsCsv(logFiltersFromUrl(url));
+    res.writeHead(200, {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="davidbondtv-activity-logs.csv"',
+      'Cache-Control': 'no-store',
+    });
+    res.end(csv);
     return true;
   }
 
@@ -1450,6 +1570,7 @@ async function handleApi(req, res, ctx) {
           subscribed: hasActiveMembership(u),
           videosWatched: s.byVideo ? Object.keys(s.byVideo).length : 0,
           minutesWatched: Math.round((s.totalSeconds || 0) / 60),
+          lastSeen: s.lastSeen || null,
           blocked: blockedIds.has(u.id),
           verified: u.verified, createdAt: u.createdAt,
         };
@@ -1480,8 +1601,10 @@ async function handleApi(req, res, ctx) {
           lastCountry: s.lastCountry || null,
           lastSeen: s.lastSeen || null,
           ips: s.ips || [],
+          devices: s.devices || [],
         },
         history,
+        activity: analytics.queryLogs({ userId, limit: 30 }).events.map((e) => decorateLogEvent(e, titles, userNameMap())),
         blocked: new Set(geoGate.getRules().blockedUserIds).has(userId),
       });
       return true;
@@ -1502,7 +1625,13 @@ async function handleApi(req, res, ctx) {
 
     // POST block / unblock
     if (req.method === 'POST' && (action === 'block' || action === 'unblock')) {
+      const admin = accounts.currentUser(req);
       await (action === 'block' ? geoGate.blockUser(userId) : geoGate.unblockUser(userId));
+      analytics.recordActivity(`admin.user.${action}`, {
+        userId, username: u.username || u.email || u.id,
+        ip: ctx.ip, cc: ctx.country, geo: ctx.geo, device: ctx.device,
+        meta: { by: admin ? admin.id : null },
+      });
       sendJson(res, 200, { ok: true, blocked: action === 'block' });
       return true;
     }
@@ -1520,6 +1649,11 @@ async function handleApi(req, res, ctx) {
         };
         await accounts.store.updateUser(userId, { membership, hasPurchased: true });
         await paymentsStore.addTxn(userId, { kind: 'admin.grant', ts: Date.now(), by: admin ? admin.id : null });
+        analytics.recordActivity('admin.membership.grant', {
+          userId, username: u.username || u.email || u.id,
+          ip: ctx.ip, cc: ctx.country, geo: ctx.geo, device: ctx.device,
+          meta: { by: admin ? admin.id : null },
+        });
         // Let the user know — in-app bell + email.
         addAccountNotification(userId, {
           title: 'Membership activated 🎉',
@@ -1538,6 +1672,11 @@ async function handleApi(req, res, ctx) {
       }
       await accounts.store.updateUser(userId, { membership: null, hasPurchased: false });
       await paymentsStore.addTxn(userId, { kind: 'admin.revoke', ts: Date.now(), by: admin ? admin.id : null });
+      analytics.recordActivity('admin.membership.revoke', {
+        userId, username: u.username || u.email || u.id,
+        ip: ctx.ip, cc: ctx.country, geo: ctx.geo, device: ctx.device,
+        meta: { by: admin ? admin.id : null },
+      });
       sendJson(res, 200, { ok: true, subscribed: false });
       return true;
     }
@@ -1551,6 +1690,11 @@ async function handleApi(req, res, ctx) {
       const result = await stripePayments.resyncUser(userId);
       if (!result.ok) { sendJson(res, 400, { error: result.error || 'Could not resync.' }); return true; }
       await paymentsStore.addTxn(userId, { kind: 'admin.stripe.resync', ts: Date.now(), by: admin ? admin.id : null });
+      analytics.recordActivity('admin.stripe.resync', {
+        userId, username: u.username || u.email || u.id,
+        ip: ctx.ip, cc: ctx.country, geo: ctx.geo, device: ctx.device,
+        meta: { by: admin ? admin.id : null, active: !!(result.membership && result.membership.active) },
+      });
       if (result.membership && result.membership.active) {
         addAccountNotification(userId, {
           title: 'Membership activated 🎉',
@@ -1576,6 +1720,10 @@ async function handleApi(req, res, ctx) {
       // Cross-store cleanup: drop any geo-block rule + free-follow subscription.
       await geoGate.unblockUser(userId).catch(() => {});
       try { subscribers.unsubscribe(userId); } catch { /* best effort */ }
+      analytics.recordActivity('admin.user.delete', {
+        userId, username: u.username || u.email || u.id,
+        ip: ctx.ip, cc: ctx.country, geo: ctx.geo, device: ctx.device,
+      });
       sendJson(res, 200, { ok: true, deleted: true });
       return true;
     }
@@ -1598,6 +1746,12 @@ async function handleApi(req, res, ctx) {
           owned.push({ productId, provider: 'admin', grantedBy: admin ? admin.id : null, purchasedAt: Date.now() });
           await accounts.store.updateUser(userId, { products: owned });
           await paymentsStore.addTxn(userId, { kind: 'admin.product.grant', ts: Date.now(), productId, by: admin ? admin.id : null });
+          analytics.recordActivity('admin.product.grant', {
+            userId, username: u.username || u.email || u.id,
+            videoTitle: product.name,
+            ip: ctx.ip, cc: ctx.country, geo: ctx.geo, device: ctx.device,
+            meta: { by: admin ? admin.id : null, productId },
+          });
           addAccountNotification(userId, {
             title: `Access granted: ${product.name} 🎉`,
             body: 'It’s now unlocked in your library.',
@@ -1612,6 +1766,12 @@ async function handleApi(req, res, ctx) {
       const next = owned.filter((p) => !(p && p.productId === productId));
       await accounts.store.updateUser(userId, { products: next });
       await paymentsStore.addTxn(userId, { kind: 'admin.product.revoke', ts: Date.now(), productId, by: admin ? admin.id : null });
+      analytics.recordActivity('admin.product.revoke', {
+        userId, username: u.username || u.email || u.id,
+        videoTitle: product.name,
+        ip: ctx.ip, cc: ctx.country, geo: ctx.geo, device: ctx.device,
+        meta: { by: admin ? admin.id : null, productId },
+      });
       sendJson(res, 200, { ok: true, owns: false });
       return true;
     }
@@ -1781,6 +1941,15 @@ async function handleApi(req, res, ctx) {
     const u = accounts.currentUser(req);
     if (!u) { sendJson(res, 401, { error: 'Please sign in to subscribe.' }); return true; }
     const result = url.pathname === '/api/subscribe' ? subscribers.subscribe(u.id) : subscribers.unsubscribe(u.id);
+    analytics.recordActivity(url.pathname === '/api/subscribe' ? 'subscriber.follow' : 'subscriber.unfollow', {
+      userId: u.id,
+      username: u.username || u.email || u.id,
+      subscriber: hasActiveMembership(u),
+      ip: ctx.ip,
+      cc: ctx.country,
+      geo: ctx.geo,
+      device: ctx.device,
+    });
     sendJson(res, 200, { ok: true, ...result });
     return true;
   }
@@ -2239,37 +2408,6 @@ const server = http.createServer(async (req, res) => {
   try {
     // Derive IP / country / user / admin-bypass / bot once for this request.
     const ctx = buildRequestContext(req);
-
-    // Site password gate. Active when SITE_PASSWORD is set. Admins always pass.
-    // The password page, its API endpoint, and bare static assets bypass the gate.
-    if (SITE_PASSWORD && !ctx.isAdmin) {
-      const rawPath = (req.url || '/').split('?')[0];
-      const gateBypass = rawPath === '/password.html' || rawPath === '/api/auth/sitepass'
-        || rawPath === '/favicon.ico' || rawPath === '/styles.css' || rawPath.startsWith('/css/')
-        || rawPath.startsWith('/fonts/')
-        // Machine-to-machine publish: /api/sync/* carries its own Bearer SYNC_TOKEN
-        // auth (and 404s when SYNC_TOKEN is unset), so the browser-oriented site
-        // gate must not block the local→server video push.
-        || rawPath.startsWith('/api/sync/')
-        // Telegram bot webhook: Telegram calls this server-to-server and it has
-        // its own ?token=<TELEGRAM_WEBHOOK_SECRET> auth, so the site gate (a
-        // browser cookie check) must not block it.
-        || rawPath === '/api/telegram/webhook'
-        // Stripe webhook is likewise server-to-server with its own signature auth.
-        || rawPath === '/api/pay/stripe/webhook';
-      if (!gateBypass) {
-        const cookies = parseCookies(req.headers['cookie'] || '');
-        if (cookies['siteauth'] !== SITE_AUTH_VALUE) {
-          if (rawPath.startsWith('/api/')) {
-            sendJson(res, 401, { error: 'Site password required.' });
-          } else {
-            res.writeHead(302, { Location: `/password.html?return=${encodeURIComponent(rawPath)}` });
-            res.end();
-          }
-          return;
-        }
-      }
-    }
 
     // API routes take priority
     if (req.url.startsWith('/api/')) {
