@@ -18,8 +18,9 @@ const PROGRESS_KEY = 'dbtv-review-progress'; // { sig, idx, approved:[], toDelet
 let queue = [];              // ordered, ready-only manifest entries to review
 let idx = 0;                 // index of the currently shown video
 let skipped = 0;             // queued ids that weren't ready (still processing/failed)
-const approved = new Set();  // ids marked 👍 (committed at confirm)
-const toDelete = new Set();  // ids marked 👎 (committed at confirm)
+const approved = new Set();      // ids marked 👍 (committed at confirm)
+const approvedFree = new Set();  // ids marked 🆓 — approve + de-blur + visibility:free
+const toDelete = new Set();      // ids marked 👎 (committed at confirm)
 
 const back = () => { location.href = ADMIN_PATHS.videos; };
 
@@ -29,7 +30,8 @@ const queueSig = () => queue.map((v) => v.id).join(',');
 function saveProgress() {
   try {
     sessionStorage.setItem(PROGRESS_KEY, JSON.stringify({
-      sig: queueSig(), idx, approved: [...approved], toDelete: [...toDelete],
+      sig: queueSig(), idx,
+      approved: [...approved], approvedFree: [...approvedFree], toDelete: [...toDelete],
     }));
   } catch { /* storage full / disabled — non-fatal */ }
 }
@@ -41,6 +43,7 @@ function restoreProgress() {
   idx = Math.min(Math.max(0, p.idx | 0), queue.length);
   const live = new Set(queue.map((v) => v.id));
   (p.approved || []).forEach((id) => { if (live.has(id)) approved.add(id); });
+  (p.approvedFree || []).forEach((id) => { if (live.has(id)) approvedFree.add(id); });
   (p.toDelete || []).forEach((id) => { if (live.has(id)) toDelete.add(id); });
 }
 
@@ -73,6 +76,7 @@ function renderCard() {
   const v = queue[idx];
   $('rv-counter').textContent = `${idx + 1} / ${queue.length}`;
   $('rv-tally-up').textContent = `👍 ${approved.size}`;
+  $('rv-tally-free').textContent = `🆓 ${approvedFree.size}`;
   $('rv-tally-down').textContent = `👎 ${toDelete.size}`;
   $('rv-undo').disabled = idx === 0;
   $('rv-prev').disabled = idx === 0;
@@ -94,12 +98,16 @@ function renderSummary() {
   show('summary');
   const v = $('rv-video'); if (v) v.pause();
   $('rv-sum-up').textContent = approved.size;
+  $('rv-sum-free').textContent = approvedFree.size;
   $('rv-sum-down').textContent = toDelete.size;
   $('rv-sum-skip').textContent = skipped;
-  const undecided = queue.length - approved.size - toDelete.size;
+  const undecided = queue.length - approved.size - approvedFree.size - toDelete.size;
+  const totalApprove = approved.size + approvedFree.size;
+  const freeNote = approvedFree.size ? `; ${approvedFree.size} also moved to Free and de-blurred` : '';
+  const approveNote = totalApprove ? `Approved videos start encoding now${freeNote}.` : 'No videos approved.';
   $('rv-sum-warn').innerHTML = toDelete.size
-    ? `<b>${toDelete.size}</b> video${toDelete.size === 1 ? '' : 's'} will be <b>rejected</b> — marked rejected and their (un-encoded) original removed. Approved videos start encoding now.`
-    : 'No videos marked for rejection. Approved videos start encoding now.';
+    ? `<b>${toDelete.size}</b> video${toDelete.size === 1 ? '' : 's'} will be <b>rejected</b> — marked rejected and their (un-encoded) original removed. ${approveNote}`
+    : approveNote;
   $('rv-sum-msg').textContent = undecided > 0 ? `${undecided} not yet reviewed (left awaiting review).` : '';
 }
 
@@ -107,8 +115,10 @@ function renderSummary() {
 function decide(action) {
   if (idx >= queue.length) return;
   const id = queue[idx].id;
-  if (action === 'approve') { approved.add(id); toDelete.delete(id); }
-  else { toDelete.add(id); approved.delete(id); }
+  // Buckets are mutually exclusive: a video lands in exactly one of the three.
+  if (action === 'approve') { approved.add(id); approvedFree.delete(id); toDelete.delete(id); }
+  else if (action === 'approve-free') { approvedFree.add(id); approved.delete(id); toDelete.delete(id); }
+  else { toDelete.add(id); approved.delete(id); approvedFree.delete(id); }
   transitionTo(idx + 1, action === 'delete' ? 'delete' : 'next');
 }
 
@@ -117,6 +127,7 @@ function undo() {
   idx -= 1;
   const id = queue[idx].id;
   approved.delete(id);
+  approvedFree.delete(id);
   toDelete.delete(id);
   saveProgress();
   renderCard();
@@ -173,6 +184,7 @@ async function confirmSession() {
   $('rv-sum-msg').textContent = 'Applying…';
   try {
     if (approved.size) { if (!(await bulk([...approved], 'approve'))) return; }
+    if (approvedFree.size) { if (!(await bulk([...approvedFree], 'approve-free'))) return; }
     if (toDelete.size) { if (!(await bulk([...toDelete], 'reject'))) return; }
     try { sessionStorage.removeItem(QUEUE_KEY); sessionStorage.removeItem(PROGRESS_KEY); } catch { /* ignore */ }
     back();
@@ -185,6 +197,7 @@ async function confirmSession() {
 // --- wiring -----------------------------------------------------------------
 function wire() {
   $('rv-up').addEventListener('click', () => decide('approve'));
+  $('rv-free').addEventListener('click', () => decide('approve-free'));
   $('rv-down').addEventListener('click', () => decide('delete'));
   $('rv-prev').addEventListener('click', () => move(-1));
   $('rv-next').addEventListener('click', () => move(1));
@@ -197,7 +210,8 @@ function wire() {
   document.addEventListener('keydown', (e) => {
     if ($('rv-stage').classList.contains('hidden')) return; // only during active review
     const k = e.key.toLowerCase();
-    if (e.key === 'ArrowRight' || k === 'f') { e.preventDefault(); decide('approve'); }
+    if (e.key === 'ArrowUp' || k === 'u') { e.preventDefault(); decide('approve-free'); }
+    else if (e.key === 'ArrowRight' || k === 'f') { e.preventDefault(); decide('approve'); }
     else if (e.key === 'ArrowLeft' || k === 'd') { e.preventDefault(); decide('delete'); }
     else if (k === 'n') { e.preventDefault(); move(1); }
     else if (k === 'p') { e.preventDefault(); move(-1); }

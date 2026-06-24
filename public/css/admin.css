@@ -402,22 +402,26 @@ a.tr:hover .name { color: var(--accent); }
 .rv-up:hover { background: color-mix(in srgb, #22c55e 16%, var(--surface-2)); }
 .rv-down { border-color: color-mix(in srgb, #ef4444 55%, transparent); color: #fca5a5; }
 .rv-down:hover { background: color-mix(in srgb, #ef4444 16%, var(--surface-2)); }
+.rv-free { border-color: color-mix(in srgb, #22d3ee 55%, transparent); color: #67e8f9; }
+.rv-free:hover { background: color-mix(in srgb, #22d3ee 16%, var(--surface-2)); }
 .rv-hint { text-align: center; font-size: 12px; }
 /* Review summary */
 .rv-summary { max-width: 560px; margin: 0 auto; }
-.rv-sum-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 8px 0 16px; }
+.rv-sum-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 8px 0 16px; }
 .rv-sum-stat { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 16px 10px; text-align: center; }
 .rv-sum-stat b { display: block; font-size: 30px; font-weight: 800; }
 .rv-sum-stat span { font-size: 12px; color: var(--text-dim); }
-.rv-sum-up b { color: #86efac; } .rv-sum-down b { color: #fca5a5; }
+.rv-sum-up b { color: #86efac; } .rv-sum-free b { color: #67e8f9; } .rv-sum-down b { color: #fca5a5; }
 .rv-sum-warn { font-size: 14px; background: color-mix(in srgb, #ef4444 12%, transparent); border: 1px solid color-mix(in srgb, #ef4444 35%, transparent); color: #fecaca; border-radius: 10px; padding: 10px 12px; }
 .rv-sum-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
 .rv-sum-actions .btn { flex: 1 1 auto; }
 .rv-sum-msg { font-size: 13px; margin-top: 10px; min-height: 16px; }
 @media (max-width: 560px) {
-  .rv-btn { flex: 1 1 0; min-width: 0; padding: 14px 10px; }
-  .rv-actions { gap: 10px; }
+  .rv-btn { flex: 1 1 40%; min-width: 0; padding: 12px 8px; font-size: 13px; }
+  .rv-btn .rv-ico { font-size: 24px; }
+  .rv-actions { gap: 8px; }
   .rv-nav { width: 40px; height: 64px; font-size: 34px; }
+  .rv-sum-grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
   .rv-video-wrap, .rv-nav { transition: none; }

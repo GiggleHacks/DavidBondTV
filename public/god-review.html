@@ -28,6 +28,7 @@
           <div class="rv-counter" id="rv-counter">0 / 0</div>
           <div class="rv-tally">
             <span class="rv-tally-up" id="rv-tally-up">👍 0</span>
+            <span class="rv-tally-free" id="rv-tally-free">🆓 0</span>
             <span class="rv-tally-down" id="rv-tally-down">👎 0</span>
           </div>
           <button class="btn sm ghost" type="button" id="rv-finish">Finish →</button>
@@ -52,8 +53,11 @@
           <button class="rv-btn rv-up" type="button" id="rv-up" title="Approve — starts encoding (→)">
             <span class="rv-ico">👍</span><span class="rv-lbl">Approve</span>
           </button>
+          <button class="rv-btn rv-free" type="button" id="rv-free" title="Approve + Free — approve, de-blur, move to Free (↑)">
+            <span class="rv-ico">🆓</span><span class="rv-lbl">Approve + Free</span>
+          </button>
         </div>
-        <p class="rv-hint muted">→ / F approve (encode) · ← / D reject · Space play-pause · Backspace undo</p>
+        <p class="rv-hint muted">→ / F approve (encode) · ↑ / U approve + free (de-blur, move to Free) · ← / D reject · Space play-pause · Backspace undo</p>
       </section>
 
       <!-- End-of-session summary -->
@@ -61,6 +65,7 @@
         <div class="card-head"><h2>Review summary</h2></div>
         <div class="rv-sum-grid">
           <div class="rv-sum-stat rv-sum-up"><b id="rv-sum-up">0</b><span>to approve</span></div>
+          <div class="rv-sum-stat rv-sum-free"><b id="rv-sum-free">0</b><span>approve + free</span></div>
           <div class="rv-sum-stat rv-sum-down"><b id="rv-sum-down">0</b><span>to reject</span></div>
           <div class="rv-sum-stat"><b id="rv-sum-skip">0</b><span>skipped</span></div>
         </div>

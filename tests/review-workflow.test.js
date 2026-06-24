@@ -105,6 +105,38 @@ describe('review-first encoding (upload → review → approve → encode)', () 
   });
 });
 
+describe('approve-free combines visibility, blur, and approval', () => {
+  it('on a ready premium+blurred video: free + de-blurred + approved, category intact', async () => {
+    seed([{
+      id: 'af', published: false, approval: 'unapproved', status: 'ready',
+      visibility: 'premium', blur: 'strong', category: 'colombia-harem',
+    }]);
+    await bulkAction(['af'], 'approve-free');
+    const e = byId('af');
+    expect(e.visibility).toBe('free');
+    expect(e.blur).toBe('off');
+    expect(e.approval).toBe('approved');
+    expect(e.published).toBe(false);          // approving never publishes
+    expect(e.category).toBe('colombia-harem'); // topic category untouched
+  });
+
+  it('on an uploaded video: sets flags AND starts encoding (flags survive startEncode)', async () => {
+    const src = path.join(TMP, 'media', 'af-up.mp4');
+    fs.mkdirSync(path.dirname(src), { recursive: true });
+    fs.writeFileSync(src, 'fake video bytes');
+    seed([{
+      id: 'afu', published: false, approval: 'unapproved', status: 'uploaded',
+      visibility: 'premium', blur: 'strong', sourcePath: src,
+    }]);
+    await bulkAction(['afu'], 'approve-free');
+    const e = byId('afu');
+    expect(e.visibility).toBe('free');         // not clobbered by startEncode
+    expect(e.blur).toBe('off');
+    expect(e.status).not.toBe('uploaded');     // entered the encode pipeline
+    expect(['encoding', 'failed', 'ready']).toContain(e.status);
+  });
+});
+
 describe('releaseScheduled honors approval', () => {
   it('releases an approved due draft but not an unapproved one', async () => {
     const past = 1; // a publishAt firmly in the past
