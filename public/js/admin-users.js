@@ -19,28 +19,45 @@ let allUsers = [];
 let hiddenUnverified = 0;
 let currentFilter = 'verified';
 
-function statusBadge(u) {
-  if (u.blocked) return '<span class="badge blk">Blocked</span>';
-  if (u.subscribed) return '<span class="badge sub">Subscriber</span>';
-  return '<span class="badge none">Free</span>';
+// Deterministic avatar tint from a name so each user has a stable colour chip.
+function tint(str) {
+  let h = 0; const s = String(str || '?');
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return `hsl(${h} 52% 42%)`;
+}
+function avatar(u, cls = '') {
+  const name = u.username || u.email || '?';
+  const initial = esc((name.trim().charAt(0) || '?').toUpperCase());
+  return `<span class="uavatar ${cls}" style="background:${tint(name)}">${initial}</span>`;
+}
+function statusBadges(u, { admin = false } = {}) {
+  const out = [];
+  if (admin) out.push('<span class="badge adm">Admin</span>');
+  if (u.blocked) out.push('<span class="badge blk">Blocked</span>');
+  if (u.subscribed) out.push('<span class="badge sub">Member</span>');
+  else out.push('<span class="badge none">Free</span>');
+  if (u.verified === false) out.push('<span class="badge warn">Unverified</span>');
+  return out.join(' ');
 }
 
 function renderList(filter = '') {
   const f = filter.toLowerCase();
   const rows = allUsers.filter((u) => !f || (u.username || '').toLowerCase().includes(f) || (u.email || '').toLowerCase().includes(f));
   $('ucount').textContent = `(${rows.length})`;
-  $('user-list').innerHTML = rows.length ? '' : '<p class="muted">No users.</p>';
+  const list = $('user-list');
+  if (!rows.length) { list.innerHTML = '<p class="muted">No users.</p>'; return; }
+  list.innerHTML = '';
   for (const u of rows) {
     const row = document.createElement('div');
     row.className = 'user-row';
     row.innerHTML = `
-      <span class="name" data-label="Name">${esc(u.username || '—')}</span>
-      <span class="em" data-label="Email">${esc(u.email || '')}</span>
-      <span class="country" data-label="Country">${u.country ? flagIcon(u.country) + ' ' + u.country : '—'}</span>
-      <span class="watched" data-label="Watched">${u.videosWatched} vids · ${u.minutesWatched}m</span>
-      <span class="status" data-label="Status">${statusBadge(u)}</span>`;
+      ${avatar(u)}
+      <span class="uname" data-label="User"><span class="un-main">${esc(u.username || '—')}</span><span class="un-sub">${esc(u.email || '')}</span></span>
+      <span class="ucountry" data-label="Country">${u.country ? flagIcon(u.country) + ' ' + u.country : '<span class="muted">—</span>'}</span>
+      <span class="uwatched" data-label="Watched">${u.videosWatched} vids · ${u.minutesWatched}m</span>
+      <span class="ustatus" data-label="Status">${statusBadges(u)}</span>`;
     row.addEventListener('click', () => showDetail(u.id));
-    $('user-list').appendChild(row);
+    list.appendChild(row);
   }
 }
 
@@ -54,21 +71,22 @@ async function showDetail(id) {
     ? d.history.map((h) => `<div class="tr"><span class="name"><a href="/watch?v=${encodeURIComponent(h.id)}" target="_blank">${esc(h.title)}</a></span><span class="num">${h.minutes}m</span></div>`).join('')
     : '<div class="tr"><span class="muted">No viewing history.</span></div>';
 
+  const isAdmin = Array.isArray(u.roles) && u.roles.includes('admin');
+  const ipChips = (s.ips || []).length
+    ? (s.ips || []).map((ip) => `<span class="ipchip"><code>${esc(ip)}</code>`
+        + `<a class="ip-btn" href="https://ipinfo.io/${encodeURIComponent(ip)}" target="_blank" rel="noopener" title="Look up ${esc(ip)} on ipinfo.io">lookup ↗</a>`
+        + `<button type="button" class="ip-btn ip-copy" data-ip="${esc(ip)}" title="Copy IP">copy</button></span>`).join('')
+    : '<span class="muted">—</span>';
+
   $('detail').innerHTML = `
-    <h2>${esc(u.username || 'Unnamed user')} ${d.blocked ? '<span class="badge blk">Blocked</span>' : ''}</h2>
-    <div class="kv" style="margin:12px 0 18px">
-      <b>Email</b><span>${esc(u.email || '—')}</span>
-      <b>Country</b><span>${s.lastCountry ? flagIcon(s.lastCountry) + ' ' + s.lastCountry : '—'}</span>
-      <b>IP addresses</b><span class="mono">${(s.ips || []).map(esc).join(', ') || '—'}</span>
-      <b>Membership</b><span>${membershipLabel(d.subscribed, u.membership)}</span>
-      <b>Verified</b><span>${u.verified ? 'Yes' : 'No'}</span>
-      <b>Joined</b><span>${fmtDate(u.createdAt)}</span>
-      <b>Last seen</b><span>${fmtDate(s.lastSeen)}</span>
-      <b>About</b><span>${esc(u.about || '—')}</span>
-      <b>Password sign-in</b><span>${u.hasPassword ? 'Enabled' : 'Not set'}</span>
-      <b>Recovery key</b><span>${u.hasRecoveryKey ? `Set${u.recoveryKeySetAt ? ` · ${fmtDate(u.recoveryKeySetAt)}` : ''}` : 'Not set'}</span>
+    <div class="u-head">
+      ${avatar(u, 'lg')}
+      <div class="u-head-main">
+        <h2>${esc(u.username || 'Unnamed user')}</h2>
+        <div class="u-head-badges">${statusBadges({ blocked: d.blocked, subscribed: d.subscribed, verified: u.verified }, { admin: isAdmin })}</div>
+        <div class="u-head-sub">${esc(u.email || '—')} · joined ${fmtDate(u.createdAt)} · last seen ${fmtDate(s.lastSeen)}</div>
+      </div>
     </div>
-    <p class="muted" style="margin:-10px 0 18px">Admins can reset a password here, but password hashes are never exposed in the browser.</p>
 
     <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">
       <div class="stat"><b>${s.videosWatched}</b><span>Videos watched</span></div>
@@ -76,25 +94,61 @@ async function showDetail(id) {
       <div class="stat"><b>${s.hours}</b><span>Hours watched</span></div>
     </div>
 
-    <h3 style="margin-top:18px">Viewing history</h3>
-    <div class="tbl">${history}</div>
-
-    <h3 style="margin-top:18px">Account actions</h3>
-    <div class="addrow" style="margin-bottom:10px">
-      <input id="newpw" type="text" placeholder="New password (min 4 chars)" />
-      <button id="reset-pw" class="btn sm">Reset password</button>
-      <span id="pw-msg" class="muted"></span>
+    <div class="u-grid">
+      <section class="u-sec">
+        <h3>👤 Identity</h3>
+        <div class="kv">
+          <b>Country</b><span>${s.lastCountry ? flagIcon(s.lastCountry) + ' ' + s.lastCountry : '—'}</span>
+          <b>Membership</b><span>${membershipLabel(d.subscribed, u.membership)}</span>
+          <b>Verified</b><span>${u.verified ? 'Yes ✓' : 'No'}</span>
+          <b>About</b><span>${esc(u.about || '—')}</span>
+        </div>
+        <div class="ip-block">
+          <div class="ip-label">IP addresses</div>
+          <div class="ipchips">${ipChips}</div>
+        </div>
+      </section>
+      <section class="u-sec">
+        <h3>🔐 Security</h3>
+        <div class="kv">
+          <b>Password sign-in</b><span>${u.hasPassword ? 'Enabled' : 'Not set'}</span>
+          <b>Recovery key</b><span>${u.hasRecoveryKey ? `Set${u.recoveryKeySetAt ? ` · ${fmtDate(u.recoveryKeySetAt)}` : ''}` : 'Not set'}</span>
+        </div>
+        <div class="addrow" style="margin-top:12px">
+          <input id="newpw" type="text" placeholder="New password (min 4 chars)" />
+          <button id="reset-pw" class="btn sm">Reset password</button>
+        </div>
+        <span id="pw-msg" class="muted"></span>
+        <p class="muted" style="margin:8px 0 0;font-size:12px">Password hashes are never exposed in the browser.</p>
+      </section>
     </div>
-    <button id="toggle-block" class="btn sm ghost">${d.blocked ? 'Unblock user' : 'Block user'}</button>
-    ${membershipButton(d.subscribed, u.membership)}
-    <button id="resync-stripe" class="btn sm ghost" title="Pull this user's real subscription from Stripe and activate (use after a missed webhook)">Resync Stripe</button>
-    <button id="delete-user" class="btn sm danger" style="margin-left:auto">Delete user</button>
 
-    <h3 style="margin-top:18px">Product access</h3>
-    <p class="muted" style="margin:-6px 0 10px">Grant or revoke access to a specific course/product, independent of membership.</p>
-    <div id="product-access"><p class="muted">Loading products…</p></div>
+    <section class="u-sec">
+      <h3>🎬 Viewing history</h3>
+      <div class="tbl">${history}</div>
+    </section>
+
+    <section class="u-sec">
+      <h3>🛠️ Actions</h3>
+      <div class="u-actions">
+        <button id="toggle-block" class="btn sm ghost">${d.blocked ? 'Unblock user' : 'Block user'}</button>
+        ${membershipButton(d.subscribed, u.membership)}
+        <button id="resync-stripe" class="btn sm ghost" title="Pull this user's real subscription from Stripe and activate (use after a missed webhook)">Resync Stripe</button>
+        <button id="delete-user" class="btn sm danger" style="margin-left:auto">Delete user</button>
+      </div>
+      <h4 style="margin:18px 0 4px">Product access</h4>
+      <p class="muted" style="margin:0 0 10px">Grant or revoke access to a specific course/product, independent of membership.</p>
+      <div id="product-access"><p class="muted">Loading products…</p></div>
+    </section>
   `;
   renderProductAccess(id, u.ownedProductIds || []);
+  $('detail').querySelectorAll('.ip-copy').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(b.dataset.ip);
+      const prev = b.textContent; b.textContent = 'copied ✓';
+      setTimeout(() => { b.textContent = prev; }, 1200);
+    } catch { /* clipboard blocked */ }
+  }));
 
   $('reset-pw').addEventListener('click', async () => {
     const np = $('newpw').value;

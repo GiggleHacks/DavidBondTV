@@ -141,15 +141,43 @@ a.tr:hover .name { color: var(--accent); }
 .country-menu .none { padding: 10px; color: var(--text-dim); font-size: 13px; }
 
 /* Users table */
-.user-row { display: grid; grid-template-columns: 1fr 1fr 90px 90px 80px; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); font-size: 13px; cursor: pointer; }
+.user-row { display: grid; grid-template-columns: 38px minmax(0,1fr) 120px 130px auto; gap: 12px; align-items: center; padding: 11px 6px; border-top: 1px solid var(--border); font-size: 13px; cursor: pointer; border-radius: 10px; transition: background .12s; }
 .user-row:first-child { border-top: none; }
-.user-row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
-.user-row .em { color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-row:hover { background: color-mix(in srgb, var(--section-accent, var(--accent)) 9%, transparent); }
+.user-row-head { color: var(--text-dim); font-weight: 600; }
+.user-row-head b { font-weight: 600; }
+/* Avatar chip (list + detail). */
+.uavatar { width: 38px; height: 38px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; color: #fff; flex: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+.uavatar.lg { width: 60px; height: 60px; font-size: 24px; }
+.uname { min-width: 0; display: flex; flex-direction: column; }
+.uname .un-main { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uname .un-sub { color: var(--text-dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ucountry, .uwatched { color: var(--text-dim); }
+.ustatus { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+/* Detail header card. */
+.u-head { display: flex; align-items: center; gap: 16px; padding: 4px 0 18px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+.u-head-main { min-width: 0; }
+.u-head-main h2 { margin: 0; }
+.u-head-badges { display: flex; gap: 5px; flex-wrap: wrap; margin: 6px 0; }
+.u-head-sub { color: var(--text-dim); font-size: 13px; }
+.u-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 18px 0; }
+.u-sec { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; margin-bottom: 16px; }
+.u-sec h3 { margin: 0 0 12px; font-size: 15px; }
+.u-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+/* IP chips with lookup + copy quick-actions. */
+.ip-block { margin-top: 14px; }
+.ip-label { color: var(--text-dim); font-size: 12px; font-weight: 600; margin-bottom: 7px; }
+.ipchips { display: flex; flex-direction: column; gap: 7px; }
+.ipchip { display: inline-flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 5px 8px; width: fit-content; max-width: 100%; }
+.ipchip code { font-family: 'Courier New', monospace; font-size: 13px; word-break: break-all; }
+.ip-btn { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); cursor: pointer; text-decoration: none; white-space: nowrap; }
+.ip-btn:hover { border-color: var(--section-accent, var(--accent)); color: var(--section-accent, var(--accent)); }
 .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
 .badge.sub { background: color-mix(in srgb, #22c55e 22%, transparent); color: #86efac; }
 .badge.blk { background: color-mix(in srgb, #ef4444 20%, transparent); color: #fca5a5; }
 .badge.none { background: var(--surface-2); color: var(--text-dim); }
 .badge.adm { background: linear-gradient(135deg, #ffd56b, #f4a300); color: #3a2600; }
+.badge.warn { background: color-mix(in srgb, #f59e0b 20%, transparent); color: #fcd34d; }
 .badge.anon { background: var(--surface-2); color: var(--text-dim); }
 
 /* --- Community inbox --- */
@@ -645,6 +673,7 @@ a.tr:hover .name { color: var(--accent); }
   .user-row-head {
     display: none;
   }
+  .u-grid { grid-template-columns: 1fr; }
   #user-list {
     display: flex;
     flex-direction: column;
