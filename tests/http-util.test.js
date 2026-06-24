@@ -38,6 +38,10 @@ describe('withSecurityHeaders', () => {
     });
   });
 
+  it('asserts HSTS so browsers stay on HTTPS', () => {
+    expect(withSecurityHeaders({})['Strict-Transport-Security']).toMatch(/^max-age=\d+/);
+  });
+
   it('preserves explicit response headers', () => {
     expect(withSecurityHeaders({ 'Cache-Control': 'no-store', 'X-Frame-Options': 'SAMEORIGIN' })).toMatchObject({
       'Cache-Control': 'no-store',

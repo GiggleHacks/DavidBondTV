@@ -2485,6 +2485,19 @@ function streamUpload(req, res, name, visibility = 'free', blur = '', category =
 
 const server = http.createServer(async (req, res) => {
   try {
+    // Force HTTPS (defense-in-depth behind Cloudflare/nginx). When the proxy
+    // reports the original client spoke plain HTTP, 301 to the https:// URL so the
+    // site never answers over an insecure channel. The header is absent for local
+    // dev and direct-origin health checks, so those are left untouched.
+    const fwdProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+    if (fwdProto === 'http') {
+      const host = req.headers['x-forwarded-host'] || req.headers.host;
+      if (host) {
+        res.writeHead(301, withSecurityHeaders({ Location: `https://${host}${req.url}` }));
+        return res.end();
+      }
+    }
+
     // Derive IP / country / user / admin-bypass / bot once for this request.
     const ctx = buildRequestContext(req);
 
