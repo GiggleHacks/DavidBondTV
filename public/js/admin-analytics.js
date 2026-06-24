@@ -19,44 +19,11 @@ const ccLabel = (cc) => `${flagIcon(cc)} ${COUNTRY_NAME[cc] ? `${COUNTRY_NAME[cc
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const nf = (n) => Number(n || 0).toLocaleString();
 
-// ---------- layout system ----------
-let currentLayout = localStorage.getItem('deck-layout') || DEFAULT_LAYOUT;
-if (!LAYOUTS[currentLayout]) currentLayout = DEFAULT_LAYOUT;
+// ---------- layout ----------
+// The redesign settled on a single clean Command Center layout that matches the
+// rest of the admin theme; the swappable-layout picker was removed.
+const currentLayout = DEFAULT_LAYOUT;
 let rawMetrics = null;
-
-function buildLayoutPicker() {
-  const wrap = document.createElement('div');
-  wrap.className = 'layout-picker';
-  wrap.id = 'layout-picker';
-  for (const [id, layout] of Object.entries(LAYOUTS)) {
-    const btn = document.createElement('button');
-    btn.className = 'layout-opt' + (id === currentLayout ? ' on' : '');
-    btn.dataset.layout = id;
-    btn.title = layout.label;
-    btn.innerHTML = `<span class="layout-icon">${layout.icon}</span><span class="layout-name">${layout.label}</span>`;
-    btn.addEventListener('click', () => switchLayout(id));
-    wrap.appendChild(btn);
-  }
-  return wrap;
-}
-
-function switchLayout(id) {
-  if (!LAYOUTS[id]) return;
-  currentLayout = id;
-  try { localStorage.setItem('deck-layout', id); } catch { /* ignore */ }
-  const sec = document.querySelector('[data-panel="overview"]');
-  if (sec) {
-    sec.innerHTML = LAYOUTS[id].build();
-    sec.dataset.layout = id;
-  }
-  document.querySelectorAll('.layout-opt').forEach((b) => b.classList.toggle('on', b.dataset.layout === id));
-  // Re-populate with cached data.
-  refreshAll();
-}
-
-async function refreshAll() {
-  try { await Promise.all([loadOverview(), loadCountries('viewers'), loadExtras(), loadVisitors(), loadMetrics()]); } catch { /* ignore */ }
-}
 
 function applyLayoutHook() {
   const hook = LAYOUTS[currentLayout]?.postUpdate;
@@ -429,10 +396,6 @@ async function main() {
     sec.innerHTML = LAYOUTS[currentLayout].build();
     sec.dataset.layout = currentLayout;
   }
-
-  // Insert the layout picker into the deck-head.
-  const head = document.querySelector('.deck-head');
-  if (head) head.appendChild(buildLayoutPicker());
 
   wireTabs(); wireMapModes(); wireGeo();
   tickClock(); setInterval(tickClock, 1000);

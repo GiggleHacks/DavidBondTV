@@ -9,24 +9,14 @@
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/css/admin.css" />
   <link rel="stylesheet" href="/css/deck.css" />
-  <link rel="stylesheet" href="/css/dashboard-themes.css" />
   <script>document.documentElement.classList.add('admin-auth-pending');</script>
-  <script type="module" src="/js/theme-switcher.js"></script>
 </head>
-<body data-admin-no-header>
+<body>
   <div class="admin-wrap wide admin-app-shell deck">
     <header class="admin-bar" id="admin-shell"></header>
 
     <main id="app">
-      <!-- ============ header strip ============ -->
-      <div class="deck-head">
-        <div class="deck-brand glow">DAVID&nbsp;BOND&nbsp;TV<small>// ADMIN CONTROL DECK v2.0</small></div>
-        <div class="deck-sys">
-          <div><span class="deck-dot"></span>SYSTEM <b>ONLINE</b> · davidbondtv.com</div>
-          <div>NODE v22 · <span id="deck-clock">--:--:-- UTC</span></div>
-          <div><span class="deck-pill">GEOIP: CLOUDFLARE CF-IPCountry</span></div>
-        </div>
-      </div>
+      <!-- Page header (icon + title) is injected by admin-shell.js -->
 
       <!-- ============ tab bar ============ -->
       <div class="deck-tabs" id="deck-tabs">
@@ -129,8 +119,6 @@
           <div class="dsrc">SOURCE: <b>analytics/videos.json</b> · ranked by distinct views · titles via manifest</div>
         </div>
       </section>
-
-      <div class="deck-foot">┌─ DAVID BOND TV CONTROL DECK ─┐ &nbsp; all timestamps UTC &nbsp; · &nbsp; hover <b>?</b> on any panel for methodology &nbsp; └─ READY <span class="cur"></span> ─┘</div>
     </main>
   </div>
   <script type="module" src="/js/admin-analytics.js"></script>
