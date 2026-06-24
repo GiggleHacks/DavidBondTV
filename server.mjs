@@ -2157,7 +2157,13 @@ const server = http.createServer(async (req, res) => {
         // Machine-to-machine publish: /api/sync/* carries its own Bearer SYNC_TOKEN
         // auth (and 404s when SYNC_TOKEN is unset), so the browser-oriented site
         // gate must not block the local→server video push.
-        || rawPath.startsWith('/api/sync/');
+        || rawPath.startsWith('/api/sync/')
+        // Telegram bot webhook: Telegram calls this server-to-server and it has
+        // its own ?token=<TELEGRAM_WEBHOOK_SECRET> auth, so the site gate (a
+        // browser cookie check) must not block it.
+        || rawPath === '/api/telegram/webhook'
+        // Stripe webhook is likewise server-to-server with its own signature auth.
+        || rawPath === '/api/pay/stripe/webhook';
       if (!gateBypass) {
         const cookies = parseCookies(req.headers['cookie'] || '');
         if (cookies['siteauth'] !== SITE_AUTH_VALUE) {
