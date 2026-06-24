@@ -4,8 +4,9 @@
 // plus per-row edit, thumbnail replace, and delete.
 import { requireAdmin } from './god-auth.js';
 import { ADMIN_PATHS } from './admin-paths.js';
-import { COUNTRIES } from './countries.js';
-import { attachEmojiPicker } from './emoji-picker.js';
+import { closeAfterAction, togglePanel } from './admin-dropdowns.js';
+import { buildCategoryChoices, choiceIcon, choiceTone } from './admin-filter-choices.js';
+import { categoryDisplayName, categoryLabelWithVisual, categoryVisualText } from './category-visuals.js';
 
 const $ = (id) => document.getElementById(id);
 const PAGE = 50;
@@ -29,11 +30,6 @@ const isApprovedDraft = (v) => v.published === false && approvalOf(v) === 'appro
 const chunk = (a, n) => { const o = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o; };
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-// <option> list for the category flag picker: "no flag" + every country, value
-// = lowercase ISO code (matches the SVG flag filenames). Built once.
-const FLAG_OPTIONS = '<option value="">— No flag —</option>'
-  + COUNTRIES.map((c) => `<option value="${c.code.toLowerCase()}">${esc(c.name)} (${c.code})</option>`).join('');
-
 let all = [];
 let filtered = [];
 let page = 0;
@@ -53,6 +49,7 @@ async function load() {
 }
 
 const catName = (slug) => (cats.find((c) => c.slug === slug) || {}).name || '';
+const catBySlug = (slug) => cats.find((c) => c.slug === slug) || null;
 
 function applyFilter() {
   const q = $('search').value.trim().toLowerCase();
@@ -85,22 +82,30 @@ function syncFiltersBadge() {
 // (Re)build the category filter dropdown from the loaded categories, preserving
 // the current selection. "All categories" clears the filter.
 function renderCatFilter() {
-  const sel = $('cat-filter');
-  if (!sel) return;
-  const cur = sel.value;
-  const opts = ['<option value="">All categories</option>']
-    .concat(cats.map((c) => `<option value="${esc(c.slug)}">${esc(c.name)}</option>`));
-  // An "Uncategorized" bucket so videos with no category are reachable for bulk ops.
-  if (all.some((v) => !v.category)) opts.push('<option value="__none__">— Uncategorized —</option>');
-  sel.innerHTML = opts.join('');
-  sel.value = [...sel.options].some((o) => o.value === cur) ? cur : '';
+  const input = $('cat-filter');
+  const group = $('cat-filter-group');
+  if (!input || !group) return;
+  const cur = input.value;
+  const choices = buildCategoryChoices(cats, all);
+  const valid = choices.some((choice) => choice.value === cur) ? cur : '';
+  input.value = valid;
+  group.replaceChildren(...choices.map((choice) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `ff-chip${choice.value === valid ? ' active' : ''}`;
+    b.dataset.filter = 'cat-filter';
+    b.dataset.value = choice.value;
+    b.dataset.tone = choiceTone(choice, 'category');
+    b.innerHTML = `<span class="ff-chip-icon" aria-hidden="true">${esc(choiceIcon(choice, '#'))}</span><span class="ff-chip-label">${esc(choice.label)}</span>`;
+    return b;
+  }));
 }
 
 function renderCategoryMenu() {
   const panel = $('category-menu-panel');
   if (!panel) return;
   const items = [{ slug: '__none__', name: 'Uncategorized' }]
-    .concat(cats.map((c) => ({ slug: c.slug, name: c.name })));
+    .concat(cats.map((c) => ({ slug: c.slug, name: categoryLabelWithVisual(c) })));
   panel.replaceChildren(...items.map((it) => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -147,7 +152,7 @@ function badges(v) {
   else if (st === 'draft-approved') out.push('<span class="vb vb-appr">Draft · Approved</span>');
   else out.push('<span class="vb vb-draft">Draft · Unapproved</span>');
   if (v.visibility === 'premium') out.push('<span class="vb vb-prem">Premium</span>');
-  if (v.category && catName(v.category)) out.push(`<span class="vb vb-cat">${esc(catName(v.category))}</span>`);
+  if (v.category && catBySlug(v.category)) out.push(`<span class="vb vb-cat">${esc(categoryLabelWithVisual(catBySlug(v.category)))}</span>`);
   return out.join(' ');
 }
 
@@ -240,7 +245,7 @@ function libRow(v) {
   row.querySelector('.meta').innerHTML = `${esc(v.durLabel || '')} · ${esc(v.uploaded || '')} ${badges(v)}`.trim();
 
   const rmBtn = row.querySelector('.row-menu-btn');
-  rmBtn.addEventListener('click', () => togglePanel(rmBtn, row.querySelector('.row-menu-panel')));
+  rmBtn.addEventListener('click', () => togglePanel(rmBtn, row.querySelector('.row-menu-panel'), closeAllPopovers));
   row.querySelector('.row-quick').addEventListener('click', () => { closeAllPopovers(); startQuickEdit(row, v); });
 
   const check = row.querySelector('.row-check');
@@ -314,80 +319,8 @@ async function publishApproved() {
   await load();
 }
 
-// --- category manager ---------------------------------------------------------
-async function catAction(body) {
-  const res = await fetch('/api/admin/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (res.status === 401) { location.reload(); return null; }
-  return res.json().catch(() => ({}));
-}
-function renderCats() {
-  renderCatFilter(); // keep the Manage-videos category filter in sync with edits
-  const wrap = $('cat-list');
-  if (!wrap) return;
-  wrap.replaceChildren();
-  if (!cats.length) { wrap.innerHTML = '<span class="muted">No categories yet.</span>'; return; }
-  for (const c of cats) {
-    const row = document.createElement('div');
-    row.className = 'cat-row';
-    const flagThumb = c.flag
-      ? `<img class="cat-flag-img" src="/vendor/flags/4x3/${c.flag}.svg" alt="" onerror="this.remove()">`
-      : '<span class="cat-flag-none" aria-hidden="true"></span>';
-    row.innerHTML = `${flagThumb}
-      <input class="cat-name" value="${esc(c.name)}" maxlength="40" />
-      <button class="btn sm ghost cat-emoji emoji-btn" type="button" title="Add emoji to name" aria-label="Add emoji to name">😊</button>
-      <span class="muted cat-slug">${esc(c.slug)}</span>
-      <span class="cat-icon-group">
-        <input class="cat-icon-input" value="${esc(c.icon || '')}" maxlength="8" placeholder="—" title="Sidebar icon emoji" aria-label="Sidebar icon" />
-        <button class="btn sm ghost cat-icon-emoji emoji-btn" type="button" title="Pick sidebar icon" aria-label="Pick sidebar icon">🎨</button>
-        <button class="btn sm ghost cat-icon-save" type="button">Set icon</button>
-      </span>
-      <select class="cat-flag" aria-label="Category flag">${FLAG_OPTIONS}</select>
-      <button class="btn sm ghost cat-save">Rename</button>
-      <button class="btn sm danger cat-del">Remove</button>`;
-    attachEmojiPicker(row.querySelector('.cat-name'), row.querySelector('.cat-emoji'));
-    attachEmojiPicker(row.querySelector('.cat-icon-input'), row.querySelector('.cat-icon-emoji'));
-    row.querySelector('.cat-icon-save').addEventListener('click', async () => {
-      const icon = row.querySelector('.cat-icon-input').value.trim();
-      const d = await catAction({ action: 'seticon', slug: c.slug, icon });
-      if (d && d.ok) { cats = d.categories; render(); renderCats(); }
-      else if (d) alert(d.error || 'Could not set icon.');
-    });
-    row.querySelector('.cat-flag').value = c.flag || '';
-    row.querySelector('.cat-flag').addEventListener('change', async (e) => {
-      const d = await catAction({ action: 'setflag', slug: c.slug, flag: e.target.value });
-      if (d && d.ok) { cats = d.categories; render(); renderCats(); }
-      else if (d) alert(d.error || 'Could not set flag.');
-    });
-    row.querySelector('.cat-save').addEventListener('click', async () => {
-      const name = row.querySelector('.cat-name').value.trim();
-      const d = await catAction({ action: 'rename', slug: c.slug, name });
-      if (d && d.ok) { cats = d.categories; render(); renderCats(); }
-      else if (d) alert(d.error || 'Rename failed.');
-    });
-    row.querySelector('.cat-del').addEventListener('click', async () => {
-      if (!confirm(`Remove category "${c.name}"? Videos keep their tag but it won't be listed.`)) return;
-      const d = await catAction({ action: 'remove', slug: c.slug });
-      if (d && d.ok) { cats = d.categories; render(); renderCats(); }
-      else if (d) alert(d.error || 'Remove failed.');
-    });
-    wrap.appendChild(row);
-  }
-}
-function wireCats() {
-  const btn = $('cat-add-btn');
-  if (!btn) return;
-  const submit = async () => {
-    const name = $('cat-new').value.trim();
-    if (!name) return;
-    const d = await catAction({ action: 'add', name });
-    if (d && d.ok) { cats = d.categories; $('cat-new').value = ''; $('cat-msg').textContent = ''; render(); renderCats(); }
-    else if (d) $('cat-msg').textContent = d.error || 'Could not add.';
-  };
-  btn.addEventListener('click', submit);
-  $('cat-new').addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-  const emo = $('cat-new-emoji');
-  if (emo) attachEmojiPicker($('cat-new'), emo); // pick emoji into the new-category name
-}
+// Category management lives on /god-categories.html (unified visual picker).
+// This page only consumes categories for the filter chips + per-video tags.
 
 // --- popover / dropdown-menu infrastructure -----------------------------------
 // Close every open popover (selection-bar menus, row ⋯ menus, filters popover),
@@ -406,28 +339,38 @@ function closeAllPopovers(except) {
   }
 }
 
-// Toggle one panel: close the others, flip this one, sync aria-expanded.
-function togglePanel(btn, panel) {
-  if (!panel) return;
-  const willOpen = panel.hidden;
-  closeAllPopovers(willOpen ? panel : null);
-  panel.hidden = !willOpen;
-  btn.setAttribute('aria-expanded', String(willOpen));
+function syncFilterButtons(filterId) {
+  document.querySelectorAll(`.ff-chip[data-filter="${filterId}"]`).forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.value === ($(filterId)?.value || ''));
+  });
+}
+
+function chooseFilter(filterId, value) {
+  const input = $(filterId);
+  if (!input) return;
+  input.value = value;
+  syncFilterButtons(filterId);
+  applyFilter();
+  closeAllPopovers();
 }
 
 function wire() {
   $('search').addEventListener('input', applyFilter);
-  $('cat-filter')?.addEventListener('change', applyFilter);
-  $('state-filter')?.addEventListener('change', applyFilter);
-  $('access-filter')?.addEventListener('change', applyFilter);
 
   // Filters popover
   const fb = $('filters-btn');
-  fb?.addEventListener('click', () => togglePanel(fb, $('filters-popover')));
-  $('filters-clear')?.addEventListener('click', () => {
-    ['state-filter', 'access-filter', 'cat-filter'].forEach((id) => { if ($(id)) $(id).value = ''; });
-    applyFilter();
+  fb?.addEventListener('click', () => togglePanel(fb, $('filters-popover'), closeAllPopovers));
+  $('filters-popover')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.ff-chip[data-filter]');
+    if (!btn) return;
+    chooseFilter(btn.dataset.filter, btn.dataset.value || '');
   });
+  $('filters-clear')?.addEventListener('click', closeAfterAction(() => {
+    ['state-filter', 'access-filter', 'cat-filter'].forEach((id) => { if ($(id)) $(id).value = ''; });
+    ['state-filter', 'access-filter', 'cat-filter'].forEach(syncFilterButtons);
+    renderCatFilter();
+    applyFilter();
+  }, closeAllPopovers));
 
   // Review strip
   $('review-all')?.addEventListener('click', () => startReview(all.filter(isUnapprovedDraft).map((v) => v.id)));
@@ -444,7 +387,7 @@ function wire() {
 
   // Selection-bar dropdown menus
   document.querySelectorAll('.selection-bar .menu-btn').forEach((btn) => {
-    btn.addEventListener('click', () => togglePanel(btn, btn.nextElementSibling));
+    btn.addEventListener('click', () => togglePanel(btn, btn.nextElementSibling, closeAllPopovers));
   });
 
   // Bulk actions (publish/approve/premium/free/unapprove/unpublish/delete)
@@ -529,8 +472,6 @@ function wireRubberBand() {
 async function main() {
   await requireAdmin();
   wire();
-  wireCats();
   await load();
-  renderCats();
 }
 main();

@@ -24,6 +24,7 @@
         <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-coupons.html">Coupons</a>
         <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-users.html">Users</a>
         <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-community.html">Community</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-telegram.html">Telegram</a>
         <a class="back" href="/">← Site</a>
       </nav>
     </header>
@@ -57,26 +58,35 @@
                 <span aria-hidden="true">⚲</span> Filters <span id="filters-badge" class="filters-badge" hidden>0</span>
               </button>
               <div id="filters-popover" class="filters-popover" hidden role="dialog" aria-label="Filter videos">
-                <label class="ff-label">State
-                  <select id="state-filter">
-                    <option value="">All states</option>
-                    <option value="draft-unapproved">Draft · Unapproved</option>
-                    <option value="draft-approved">Draft · Approved</option>
-                    <option value="published">Published (live)</option>
-                    <option value="processing">Processing</option>
-                    <option value="failed">Failed</option>
-                  </select>
-                </label>
-                <label class="ff-label">Access
-                  <select id="access-filter">
-                    <option value="">All access</option>
-                    <option value="free">Free</option>
-                    <option value="premium">Premium</option>
-                  </select>
-                </label>
-                <label class="ff-label">Category
-                  <select id="cat-filter"></select>
-                </label>
+                <input id="state-filter" type="hidden" value="" />
+                <input id="access-filter" type="hidden" value="" />
+                <input id="cat-filter" type="hidden" value="" />
+
+                <section class="ff-section" aria-labelledby="state-filter-title">
+                  <div id="state-filter-title" class="ff-label">State</div>
+                  <div id="state-filter-group" class="ff-choices">
+                    <button class="ff-chip active" type="button" data-filter="state-filter" data-value="" data-tone="all"><span class="ff-chip-icon" aria-hidden="true">◌</span><span class="ff-chip-label">All states</span></button>
+                    <button class="ff-chip" type="button" data-filter="state-filter" data-value="draft-unapproved" data-tone="draft"><span class="ff-chip-icon" aria-hidden="true">◔</span><span class="ff-chip-label">Draft · Unapproved</span></button>
+                    <button class="ff-chip" type="button" data-filter="state-filter" data-value="draft-approved" data-tone="approved"><span class="ff-chip-icon" aria-hidden="true">✓</span><span class="ff-chip-label">Draft · Approved</span></button>
+                    <button class="ff-chip" type="button" data-filter="state-filter" data-value="published" data-tone="live"><span class="ff-chip-icon" aria-hidden="true">●</span><span class="ff-chip-label">Published (live)</span></button>
+                    <button class="ff-chip" type="button" data-filter="state-filter" data-value="processing" data-tone="processing"><span class="ff-chip-icon" aria-hidden="true">◔</span><span class="ff-chip-label">Processing</span></button>
+                    <button class="ff-chip" type="button" data-filter="state-filter" data-value="failed" data-tone="failed"><span class="ff-chip-icon" aria-hidden="true">✕</span><span class="ff-chip-label">Failed</span></button>
+                  </div>
+                </section>
+
+                <section class="ff-section" aria-labelledby="access-filter-title">
+                  <div id="access-filter-title" class="ff-label">Access</div>
+                  <div id="access-filter-group" class="ff-choices">
+                    <button class="ff-chip active" type="button" data-filter="access-filter" data-value="" data-tone="all"><span class="ff-chip-icon" aria-hidden="true">◌</span><span class="ff-chip-label">All access</span></button>
+                    <button class="ff-chip" type="button" data-filter="access-filter" data-value="free" data-tone="free"><span class="ff-chip-icon" aria-hidden="true">🔓</span><span class="ff-chip-label">Free</span></button>
+                    <button class="ff-chip" type="button" data-filter="access-filter" data-value="premium" data-tone="premium"><span class="ff-chip-icon" aria-hidden="true">★</span><span class="ff-chip-label">Premium</span></button>
+                  </div>
+                </section>
+
+                <section class="ff-section" aria-labelledby="cat-filter-title">
+                  <div id="cat-filter-title" class="ff-label">Category</div>
+                  <div id="cat-filter-group" class="ff-choices"></div>
+                </section>
                 <div class="ff-foot">
                   <button id="filters-clear" class="ff-clear" type="button">Clear all</button>
                   <a class="ff-manage" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-categories.html">Manage categories →</a>
