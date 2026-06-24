@@ -63,6 +63,7 @@ function wireTabs() {
     const tab = btn.dataset.tab;
     bar.querySelectorAll('.deck-tab').forEach((b) => b.classList.toggle('on', b === btn));
     document.querySelectorAll('.deck-panel-tab').forEach((p) => p.classList.toggle('on', p.dataset.panel === tab));
+    if (tab === 'financial') loadFinancial().catch(() => {});
   });
 }
 
@@ -147,7 +148,8 @@ function drawDonut(svg, legendEl, countries) {
 // ---------- data loaders ----------
 let countryData = { viewers: {}, subscribers: {}, blocked: {} };
 let trafficMarkers = [];
-let disposeGlobe = null;
+let globeCtl = null;       // { dispose, update } from renderGlobe
+let currentMapMode = 'viewers';
 let selectedTrafficMarker = null;
 let renderGlobe = null;
 
@@ -270,18 +272,24 @@ function renderTrafficDetail(m) {
     </div>`;
 }
 function drawMap(mode) {
+  currentMapMode = mode;
   const counts = mapCounts(mode);
   const markers = mode === 'blocked'
     ? trafficMarkers.filter((m) => m.type === 'blocked')
     : mode === 'subscribers'
       ? trafficMarkers.filter((m) => m.subscriber && m.type !== 'blocked')
       : trafficMarkers.filter((m) => m.type !== 'blocked');
-  if (disposeGlobe) { disposeGlobe(); disposeGlobe = null; }
   if (renderGlobe) {
-    disposeGlobe = renderGlobe($('map'), markers, {
-      onHover: (m) => { $('map-hover').innerHTML = m ? trafficLabel(m) : ''; },
-      onSelect: renderTrafficDetail,
-    });
+    // Create once, then update markers in place on live refresh / mode switch so the
+    // camera, auto-rotation, and WebGL context persist (no flicker, no reset).
+    if (!globeCtl) {
+      globeCtl = renderGlobe($('map'), markers, {
+        onHover: (m) => { $('map-hover').innerHTML = m ? trafficLabel(m) : ''; },
+        onSelect: renderTrafficDetail,
+      });
+    } else {
+      globeCtl.update(markers);
+    }
   } else {
     const map = $('map');
     if (map) map.innerHTML = '<div class="globe-fallback"><p class="muted">Traffic globe is unavailable. Marker details remain available below.</p></div>';
@@ -317,6 +325,75 @@ async function loadCountries(mode) {
   drawDonut($('donut'), $('donut-legend'), countryData.viewers);
 }
 
+// Live globe: refetch just the traffic markers and update the globe in place
+// (no rebuild) so new visitors appear in near-real-time. Only runs once the
+// globe has been created by the first loadCountries().
+async function refreshTraffic() {
+  if (!globeCtl) return;
+  const traffic = await api(`/api/admin/analytics/traffic?limit=1000&mode=${encodeURIComponent(currentMapMode)}`);
+  trafficMarkers = traffic.markers || [];
+  drawMap(currentMapMode);
+}
+
+// ---------- financial ----------
+function fmtMoney(cents, currency) {
+  const v = (cents || 0) / 100;
+  const cur = (currency || 'usd').toUpperCase();
+  const body = v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return cur === 'USD' ? `$${body}` : `${body} ${cur}`;
+}
+
+function drawRevenueChart(svg, series, currency) {
+  if (!svg) return;
+  const data = Array.isArray(series) ? series : [];
+  const W = 640, H = 200, pad = 10;
+  if (!data.length || !data.some((d) => d.cents > 0)) {
+    svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" fill="#64748b" font-size="13" text-anchor="middle" font-family="monospace">no revenue recorded yet</text>`;
+    return;
+  }
+  const max = Math.max(1, ...data.map((d) => d.cents));
+  const bw = (W - pad * 2) / data.length;
+  svg.innerHTML = data.map((d, i) => {
+    const h = Math.round((d.cents / max) * (H - pad * 2));
+    const x = pad + i * bw;
+    return `<rect x="${(x + bw * 0.16).toFixed(1)}" y="${H - pad - h}" width="${(bw * 0.68).toFixed(1)}" height="${h}" rx="2" fill="#34d399" opacity="0.85"><title>${d.month}: ${fmtMoney(d.cents, currency)}</title></rect>`;
+  }).join('');
+}
+
+async function loadFinancial() {
+  let d;
+  try { d = await api('/api/admin/financial'); } catch { return; }
+  if (!d || !d.revenue) return;
+  const cur = d.currency || 'usd';
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  set('fin-revenue', fmtMoney(d.revenue.total, cur));
+  set('fin-revenue-sub', `subs ${fmtMoney(d.revenue.subscriptions, cur)} · courses ${fmtMoney(d.revenue.products, cur)}`);
+  set('fin-sales', nf(d.sales.total));
+  set('fin-sales-sub', `${nf(d.sales.subscriptions)} subscription · ${nf(d.sales.products)} course`);
+  const s = d.subscriptions;
+  set('fin-subs', nf(s.active + s.trialing + s.comp + s.pastDue));
+  set('fin-subs-sub', `${nf(s.trialing)} trialing · ${nf(s.canceling)} canceling`);
+  set('fin-paid', nf(d.users.paid));
+  set('fin-paid-sub', `${nf(d.users.free)} free · ${d.users.conversion}% conversion`);
+  drawRevenueChart($('fin-chart'), d.revenue.series, cur);
+  const rows = [
+    ['Active', s.active, '#34d399'],
+    ['Trialing', s.trialing, '#f59e0b'],
+    ['Past due', s.pastDue, '#fb7185'],
+    ['Comp (admin)', s.comp, '#818cf8'],
+    ['Canceling', s.canceling, '#22d3ee'],
+    ['Canceled', s.canceled, '#64748b'],
+  ];
+  const max = Math.max(1, ...rows.map((r) => r[1]));
+  const el = $('fin-subs-breakdown');
+  if (el) {
+    el.innerHTML = rows.map(([label, n, c]) => `
+      <div class="rank-row"><span>${esc(label)}</span>
+      <span class="bar"><i style="width:${Math.round((n / max) * 100)}%;background:${c}"></i></span>
+      <span class="n">${nf(n)}</span></div>`).join('');
+  }
+}
+
 function fmtAgo(t) {
   const s = Math.max(0, Math.round((Date.now() - t) / 1000));
   if (s < 60) return `${s}s ago`;
@@ -327,21 +404,25 @@ function fmtAgo(t) {
 async function loadVisitors() {
   const box = $('visitors');
   if (!box) return;
-  const d = await api('/api/admin/analytics/visitors?limit=200');
+  const d = await api('/api/admin/analytics/visitors?limit=400');
   const events = d.events || [];
-  const head = `<div class="h"><span>When</span><span>IP</span><span>User · video</span><span><a href="${ADMIN_PATHS.logs}">Logs →</a></span></div>`;
+  const head = `<div class="h"><span>When</span><span>IP</span><span>Country</span><span>User · video</span><span><a href="${ADMIN_PATHS.logs}">Logs →</a></span></div>`;
   if (!events.length) {
-    if (!box.innerHTML.includes('No visitor activity')) box.innerHTML = head + '<div class="row"><span class="ts">—</span><span></span><span class="who">No visitor activity recorded yet.</span><span></span></div>';
+    if (!box.innerHTML.includes('No visitor activity')) box.innerHTML = head + '<div class="row"><span class="ts">—</span><span></span><span></span><span class="who">No visitor activity recorded yet.</span><span></span></div>';
     return;
   }
   const newHTML = head + events.map((e) => {
-    const loc = e.cc ? flagIcon(e.cc) : '';
+    const cname = e.country || COUNTRY_NAME[e.cc] || e.cc || '';
+    const flag = e.cc ? `<span class="cflag" title="${esc(cname || e.cc)}">${flagIcon(e.cc)}</span>` : '';
     const who = e.blocked ? '<span class="blk">⛔ blocked</span>' : (e.user ? esc(e.user) : 'guest');
-    const vid = e.video ? ' · ' + esc(e.video) : (e.reason ? ' · ' + esc(e.reason) : '');
+    // Server resolves videoTitle (null when unknown) — never shows the raw UUID.
+    const vidLabel = e.video ? esc(e.video) : (e.videoId ? '(removed video)' : '');
+    const vid = vidLabel ? ' · ' + vidLabel : (e.reason ? ' · ' + esc(e.reason) : '');
     return `<div class="row">
       <span class="ts" title="${new Date(e.t).toLocaleString()}">${fmtAgo(e.t)}</span>
       <span class="ip">${esc(e.ip || '—')}</span>
-      <span class="who"><span class="cflag">${loc}</span>${who}${vid}</span>
+      <span class="cc">${flag}<span class="cn">${esc(cname || '—')}</span></span>
+      <span class="who">${who}${vid}</span>
       <span class="sec">${e.seconds ? e.seconds + 's' : '—'}</span>
     </div>`;
   }).join('');
@@ -598,6 +679,11 @@ async function main() {
   setInterval(() => { loadVisitors().catch(() => {}); }, 10000);
   setInterval(() => { loadMetrics().catch(() => {}); }, 10000);
   setInterval(() => { loadLive().catch(() => {}); }, 2500); // live CPU/memory graphs
+  setInterval(() => { refreshTraffic().catch(() => {}); }, 12000); // live globe markers
+  setInterval(() => {
+    const p = document.querySelector('.deck-panel-tab[data-panel="financial"]');
+    if (p && p.classList.contains('on')) loadFinancial().catch(() => {});
+  }, 20000); // auto-refresh financial while its tab is open
   try {
     await Promise.all([loadOverview(), loadCountries('viewers'), loadGeo(), loadExtras(), loadVisitors(), loadMetrics(), loadLive()]);
   } catch { /* a 401 mid-flight reloads into the gate */ }

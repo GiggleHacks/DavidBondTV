@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createRequestContext } from '../lib/request-context.mjs';
+import { createRequestContext, isBotUa } from '../lib/request-context.mjs';
 
 function req(headers = {}, url = '/watch?v=x') {
   return {
@@ -65,5 +65,28 @@ describe('request context enrichment', () => {
     expect(ctx.geo.city).toBeNull();
     expect(ctx.geo.lat).toBeNull();
     expect(ctx.isBot).toBe(true);
+  });
+});
+
+describe('bot detection', () => {
+  it('isBotUa flags crawlers, AI bots, headless, and empty UAs; passes real browsers', () => {
+    const CHROME = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36';
+    expect(isBotUa('')).toBe(true);
+    expect(isBotUa(undefined)).toBe(true);
+    expect(isBotUa('Googlebot/2.1 (+http://www.google.com/bot.html)')).toBe(true);
+    expect(isBotUa('GPTBot/1.0')).toBe(true);
+    expect(isBotUa('Mozilla/5.0 (compatible; ClaudeBot/1.0)')).toBe(true);
+    expect(isBotUa('HeadlessChrome/126.0')).toBe(true);
+    expect(isBotUa('python-requests/2.31')).toBe(true);
+    expect(isBotUa(CHROME)).toBe(false);
+  });
+
+  it('honors the Cloudflare bot-score header when present (low score = bot)', () => {
+    const CHROME = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36';
+    const build = createRequestContext({ geoip: { lookup: () => null }, accounts: accounts(null), trustCloudflare: true });
+    expect(build(req({ 'user-agent': CHROME, 'cf-bot-score': '5' })).isBot).toBe(true);   // low → bot
+    expect(build(req({ 'user-agent': CHROME, 'cf-bot-score': '95' })).isBot).toBe(false); // high → human
+    expect(build(req({ 'user-agent': CHROME, 'cf-verified-bot': 'true' })).isBot).toBe(true);
+    expect(build(req({ 'user-agent': CHROME })).isBot).toBe(false); // no header → UA decides
   });
 });

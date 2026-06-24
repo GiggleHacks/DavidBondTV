@@ -4,6 +4,10 @@ import { flagIcon } from './world-data.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// Hub the live traffic arcs flow toward — roughly the US (where the origin lives).
+const HUB = [38, -97];
+const COLORS = { watch: 0x22d3ee, subscriber: 0xeab308, blocked: 0xfb7185 };
+
 function latLonToVector(lat, lon, radius = 2.02) {
   const phi = (90 - lat) * Math.PI / 180;
   const theta = (lon + 180) * Math.PI / 180;
@@ -48,9 +52,9 @@ function fallback(container, markers, onSelect) {
 }
 
 export function renderGlobe(container, markers = [], { onSelect, onHover } = {}) {
-  if (!container) return;
+  if (!container) return { dispose() {}, update() {} };
   container.innerHTML = '';
-  if (!window.WebGLRenderingContext) { fallback(container, markers, onSelect); return; }
+  if (!window.WebGLRenderingContext) { fallback(container, markers, onSelect); return { dispose() {}, update(next) { fallback(container, next || [], onSelect); } }; }
 
   const canvas = document.createElement('canvas');
   canvas.className = 'traffic-globe-canvas';
@@ -61,7 +65,7 @@ export function renderGlobe(container, markers = [], { onSelect, onHover } = {})
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   } catch {
     fallback(container, markers, onSelect);
-    return;
+    return { dispose() {}, update(next) { fallback(container, next || [], onSelect); } };
   }
 
   const scene = new THREE.Scene();
@@ -78,33 +82,74 @@ export function renderGlobe(container, markers = [], { onSelect, onHover } = {})
   sun.position.set(4, 2, 6);
   scene.add(sun);
 
-  const halo = new THREE.Mesh(
+  // Atmosphere: an inner rim + a soft additive outer glow shell.
+  scene.add(new THREE.Mesh(
     new THREE.SphereGeometry(2.08, 96, 32),
-    new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: .08, side: THREE.BackSide }),
-  );
-  scene.add(halo);
+    new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: .10, side: THREE.BackSide }),
+  ));
+  scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(2.28, 64, 32),
+    new THREE.MeshBasicMaterial({ color: 0x2563eb, transparent: true, opacity: .07, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+  ));
 
-  const group = new THREE.Group();
-  scene.add(group);
-  const markerGeo = new THREE.SphereGeometry(.035, 18, 12);
-  const markerMats = {
-    watch: new THREE.MeshBasicMaterial({ color: 0x22d3ee }),
-    subscriber: new THREE.MeshBasicMaterial({ color: 0xeab308 }),
-    blocked: new THREE.MeshBasicMaterial({ color: 0xfb7185 }),
+  // Marker dots + their stems live in one group; arcs in another. Both are
+  // rebuilt by update() so live refreshes don't recreate the WebGL context.
+  const markerGroup = new THREE.Group();
+  const arcGroup = new THREE.Group();
+  scene.add(markerGroup, arcGroup);
+  const markerGeo = new THREE.SphereGeometry(.035, 16, 12);
+  const mats = {
+    watch: new THREE.MeshBasicMaterial({ color: COLORS.watch }),
+    subscriber: new THREE.MeshBasicMaterial({ color: COLORS.subscriber }),
+    blocked: new THREE.MeshBasicMaterial({ color: COLORS.blocked }),
   };
-  const pickables = [];
-  for (const marker of markers) {
-    if (typeof marker.lat !== 'number' || typeof marker.lon !== 'number') continue;
-    const mat = marker.type === 'blocked' ? markerMats.blocked : marker.subscriber ? markerMats.subscriber : markerMats.watch;
-    const dot = new THREE.Mesh(markerGeo, mat);
-    dot.position.copy(latLonToVector(marker.lat, marker.lon));
-    dot.userData.marker = marker;
-    group.add(dot);
-    pickables.push(dot);
+  let pickables = [];
+  let pulse = [];   // { mesh, base, phase }
+  let arcs = [];    // { curve, comet, speed, offset }
 
-    const stem = new THREE.BufferGeometry().setFromPoints([latLonToVector(marker.lat, marker.lon, 2.01), latLonToVector(marker.lat, marker.lon, 2.18)]);
-    group.add(new THREE.Line(stem, new THREE.LineBasicMaterial({ color: mat.color, transparent: true, opacity: .42 })));
+  function clearGroup(group) {
+    for (let i = group.children.length - 1; i >= 0; i -= 1) {
+      const o = group.children[i];
+      group.remove(o);
+      if (o.geometry && o.geometry !== markerGeo) o.geometry.dispose();
+    }
   }
+
+  function build(list) {
+    clearGroup(markerGroup);
+    clearGroup(arcGroup);
+    pickables = []; pulse = []; arcs = [];
+    const coords = (list || []).filter((m) => typeof m.lat === 'number' && typeof m.lon === 'number');
+    coords.forEach((marker, i) => {
+      const mat = marker.type === 'blocked' ? mats.blocked : marker.subscriber ? mats.subscriber : mats.watch;
+      const dot = new THREE.Mesh(markerGeo, mat);
+      dot.position.copy(latLonToVector(marker.lat, marker.lon));
+      dot.userData.marker = marker;
+      markerGroup.add(dot);
+      pickables.push(dot);
+      pulse.push({ mesh: dot, base: 1, phase: i * 0.6 });
+
+      const stem = new THREE.BufferGeometry().setFromPoints([
+        latLonToVector(marker.lat, marker.lon, 2.01),
+        latLonToVector(marker.lat, marker.lon, 2.18),
+      ]);
+      arcGroup.add(new THREE.Line(stem, new THREE.LineBasicMaterial({ color: mat.color, transparent: true, opacity: .42 })));
+
+      // Animated great-circle arc toward the hub for the most recent markers.
+      if (i < 28) {
+        const a = latLonToVector(marker.lat, marker.lon, 2.0);
+        const b = latLonToVector(HUB[0], HUB[1], 2.0);
+        const mid = a.clone().add(b).multiplyScalar(0.5).setLength(2.0 + a.distanceTo(b) * 0.42);
+        const curve = new THREE.QuadraticBezierCurve3(a, mid, b);
+        const geo = new THREE.BufferGeometry().setFromPoints(curve.getPoints(40));
+        arcGroup.add(new THREE.Line(geo, new THREE.LineBasicMaterial({ color: mat.color, transparent: true, opacity: .22 })));
+        const comet = new THREE.Mesh(new THREE.SphereGeometry(.028, 10, 8), new THREE.MeshBasicMaterial({ color: mat.color }));
+        arcGroup.add(comet);
+        arcs.push({ curve, comet, speed: 0.18 + (i % 5) * 0.03, offset: (i * 0.13) % 1 });
+      }
+    });
+  }
+  build(markers);
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
@@ -112,6 +157,12 @@ export function renderGlobe(container, markers = [], { onSelect, onHover } = {})
   controls.maxDistance = 8;
   controls.rotateSpeed = .45;
   controls.zoomSpeed = .8;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = .35;
+  // Pause auto-rotate briefly while the user is interacting, then resume.
+  let resumeAt = 0;
+  controls.addEventListener('start', () => { controls.autoRotate = false; });
+  controls.addEventListener('end', () => { resumeAt = performance.now ? performance.now() + 2500 : 0; });
 
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2(10, 10);
@@ -142,9 +193,25 @@ export function renderGlobe(container, markers = [], { onSelect, onHover } = {})
     camera.updateProjectionMatrix();
   }
 
-  function tick() {
+  let t0 = 0;
+  function tick(now) {
+    t0 = (now || 0) / 1000;
     resize();
+    if (!controls.autoRotate && resumeAt && (now || 0) >= resumeAt) { controls.autoRotate = true; resumeAt = 0; }
     controls.update();
+
+    // Pulse markers; the newest few (low index → near the front of pulse[]) beat harder.
+    for (let i = 0; i < pulse.length; i += 1) {
+      const p = pulse[i];
+      const amp = i < 12 ? 0.55 : 0.28;
+      p.mesh.scale.setScalar(1 + amp * (0.5 + 0.5 * Math.sin(t0 * 3 + p.phase)));
+    }
+    // Advance arc comets along their curves.
+    for (const a of arcs) {
+      const u = ((t0 * a.speed + a.offset) % 1);
+      a.comet.position.copy(a.curve.getPoint(u));
+    }
+
     raycaster.setFromCamera(pointer, camera);
     const hit = raycaster.intersectObjects(pickables, false)[0];
     const next = hit ? hit.object : null;
@@ -156,9 +223,14 @@ export function renderGlobe(container, markers = [], { onSelect, onHover } = {})
   }
 
   renderer.setAnimationLoop(tick);
-  return () => {
-    renderer.setAnimationLoop(null);
-    renderer.dispose();
-    controls.dispose();
+
+  return {
+    dispose() {
+      renderer.setAnimationLoop(null);
+      renderer.dispose();
+      controls.dispose();
+    },
+    // Live refresh: swap markers in place — camera, rotation, and controls persist.
+    update(next) { build(next || []); },
   };
 }

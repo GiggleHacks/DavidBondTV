@@ -45,7 +45,7 @@ import * as uploads from './lib/upload-sessions.mjs';
 import * as products from './lib/products.js';
 import * as pricing from './lib/pricing.js';
 import * as subscribers from './lib/subscribers.js';
-import { createRequestContext } from './lib/request-context.mjs';
+import { createRequestContext, isBotUa } from './lib/request-context.mjs';
 import { createAnalytics } from './lib/analytics-store.mjs';
 import { createGeoGate } from './lib/geo-gate.mjs';
 import { PUBLIC_DIR, MEDIA_DIR, MANIFEST, resolveAssetPath } from './lib/paths.js';
@@ -343,14 +343,28 @@ function userNameMap() {
   return new Map(accounts.store.listAll().map((u) => [u.id, u.username || u.email || u.id]));
 }
 
+// Display-normalize an IP: take the first hop of any X-Forwarded-For chain,
+// unwrap IPv4-mapped IPv6 (::ffff:1.2.3.4 → 1.2.3.4), and tidy loopback. Keeps
+// real IPv6 intact. Cleans both fresh and legacy stored IPs at render time.
+function normalizeIp(ip) {
+  if (typeof ip !== 'string' || !ip) return ip || null;
+  let s = ip.split(',')[0].trim();
+  s = s.replace(/^::ffff:/i, '');
+  if (s === '::1') s = '127.0.0.1';
+  return s;
+}
+
 function decorateLogEvent(e, titles = manifestTitleMap(), names = userNameMap()) {
   if (!e || typeof e !== 'object') return e;
   const videoId = e.videoId || e.video || null;
   const userId = e.userId || null;
   return {
     ...e,
+    ip: normalizeIp(e.ip),
     videoId,
-    videoTitle: e.videoTitle || (videoId ? titles[videoId] || videoId : null),
+    // Resolve to a human title; never expose the raw UUID — null lets the UI show
+    // a friendly "(removed video)" instead.
+    videoTitle: e.videoTitle || (videoId ? (titles[videoId] || null) : null),
     username: e.username || (userId ? names.get(userId) || 'deleted user' : null),
   };
 }
@@ -1243,7 +1257,8 @@ async function handleApi(req, res, ctx) {
     // approximated as a distinct ip|video pair within the window (minutes are exact).
     if (rangeParam === '24h') {
       const since = now - DAY;
-      const evs = analytics.getRecentEvents(50000).filter((e) => e.t >= since);
+      const evs = analytics.getRecentEvents(50000)
+        .filter((e) => e.t >= since && !isBotUa(e.device && e.device.ua));
       const buckets = {};
       const seen = new Set();
       const vidAgg = {};
@@ -1375,7 +1390,9 @@ async function handleApi(req, res, ctx) {
     if (mode === 'blocked') filters.type = 'blocked';
     const titles = manifestTitleMap();
     const names = userNameMap();
-    const markers = analytics.getTrafficMarkers(filters).map((m) => decorateLogEvent(m, titles, names));
+    const markers = analytics.getTrafficMarkers(filters)
+      .filter((m) => !isBotUa(m.device && m.device.ua))
+      .map((m) => decorateLogEvent(m, titles, names));
     const preciseKeys = new Set(markers.map((m) => `${m.t}|${m.ip || ''}|${m.videoId || ''}|${m.type || ''}`));
     const approximate = analytics.queryLogs({ ...filters, limit: 5000 }).events
       .filter((e) => (e.type === 'watch' || e.type === 'blocked') && (e.lat == null || e.lon == null))
@@ -1404,7 +1421,9 @@ async function handleApi(req, res, ctx) {
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '200', 10) || 200, 1), 1000);
     const titles = manifestTitleMap();
     const names = userNameMap();
-    const events = analytics.getRecentEvents(limit).map((raw) => {
+    const events = analytics.getRecentEvents(limit)
+      .filter((raw) => !isBotUa(raw.device && raw.device.ua))
+      .map((raw) => {
       const e = decorateLogEvent(raw, titles, names);
       return {
       t: e.t,
@@ -1429,6 +1448,66 @@ async function handleApi(req, res, ctx) {
       reason: e.reason,
     }; });
     sendJson(res, 200, { events });
+    return true;
+  }
+
+  // GET /api/admin/financial → sales, revenue, subscription health, paid/free.
+  // Aggregates the payment ledger (data/payments.json) + user membership state.
+  if (req.method === 'GET' && url.pathname === '/api/admin/financial') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const users = accounts.store.listAll();
+    let revenueCents = 0; let subsRevenue = 0; let productRevenue = 0;
+    let subSales = 0; let productSales = 0; let currency = 'usd';
+    const byMonth = {}; // 'YYYY-MM' → cents
+    for (const u of users) {
+      for (const t of paymentsStore.listForUser(u.id)) {
+        if (t.kind !== 'stripe.invoice.paid' && t.kind !== 'stripe.product.paid') continue;
+        const amt = Number(t.amount) || 0;
+        revenueCents += amt;
+        if (t.currency) currency = t.currency;
+        if (t.kind === 'stripe.invoice.paid') { subsRevenue += amt; subSales += 1; }
+        else { productRevenue += amt; productSales += 1; }
+        const d = new Date(t.ts || 0);
+        const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+        byMonth[key] = (byMonth[key] || 0) + amt;
+      }
+    }
+    const subs = { active: 0, trialing: 0, pastDue: 0, comp: 0, canceling: 0, canceled: 0 };
+    let paidUsers = 0;
+    for (const u of users) {
+      const m = u.membership || null;
+      const active = hasActiveMembership(u);
+      const ownsProduct = Array.isArray(u.products) && u.products.length > 0;
+      if (active || ownsProduct) paidUsers += 1;
+      if (!m) continue;
+      if (active) {
+        if (m.provider === 'admin') subs.comp += 1;
+        else if (m.status === 'trialing') subs.trialing += 1;
+        else if (m.status === 'past_due') subs.pastDue += 1;
+        else subs.active += 1;
+        if (m.cancelAtPeriodEnd) subs.canceling += 1;
+      } else {
+        subs.canceled += 1; // had a membership, no longer active
+      }
+    }
+    const total = users.length;
+    const free = Math.max(0, total - paidUsers);
+    // Revenue trend: trailing 12 months, oldest → newest (for the chart).
+    const series = [];
+    const dn = new Date();
+    for (let i = 11; i >= 0; i -= 1) {
+      const d = new Date(Date.UTC(dn.getUTCFullYear(), dn.getUTCMonth() - i, 1));
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      series.push({ month: key, cents: byMonth[key] || 0 });
+    }
+    sendJson(res, 200, {
+      currency,
+      revenue: { total: revenueCents, subscriptions: subsRevenue, products: productRevenue, series },
+      sales: { total: subSales + productSales, subscriptions: subSales, products: productSales },
+      subscriptions: subs,
+      users: { total, paid: paidUsers, free, conversion: total ? Math.round((paidUsers / total) * 1000) / 10 : 0 },
+      generatedAt: Date.now(),
+    });
     return true;
   }
 

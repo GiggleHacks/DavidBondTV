@@ -93,16 +93,21 @@
 .dlegend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 5px; vertical-align: 0; }
 
 /* live visitor feed */
-.dfeed { font-size: 12px; line-height: 1.85; max-height: 240px; overflow: hidden; }
-.dfeed .h, .dfeed .row { display: grid; grid-template-columns: 58px 120px 1fr 48px; gap: 8px; white-space: nowrap; padding: 2px 0; overflow: hidden; }
-.dfeed .h { color: var(--d-dim); border-bottom: 1px solid var(--d-edge); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+.dfeed { font-size: 12px; line-height: 1.9; max-height: 240px; overflow: hidden; }
+.dfeed.dfeed-tall { max-height: 620px; overflow-y: auto; padding-right: 6px; }
+.dfeed .h, .dfeed .row { display: grid; grid-template-columns: 70px 140px 150px 1fr 56px; gap: 10px; white-space: nowrap; padding: 3px 0; overflow: hidden; }
+.dfeed .h { color: var(--d-dim); border-bottom: 1px solid var(--d-edge); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; position: sticky; top: 0; background: var(--d-panel); z-index: 1; }
 .dfeed .row { border-bottom: 1px solid rgba(30,32,48,.6); }
 .dfeed .ts { color: var(--d-dim); }
 .dfeed .ip { color: var(--d-cyan); overflow: hidden; text-overflow: ellipsis; }
+.dfeed .cc { color: var(--d-text); overflow: hidden; text-overflow: ellipsis; }
+.dfeed .cc .cn { margin-left: 2px; color: var(--d-dim); }
 .dfeed .who { color: var(--d-text); overflow: hidden; text-overflow: ellipsis; }
 .dfeed .sec { color: var(--d-amber); text-align: right; }
 .dfeed .cflag { margin-right: 4px; }
 .dfeed .blk { color: var(--d-rose); }
+.feed-live { margin-left: 8px; font-size: 10px; letter-spacing: .5px; color: var(--d-emerald, #34d399); text-transform: uppercase; vertical-align: middle; }
+.feed-live .deck-dot { margin-right: 4px; }
 
 /* horizontal bars (top videos) */
 .dbars .b { display: grid; grid-template-columns: 1fr 48px; align-items: center; gap: 8px; margin: 8px 0; font-size: 12px; }

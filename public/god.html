@@ -28,6 +28,7 @@
         <button class="deck-tab" data-tab="viewers"><span class="dico">🙋</span>VIEWERS</button>
         <button class="deck-tab" data-tab="geo"><span class="dico">🛡️</span>GEO-DEFENSE</button>
         <button class="deck-tab" data-tab="videos"><span class="dico">🎬</span>VIDEOS</button>
+        <button class="deck-tab" data-tab="financial"><span class="dico">💰</span>FINANCIAL</button>
       </div>
 
       <!-- ============ OVERVIEW (populated by admin-analytics.js layout system) ============ -->
@@ -110,6 +111,44 @@
           <div class="dp-title"><span class="dico">🔥</span> TOP VIDEOS <a class="back" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-videos.html" style="margin-left:auto">Manage →</a></div>
           <div class="dbars" id="top-videos"></div>
           <div class="dsrc">SOURCE: <b>analytics/videos.json</b> · ranked by distinct views · titles via manifest</div>
+        </div>
+      </section>
+
+      <!-- ============ FINANCIAL ============ -->
+      <section class="deck-panel-tab" data-panel="financial">
+        <div class="grid g-kpi">
+          <div class="dpanel kpi">
+            <div class="klabel"><span class="kemoji">💵</span> TOTAL REVENUE</div>
+            <div class="kv glow" id="fin-revenue">—</div>
+            <div class="ktrend flat" id="fin-revenue-sub">—</div>
+          </div>
+          <div class="dpanel kpi cyan">
+            <div class="klabel"><span class="kemoji">🧾</span> SALES</div>
+            <div class="kv glow" id="fin-sales">—</div>
+            <div class="ktrend flat" id="fin-sales-sub">—</div>
+          </div>
+          <div class="dpanel kpi amber">
+            <div class="klabel"><span class="kemoji">⭐</span> ACTIVE SUBSCRIBERS</div>
+            <div class="kv glow" id="fin-subs">—</div>
+            <div class="ktrend flat" id="fin-subs-sub">—</div>
+          </div>
+          <div class="dpanel kpi magenta">
+            <div class="klabel"><span class="kemoji">👥</span> PAID USERS</div>
+            <div class="kv glow" id="fin-paid">—</div>
+            <div class="ktrend flat" id="fin-paid-sub">—</div>
+          </div>
+        </div>
+        <div class="grid g-2 row-gap">
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">📈</span> REVENUE — LAST 12 MONTHS</div>
+            <svg class="dchart" id="fin-chart" viewBox="0 0 640 200" preserveAspectRatio="none" role="img" aria-label="Revenue by month"></svg>
+            <div class="dsrc">SOURCE: <b>data/payments.json</b> · paid invoices + product sales</div>
+          </div>
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">📊</span> SUBSCRIPTION STATUS</div>
+            <div class="rank" id="fin-subs-breakdown"></div>
+            <div class="dsrc">SOURCE: <b>live user.membership state</b></div>
+          </div>
         </div>
       </section>
     </main>

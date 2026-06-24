@@ -99,27 +99,6 @@ function buildCommandCenter() {
       </div>
     </div>
     <div class="grid g-3 row-gap">
-      <div class="dpanel span2">
-        <div class="dp-title"><span class="dico">🖥️</span> LIVE VISITOR FEED <span class="deck-dot" style="margin-left:4px"></span></div>
-        <div class="dfeed" id="visitors"></div>
-        ${srcLine('SOURCE: <b>raw/*.jsonl</b> · IP + GeoIP + watch event · 7-day retention')}
-      </div>
-      <div class="dpanel">
-        <div class="dp-title"><span class="dico">⚙️</span> SYSTEM</div>
-        <div class="dvit">
-          <div><span class="k">VIDEOS</span><span class="g" id="vit-videos">—</span></div>
-          <div><span class="k">LIBRARY</span><span class="g">● intact</span></div>
-          <div><span class="k">BUILD</span><span class="c" id="vit-build">—</span></div>
-          <div><span class="k">FFMPEG</span><span class="a" id="vit-ffmpeg">—</span></div>
-        </div>
-        <div style="margin-top:10px">
-          <a class="dmini" href="${ADMIN_PATHS.upload}">⬆ Upload video <span class="e">— add new clips</span></a>
-          <a class="dmini" href="${ADMIN_PATHS.videos}">🎬 Manage videos <span class="e" id="q-videos">—</span></a>
-          <a class="dmini" href="${ADMIN_PATHS.pricing}">💲 Pricing <span class="e">— subscription &amp; intro</span></a>
-        </div>
-      </div>
-    </div>
-    <div class="grid g-3 row-gap">
       <div class="dpanel span3 mon-strip">
         <div class="mon-cell" style="--mc:#a3e635">
           <div class="mon-head"><span class="mon-name">CPU</span><span class="mon-val" id="mon-cpu-val">—</span></div>
@@ -143,8 +122,8 @@ function buildCommandCenter() {
         </div>
       </div>
     </div>
-    <div class="grid g-3 row-gap">
-      <div class="dpanel span3">
+    <div class="grid g-2 row-gap">
+      <div class="dpanel">
         <div class="dp-title"><span class="dico">⏱️</span> SERVER</div>
         <div class="dvit dvit-wide" id="met-server">
           <div><span class="k">UPTIME</span><span class="g" id="met-uptime">—</span></div>
@@ -153,6 +132,28 @@ function buildCommandCenter() {
           <div><span class="k">PROCESSING</span><span class="c" id="met-proccount">—</span></div>
           <div><span class="k">TOTAL DISK</span><span class="g" id="met-total">—</span></div>
         </div>
+      </div>
+      <div class="dpanel">
+        <div class="dp-title"><span class="dico">⚙️</span> SYSTEM</div>
+        <div class="dvit">
+          <div><span class="k">VIDEOS</span><span class="g" id="vit-videos">—</span></div>
+          <div><span class="k">LIBRARY</span><span class="g">● intact</span></div>
+          <div><span class="k">BUILD</span><span class="c" id="vit-build">—</span></div>
+          <div><span class="k">FFMPEG</span><span class="a" id="vit-ffmpeg">—</span></div>
+        </div>
+        <div style="margin-top:10px">
+          <a class="dmini" href="${ADMIN_PATHS.upload}">⬆ Upload video <span class="e">— add new clips</span></a>
+          <a class="dmini" href="${ADMIN_PATHS.videos}">🎬 Manage videos <span class="e" id="q-videos">—</span></a>
+          <a class="dmini" href="${ADMIN_PATHS.pricing}">💲 Pricing <span class="e">— subscription &amp; intro</span></a>
+        </div>
+      </div>
+    </div>
+    <div class="grid g-3 row-gap">
+      <div class="dpanel span3">
+        <div class="dp-title"><span class="dico">🖥️</span> LIVE VISITOR FEED
+          <span class="feed-live"><span class="deck-dot"></span> LIVE · updates every 10s</span></div>
+        <div class="dfeed dfeed-tall" id="visitors"></div>
+        ${srcLine('SOURCE: <b>raw/*.jsonl</b> · IP + GeoIP + watch event · bots excluded · 7-day retention')}
       </div>
     </div>`;
 }
