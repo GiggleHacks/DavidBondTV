@@ -208,6 +208,18 @@ a.tr:hover .name { color: var(--accent); }
 .vb-upload { background: color-mix(in srgb, #a855f7 24%, transparent); color: #d8b4fe; }  /* violet — uploaded, in review */
 .vb-rej { background: color-mix(in srgb, #64748b 28%, transparent); color: #cbd5e1; }     /* slate — rejected */
 
+/* Encoding progress: a slim bar + % inside the (indigo) processing badge. */
+.enc-badge { display: inline-flex; align-items: center; gap: 7px; }
+.enc-track { width: 84px; height: 6px; border-radius: 999px; background: rgba(255,255,255,.16); overflow: hidden; }
+.enc-fill { display: block; height: 100%; width: 0; border-radius: 999px; background: currentColor; transition: width .5s ease; }
+.enc-pct { font-variant-numeric: tabular-nums; font-weight: 700; }
+.enc-indet { width: 40%; animation: enc-slide 1.1s ease-in-out infinite; }
+@keyframes enc-slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(260%); } }
+@media (prefers-reduced-motion: reduce) {
+  .enc-fill { transition: none; }
+  .enc-indet { animation: none; width: 100%; opacity: .5; }
+}
+
 /* ===== Review Mode (god-review.html) ===== */
 .rv-empty .btn { margin-top: 8px; }
 .rv-stage { max-width: 920px; margin: 0 auto; }

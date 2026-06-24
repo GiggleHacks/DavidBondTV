@@ -52,6 +52,28 @@ let filtered = [];
 let page = 0;
 let cats = []; // [{slug,name}]
 const selected = new Set();
+let encByManifest = {}; // manifestId → encoding % (live, from /api/admin/status)
+let encPoll = null;     // interval handle while any video is encoding
+
+// Map the live job registry to { manifestId: percent } for encoding jobs.
+function buildEncMap(jobs) {
+  const m = {};
+  for (const j of (jobs || [])) {
+    if (!j || !j.manifestId) continue;
+    if (j.status === 'encoding' || j.status === 'processing') {
+      const p = Number(j.pct);
+      m[j.manifestId] = Number.isFinite(p) ? Math.max(0, Math.min(100, Math.round(p))) : null;
+    }
+  }
+  return m;
+}
+
+async function fetchEncProgress() {
+  try {
+    const jobs = (await (await fetch(`/api/admin/status?_=${Date.now()}`)).json()).jobs || [];
+    encByManifest = buildEncMap(jobs);
+  } catch { encByManifest = {}; }
+}
 
 async function load() {
   try {
@@ -60,6 +82,7 @@ async function load() {
   try {
     cats = (await (await fetch('/api/categories')).json()).categories || [];
   } catch { cats = []; }
+  await fetchEncProgress();
   renderCatFilter();
   renderCategoryMenu();
   applyFilter();
@@ -148,6 +171,7 @@ function render() {
   renderPager();
   updateSel();
   updateReviewCounts();
+  manageEncPoll();
 }
 
 function renderPager() {
@@ -167,7 +191,7 @@ function badges(v) {
   // Exactly one state badge per row (lifecycle → live → draft approval split).
   const st = stateOf(v);
   if (st === 'uploaded') out.push('<span class="vb vb-upload">In review</span>');
-  else if (st === 'encoding') out.push('<span class="vb vb-proc">Encoding</span>');
+  else if (st === 'encoding') out.push(encodingBadge(v));
   else if (st === 'rejected') out.push('<span class="vb vb-rej">Rejected</span>');
   else if (st === 'failed') out.push('<span class="vb vb-fail">Failed</span>');
   else if (st === 'published') out.push('<span class="vb vb-live">Live</span>');
@@ -179,6 +203,53 @@ function badges(v) {
     out.push(`<span class="vb vb-cat">${categoryVisualMarkup(cat, 'cat-glyph')}${esc(categoryDisplayName(cat))}</span>`);
   }
   return out.join(' ');
+}
+
+// A minimal progress bar + percentage in place of the plain "Encoding" badge.
+// pct comes from the live job registry; null (e.g. after a server restart loses
+// the in-memory job) falls back to an indeterminate bar.
+function encodingBadge(v) {
+  const p = encByManifest[v.id];
+  const fill = p == null
+    ? '<span class="enc-fill enc-indet"></span>'
+    : `<span class="enc-fill" style="width:${p}%"></span>`;
+  const label = p == null ? 'Encoding…' : `${p}%`;
+  return `<span class="vb vb-proc enc-badge" data-enc="${esc(v.id)}">`
+    + `<span class="enc-track">${fill}</span><span class="enc-pct">${label}</span></span>`;
+}
+
+const encodingIdSet = (list) => list.filter((v) => stateOf(v) === 'encoding').map((v) => v.id).sort().join(',');
+
+// Update the progress bars in place (no full re-render) so they animate smoothly.
+function updateEncBars() {
+  document.querySelectorAll('.enc-badge[data-enc]').forEach((el) => {
+    const p = encByManifest[el.getAttribute('data-enc')];
+    const fill = el.querySelector('.enc-fill');
+    const lbl = el.querySelector('.enc-pct');
+    if (p == null) { if (fill) fill.classList.add('enc-indet'); if (lbl) lbl.textContent = 'Encoding…'; return; }
+    if (fill) { fill.classList.remove('enc-indet'); fill.style.width = `${p}%`; }
+    if (lbl) lbl.textContent = `${p}%`;
+  });
+}
+
+// Poll while anything is encoding: refresh %s in place, and do a full refresh
+// only when a video actually starts/finishes encoding (its badge must change).
+async function pollEncoding() {
+  await fetchEncProgress();
+  let vids = null;
+  try { vids = (await (await fetch(`/api/admin/videos?_=${Date.now()}`)).json()).videos || null; } catch { /* keep current */ }
+  if (vids && encodingIdSet(vids) !== encodingIdSet(all)) {
+    all = vids;
+    applyFilter(); // re-renders → manageEncPoll re-evaluates (may stop the poll)
+    return;
+  }
+  updateEncBars();
+}
+
+function manageEncPoll() {
+  const anyEncoding = all.some((v) => stateOf(v) === 'encoding');
+  if (anyEncoding && !encPoll) encPoll = setInterval(pollEncoding, 2500);
+  else if (!anyEncoding && encPoll) { clearInterval(encPoll); encPoll = null; }
 }
 
 // Keep the review/publish toolbar counts in sync with the full library.
