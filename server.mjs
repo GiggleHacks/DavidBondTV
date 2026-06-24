@@ -1591,16 +1591,88 @@ async function handleApi(req, res, ctx) {
         let body; try { body = JSON.parse(raw); } catch { body = null; }
         if (!body || !body.action) { sendJson(res, 400, { error: 'Invalid request' }); return true; }
         let result;
-        if (body.action === 'add') result = categories.add(body.name, body.flag);
-        else if (body.action === 'rename') result = categories.rename(body.slug, body.name);
+        if (body.action === 'add') {
+          result = categories.add(body.name, body.flag);
+          if (result.ok && body.visual) result = categories.setVisual(result.category.slug, body.visual);
+        } else if (body.action === 'rename') result = categories.rename(body.slug, body.name);
         else if (body.action === 'setflag') result = categories.setFlag(body.slug, body.flag);
         else if (body.action === 'seticon') result = categories.setIcon(body.slug, body.icon);
+        else if (body.action === 'setvisual') result = categories.setVisual(body.slug, body.visual);
         else if (body.action === 'remove') result = categories.remove(body.slug);
         else result = { ok: false, error: 'Unknown action.' };
         sendJson(res, result.ok ? 200 : 400, { ...result, categories: categories.list() });
       } catch { sendJson(res, 500, { error: 'Server error' }); }
       return true;
     }
+  }
+
+  // Telegram Admin Config API
+  if (url.pathname === '/api/god/telegram/config') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    if (req.method === 'GET') {
+      sendJson(res, 200, {
+        config: {
+          TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
+          TELEGRAM_BOT_USERNAME: process.env.TELEGRAM_BOT_USERNAME || '',
+          TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '',
+          TELEGRAM_GROUP_CHAT_ID: process.env.TELEGRAM_GROUP_CHAT_ID || '',
+          TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET || '',
+        }
+      });
+      return true;
+    } else if (req.method === 'POST') {
+      try {
+        const raw = await readBody(req, 8192);
+        let body; try { body = JSON.parse(raw); } catch { body = null; }
+        if (!body) { sendJson(res, 400, { error: 'Invalid request' }); return true; }
+
+        const envPath = path.join(__dirname, '.env');
+        let envRaw = '';
+        try { envRaw = await fsp.readFile(envPath, 'utf8'); } catch { /* ignore */ }
+        
+        const keys = ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_BOT_USERNAME', 'TELEGRAM_CHAT_ID', 'TELEGRAM_GROUP_CHAT_ID', 'TELEGRAM_WEBHOOK_SECRET'];
+        for (const k of keys) {
+          if (typeof body[k] === 'string') {
+            process.env[k] = body[k]; // Update process.env too
+            const re = new RegExp(`^${k}=.*$`, 'm');
+            if (re.test(envRaw)) {
+              envRaw = envRaw.replace(re, `${k}=${body[k]}`);
+            } else {
+              envRaw += `\n${k}=${body[k]}`;
+            }
+          }
+        }
+        envRaw = envRaw.trim() + '\n';
+        await fsp.writeFile(envPath, envRaw);
+        
+        sendJson(res, 200, { ok: true });
+      } catch (err) {
+        console.error('Error saving telegram config:', err);
+        sendJson(res, 500, { error: 'Failed to save config' });
+      }
+      return true;
+    }
+  }
+
+  // Telegram Admin Test API
+  if (url.pathname === '/api/god/telegram/test' && req.method === 'POST') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    try {
+      const tg = createTelegramNotifier({
+        botToken: process.env.TELEGRAM_BOT_TOKEN,
+        chatId: process.env.TELEGRAM_CHAT_ID,
+      });
+      if (!tg.configured) {
+        sendJson(res, 400, { error: 'Bot token or chat ID is missing in configuration.' });
+        return true;
+      }
+      await tg._test.sendMessage('🤖 <b>Test Message</b>\nYour Telegram bot configuration is working correctly!');
+      sendJson(res, 200, { ok: true });
+    } catch (err) {
+      console.error('Error testing telegram bot:', err);
+      sendJson(res, 500, { error: 'Failed to test bot' });
+    }
+    return true;
   }
 
   // Admin coupon management: /api/admin/coupons[/<id>[/redemptions]]

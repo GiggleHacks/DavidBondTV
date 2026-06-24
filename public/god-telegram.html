@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>David Bond TV — Telegram Settings</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+  <script>document.documentElement.classList.add('admin-auth-pending');</script>
+  <style>
+    .pr-editor { display: grid; gap: 16px; max-width: 640px; }
+    .pr-field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 5px; }
+    .pr-field input[type=text] {
+      width: 100%; background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 11px; font-size: 14px; font-family: inherit;
+    }
+    .pr-hint { font-size: 12px; color: var(--text-dim); margin: 4px 0 0; }
+    .pr-actions { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="admin-wrap wide admin-app-shell">
+    <header class="admin-bar">
+      <a class="logo" href="/" style="text-decoration:none"><span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span></a>
+      <nav class="admin-nav">
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789">Dashboard</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-upload.html">Upload</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-videos.html">Videos</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-products.html">Products</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-pricing.html">Pricing</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-coupons.html">Coupons</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-users.html">Users</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-community.html">Community</a>
+        <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-telegram.html" class="active">Telegram</a>
+        <a class="back" href="/">← Site</a>
+      </nav>
+    </header>
+
+    <main id="app">
+      <section class="card">
+        <div class="card-head"><h2>Telegram Integration Settings</h2></div>
+        <div class="pr-editor">
+          
+          <div class="pr-field">
+            <label>Telegram Bot Token (TELEGRAM_BOT_TOKEN)</label>
+            <input id="f-bot-token" type="text" placeholder="1234567890:AAHxyz..." />
+            <p class="pr-hint">Get this from @BotFather on Telegram.</p>
+          </div>
+
+          <div class="pr-field">
+            <label>Telegram Bot Username (TELEGRAM_BOT_USERNAME)</label>
+            <input id="f-bot-username" type="text" placeholder="YourCustomBot" />
+            <p class="pr-hint">The username of your bot (without the @ symbol).</p>
+          </div>
+
+          <div class="pr-field">
+            <label>Admin/Alerts Chat ID (TELEGRAM_CHAT_ID)</label>
+            <input id="f-chat-id" type="text" placeholder="-100123456789" />
+            <p class="pr-hint">The group or user ID where new subscription alerts will be sent.</p>
+          </div>
+
+          <div class="pr-field">
+            <label>VIP Group Chat ID (TELEGRAM_GROUP_CHAT_ID)</label>
+            <input id="f-group-chat-id" type="text" placeholder="-100987654321" />
+            <p class="pr-hint">The private group ID where paying users are invited.</p>
+          </div>
+
+          <div class="pr-field">
+            <label>Webhook Secret (TELEGRAM_WEBHOOK_SECRET)</label>
+            <input id="f-webhook-secret" type="text" placeholder="RandomSecureString" />
+            <p class="pr-hint">A secure random string used to verify incoming webhooks from Telegram.</p>
+          </div>
+
+          <div class="pr-actions">
+            <button class="btn" id="save-btn">Save settings to .env</button>
+            <button class="btn ghost" id="test-btn">Test Bot</button>
+            <span id="msg" class="muted"></span>
+          </div>
+          <p class="pr-hint" style="color: var(--danger, #ff4d4d); display: none;" id="restart-warning">Settings saved! You must restart the Node.js server for these changes to take effect.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="/js/admin-telegram.js?v=2"></script>
+</body>
+</html>
