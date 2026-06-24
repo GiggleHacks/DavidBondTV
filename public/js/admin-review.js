@@ -103,7 +103,7 @@ function renderSummary() {
   $('rv-sum-skip').textContent = skipped;
   const undecided = queue.length - approved.size - approvedFree.size - toDelete.size;
   const totalApprove = approved.size + approvedFree.size;
-  const freeNote = approvedFree.size ? `; ${approvedFree.size} also moved to Free and de-blurred` : '';
+  const freeNote = approvedFree.size ? `; ${approvedFree.size} made free (blur removed, moved to Free tier)` : '';
   const approveNote = totalApprove ? `Approved videos start encoding now${freeNote}.` : 'No videos approved.';
   $('rv-sum-warn').innerHTML = toDelete.size
     ? `<b>${toDelete.size}</b> video${toDelete.size === 1 ? '' : 's'} will be <b>rejected</b> — marked rejected and their (un-encoded) original removed. ${approveNote}`
