@@ -1,3 +1,9 @@
+import {
+  categoryDisplayName,
+  categoryLabelWithVisual,
+  categoryBadge as categoryVisualBadge,
+} from './category-visuals.js';
+
 export const RECENT_UPLOAD_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 export function fmtSize(bytes) {
@@ -24,30 +30,15 @@ export function describeUploadError(status, detail, { maxUploadBytes } = {}) {
 }
 
 export function normalizeCategoryName(name) {
-  let text = String(name || '').trim();
-  try {
-    text = text.replace(/^[\p{Extended_Pictographic}\p{Emoji_Presentation}\uFE0F\s._-]+/gu, '').trim();
-  } catch {
-    text = text.replace(/^[^A-Za-z0-9]+/, '').trim();
-  }
-  return text || String(name || '').trim() || 'Untitled category';
+  return categoryDisplayName({ name });
 }
 
 export function categoryOptionLabel(category) {
-  const name = normalizeCategoryName(category && category.name);
-  const prefix = category && category.icon
-    ? category.icon
-    : category && category.flag
-      ? `[${String(category.flag).toUpperCase()}]`
-      : '•';
-  return `${prefix} ${name}`;
+  return categoryLabelWithVisual(category, 'Uncategorized');
 }
 
 export function categoryBadge(category) {
-  if (!category) return { kind: 'fallback', text: '•' };
-  if (category.icon) return { kind: 'icon', text: category.icon };
-  if (category.flag) return { kind: 'flag', text: String(category.flag).toUpperCase(), code: String(category.flag).toLowerCase() };
-  return { kind: 'fallback', text: '•' };
+  return categoryVisualBadge(category);
 }
 
 export function filterRetainedJobs(jobs, now = Date.now(), retentionMs = RECENT_UPLOAD_RETENTION_MS) {

@@ -37,6 +37,7 @@
 /* ---------- Auth / profile pages ---------- */
 .acc-page { width: min(460px, 100%); margin: 48px auto; padding: 0 20px 80px; }
 .acc-page.wide { width: min(680px, 100%); }
+body.has-sidebar-shell .acc-page { margin-top: 40px; }
 .acc-head { text-align: center; margin-bottom: 26px; }
 .acc-head .logo {
   display: inline-flex; flex-direction: column; align-items: center; gap: 18px; justify-content: center;
@@ -188,6 +189,16 @@ a.comment-name:hover { color: var(--accent); text-decoration: underline; }
   .sub-btn,
   .react-btn {
     min-height: 44px;
+  }
+}
+
+@media (min-width: 1000px) {
+  body.has-sidebar-shell { padding-left: 248px; }
+  body.has-sidebar-shell .site-header .logo { display: none; }
+  body.has-sidebar-shell .acc-page,
+  body.has-sidebar-shell .mb-wrap {
+    margin-left: auto;
+    margin-right: auto;
   }
 }
 

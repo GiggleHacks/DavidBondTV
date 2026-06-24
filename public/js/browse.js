@@ -5,6 +5,7 @@
 // viewers (premium membership OR one-time course purchase).
 import { canWatchVideo } from '/js/viewer-access.js';
 import { startPurchase, fmtMoney } from '/js/course-buy.js';
+import { categoryDisplayName, categoryVisualMarkup, resolveCategoryVisual } from '/js/category-visuals.js';
 const PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
 const LOCK = '<svg viewBox="0 0 24 24"><path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2v-9a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm3 8H9V6a3 3 0 016 0v3z"/></svg>';
 // Polished gold padlock for the premium unlock modal (richer than the card LOCK).
@@ -31,6 +32,14 @@ const state = {
   isAdmin: false, isMember: false, loggedIn: false,
   me: null, products: [], videoCourseMap: new Map(),
 };
+
+function hydrateStateFromUrl() {
+  const params = new URLSearchParams(location.search);
+  const section = params.get('section') || '';
+  state.section = section === 'exclusive' ? 'exclusive' : section === 'courses' ? 'courses' : 'all';
+  state.category = params.get('category') || '';
+  state.sort = params.get('sort') === 'all' ? 'all' : 'recent';
+}
 
 /** Published product ids this video is assigned to (for the access gate). */
 function courseIdsFor(id) { return state.videoCourseMap.get(id) || []; }
@@ -88,10 +97,10 @@ const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '
 
 // Optional "flag + category name" meta row for a card, when the video's category
 // has an admin-assigned country flag. Empty string when there's no flag.
-function catFlagRow(v) {
+function catVisualRow(v) {
   const cat = v.category && state.categoryMap ? state.categoryMap.get(v.category) : null;
-  if (!cat || !cat.flag) return '';
-  return `<div class="vcatflag"><img class="vcf-img" src="/vendor/flags/4x3/${cat.flag}.svg" alt="" loading="lazy" onerror="this.remove()"><span>${escHtml(cat.name)}</span></div>`;
+  if (!cat || !resolveCategoryVisual(cat)) return '';
+  return `<div class="vcatflag">${categoryVisualMarkup(cat, 'vcf-img')}<span>${escHtml(categoryDisplayName(cat))}</span></div>`;
 }
 
 function card(v) {
@@ -126,7 +135,7 @@ function card(v) {
       <div class="vmeta">
         <div class="vtitle"></div>
         <div class="vchannel">David Bond TV <span class="check">✔</span></div>
-        ${catFlagRow(v)}
+        ${catVisualRow(v)}
         <div class="vdesc"></div>
         <div class="vstats"></div>
       </div>
@@ -391,6 +400,7 @@ window.addEventListener('dbtv:nav', (e) => {
 
 async function init() {
   const grid = document.getElementById('grid');
+  hydrateStateFromUrl();
   wireChips();
   // Know whether the viewer can see premium (admin or active member) + which
   // one-time products they own, and the published product catalog (for courses).

@@ -52,14 +52,37 @@ describe('category flags', () => {
     const r = categories.rename('medellin', 'Medellín Trips');
     expect(r.ok).toBe(true);
     expect(r.category.flag).toBe('co');
+    expect(r.category.visual).toEqual({ kind: 'flag', value: 'co' });
     expect(categories.list().find((c) => c.slug === 'medellin').flag).toBe('co');
   });
 
   it('sidebar icon survives rename and can be cleared', () => {
     categories.add('Reviews');
     expect(categories.setIcon('reviews', '🎬').category.icon).toBe('🎬');
+    expect(categories.setIcon('reviews', '🎬').category.visual).toEqual({ kind: 'emoji', value: '🎬', label: '🎬' });
     expect(categories.rename('reviews', 'Video Reviews').category.icon).toBe('🎬');
     const cleared = categories.setIcon('reviews', '');
     expect('icon' in cleared.category).toBe(false);
+  });
+
+  it('supports searchable custom icon keys through the unified visual field', () => {
+    categories.add('Privacy');
+    const updated = categories.setVisual('privacy', { kind: 'custom', value: 'shield', label: 'Shield' });
+    expect(updated.ok).toBe(true);
+    expect(updated.category.iconKey).toBe('shield');
+    expect(updated.category.visual).toEqual({ kind: 'custom', value: 'shield', label: 'Shield' });
+    expect(categories.rename('privacy', 'Privacy Force').category.iconKey).toBe('shield');
+  });
+
+  it('hydrates legacy records into the unified visual shape', () => {
+    fs.writeFileSync(file, JSON.stringify([
+      { slug: 'colombia', name: 'Colombia', flag: 'co' },
+      { slug: 'hacking', name: 'Hacking', icon: '💻' },
+      { slug: 'privacy', name: 'Privacy', iconKey: 'shield' },
+    ], null, 2));
+    const list = categories.list();
+    expect(list.find((c) => c.slug === 'colombia').visual).toEqual({ kind: 'flag', value: 'co' });
+    expect(list.find((c) => c.slug === 'hacking').visual).toEqual({ kind: 'emoji', value: '💻', label: '💻' });
+    expect(list.find((c) => c.slug === 'privacy').visual).toEqual({ kind: 'custom', value: 'shield', label: 'shield' });
   });
 });

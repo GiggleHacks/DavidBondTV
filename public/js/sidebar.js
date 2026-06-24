@@ -1,3 +1,5 @@
+import { categoryDisplayName, resolveCategoryVisual, categoryVisualMarkup } from './category-visuals.js';
+
 // Persistent YouTube-style left navigation for the homepage. Renders the David
 // Bond brand vertically — a large rounded avatar on top with the "David Bond TV"
 // wordmark beneath — then the section nav (All / Exclusive) and the admin-managed
@@ -10,20 +12,27 @@ const STAR = '<svg viewBox="0 0 24 24"><path d="M12 17.27l5.18 3.14-1.37-5.9L20.
 const TAG = '<svg viewBox="0 0 24 24"><path d="M21.41 11.58l-9-9A2 2 0 0011 2H4a2 2 0 00-2 2v7a2 2 0 00.59 1.42l9 9a2 2 0 002.82 0l7-7a2 2 0 000-2.84zM6.5 8A1.5 1.5 0 118 6.5 1.5 1.5 0 016.5 8z"/></svg>';
 const CAP = '<svg viewBox="0 0 24 24"><path d="M12 3 1 9l11 6 9-4.91V17h2V9zM5 13.18v4L12 21l7-3.82v-4L12 17z"/></svg>';
 
-// Small SVG country flag for a category (self-hosted set; renders on every OS).
-// A missing/invalid asset self-removes so no broken-image icon shows.
-function flagImg(code) {
-  return `<img class="sb-flag" src="/vendor/flags/4x3/${code}.svg" alt="" loading="lazy" onerror="this.remove()">`;
-}
-
 function itemHTML(section, category, label, icon, active) {
   return `<button class="sb-item${active ? ' active' : ''}" data-section="${section}" data-category="${category}">
     <span class="sb-ico">${icon}</span><span>${label}</span></button>`;
 }
 
+function browseUrl(section, category) {
+  const params = new URLSearchParams();
+  if (section && section !== 'all') params.set('section', section);
+  if (category) params.set('category', category);
+  const query = params.toString();
+  return query ? `/videos?${query}` : '/videos';
+}
+
 async function build() {
   const header = document.querySelector('.site-header');
   if (!header || document.querySelector('.sidebar')) return;
+  const isBrowseSurface = !!document.querySelector('.browse');
+  if (!isBrowseSurface) document.body.classList.add('has-sidebar-shell');
+  const params = new URLSearchParams(location.search);
+  const currentSection = isBrowseSurface ? (params.get('section') || 'all') : 'all';
+  const currentCategory = isBrowseSurface ? (params.get('category') || '') : '';
 
   // Keep the panel flush under the (variable-height) sticky header.
   const syncHeaderHeight = () => {
@@ -49,17 +58,17 @@ async function build() {
     courses = prods.filter((p) => p.type === 'course');
   } catch { /* none */ }
 
-  const catIcon = (c) => c.icon ? `<span class="sb-emoji">${c.icon}</span>` : c.flag ? flagImg(c.flag) : TAG;
-  const catItems = cats.map((c) => itemHTML('all', c.slug, c.name, catIcon(c), false)).join('');
-  const courseItems = courses.map((p) => itemHTML('courses', p.slug, p.name, CAP, false)).join('');
+  const catIcon = (c) => resolveCategoryVisual(c) ? categoryVisualMarkup(c, 'sb-visual') : TAG;
+  const catItems = cats.map((c) => itemHTML('all', c.slug, categoryDisplayName(c), catIcon(c), currentSection === 'all' && currentCategory === c.slug)).join('');
+  const courseItems = courses.map((p) => itemHTML('courses', p.slug, p.name, CAP, currentSection === 'courses' && currentCategory === p.slug)).join('');
   nav.innerHTML = `
     <a class="sb-brand" href="/" aria-label="David Bond TV — home">
       <img class="sb-avatar" src="/brand/avatar.png" alt="" width="88" height="88" />
       <span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span>
     </a>
     <div class="sb-nav">
-      ${itemHTML('all', '', 'All Videos', HOME, true)}
-      ${itemHTML('exclusive', '', 'Exclusive Videos', STAR, false)}
+      ${itemHTML('all', '', 'All Videos', HOME, currentSection === 'all' && !currentCategory)}
+      ${itemHTML('exclusive', '', 'Exclusive Videos', STAR, currentSection === 'exclusive')}
       ${courses.length ? `<div class="sb-title">Courses</div>${courseItems}` : ''}
       ${cats.length ? `<div class="sb-title">Categories</div>${catItems}` : ''}
     </div>`;
@@ -72,9 +81,21 @@ async function build() {
   nav.querySelectorAll('.sb-item').forEach((btn) => {
     btn.addEventListener('click', () => {
       nav.querySelectorAll('.sb-item').forEach((b) => b.classList.toggle('active', b === btn));
-      window.dispatchEvent(new CustomEvent('dbtv:nav', {
-        detail: { section: btn.dataset.section, category: btn.dataset.category },
-      }));
+      const section = btn.dataset.section || 'all';
+      const category = btn.dataset.category || '';
+      if (isBrowseSurface) {
+        const next = new URL(location.href);
+        if (section !== 'all') next.searchParams.set('section', section);
+        else next.searchParams.delete('section');
+        if (category) next.searchParams.set('category', category);
+        else next.searchParams.delete('category');
+        history.replaceState(null, '', next);
+        window.dispatchEvent(new CustomEvent('dbtv:nav', {
+          detail: { section, category },
+        }));
+        return;
+      }
+      window.location.href = browseUrl(section, category);
     });
   });
 }

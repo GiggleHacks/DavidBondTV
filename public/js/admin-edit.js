@@ -7,6 +7,7 @@
 import { requireAdmin } from './god-auth.js';
 import { ADMIN_PATHS } from './admin-paths.js';
 import { attachEmojiPicker } from './emoji-picker.js';
+import { categoryOptionLabel } from './upload-utils.js';
 
 const $ = (id) => document.getElementById(id);
 const videoId = new URLSearchParams(location.search).get('v') || '';
@@ -75,7 +76,7 @@ async function main() {
     catSel.appendChild(u);
     for (const c of cats) {
       const o = document.createElement('option');
-      o.value = c.slug; o.textContent = c.name;
+      o.value = c.slug; o.textContent = categoryOptionLabel(c);
       catSel.appendChild(o);
     }
     catSel.value = selected || '';

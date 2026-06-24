@@ -101,7 +101,7 @@ function syncCategoryBadge() {
     categoryBadgeEl.innerHTML = `<img src="/vendor/flags/4x3/${badge.code}.svg" alt="" loading="lazy" onerror="this.remove()"> <span>${name}</span>`;
     return;
   }
-  categoryBadgeEl.innerHTML = `<span class="cat-badge-glyph">${badge.text}</span><span>${name}</span>`;
+  categoryBadgeEl.innerHTML = `<span class="cat-badge-glyph${badge.kind === 'custom' && badge.tone ? ` tone-${badge.tone}` : ''}">${badge.text}</span><span>${name}</span>`;
 }
 
 function syncUploadLimitsNote() {
