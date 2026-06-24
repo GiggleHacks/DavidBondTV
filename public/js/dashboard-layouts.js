@@ -229,9 +229,10 @@ function buildMissionControl() {
           ${gaugeRing('storage', 'Disk', '#f59e0b', 120, 10)}
         </div>
         <div class="mc-gauge-meta">
-          <span>Content: <b id="met-content">—</b></span>
-          <span>Media: <b id="met-media">—</b></span>
-          <span>Total: <b id="met-total">—</b></span>
+          <span>Used: <b id="met-stused">—</b> / <b id="met-stcap">—</b></span>
+          <span>Available: <b id="met-stfree">—</b></span>
+          <span>Our footprint: <b id="met-total">—</b></span>
+          <span>Content: <b id="met-content">—</b> · Media: <b id="met-media">—</b></span>
         </div>
       </div>
     </div>
@@ -288,18 +289,25 @@ function postMissionControl(overview, metrics) {
   const ramValEl = document.getElementById('gauge-ram-val');
   if (ramValEl) ramValEl.textContent = `${Math.round(ramFrac * 100)}%`;
 
-  // Storage gauge — rough: use total vs a reference max (50 GB or total*2 to
-  // always show something meaningful). In reality we don't know the disk size,
-  // so just show total as a fraction of 50 GB as a visual reference.
-  const totalBytes = metrics.disk?.total || 0;
-  const ref = Math.max(50 * 1024 ** 3, totalBytes * 2);
-  const storageFrac = ref > 0 ? totalBytes / ref : 0;
-  setGauge('storage', storageFrac);
+  // Storage gauge — real filesystem capacity when available (metrics.storage from
+  // statfs); the arc shows how full the whole volume is. Falls back to our own
+  // content usage against a reference only when statfs is unsupported.
+  const st = metrics.storage;
+  let storageFrac;
   const sValEl = document.getElementById('gauge-storage-val');
-  if (sValEl) {
-    const gb = totalBytes / (1024 ** 3);
-    sValEl.textContent = gb >= 1 ? `${gb.toFixed(1)}G` : `${(totalBytes / (1024 ** 2)).toFixed(0)}M`;
+  if (st && st.total > 0) {
+    storageFrac = st.used / st.total;
+    if (sValEl) sValEl.textContent = `${st.pctUsed}%`;
+  } else {
+    const totalBytes = metrics.disk?.total || 0;
+    const ref = Math.max(50 * 1024 ** 3, totalBytes * 2);
+    storageFrac = ref > 0 ? totalBytes / ref : 0;
+    if (sValEl) {
+      const gb = totalBytes / (1024 ** 3);
+      sValEl.textContent = gb >= 1 ? `${gb.toFixed(1)}G` : `${(totalBytes / (1024 ** 2)).toFixed(0)}M`;
+    }
   }
+  setGauge('storage', storageFrac);
 }
 
 // =========================================================================

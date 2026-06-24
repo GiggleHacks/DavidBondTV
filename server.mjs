@@ -29,7 +29,7 @@ import {
   enqueue, getJob, listJobs, newUploadTarget, acceptableUpload, bootSweep, deleteVideo,
   editVideo, thumbTarget, setThumb, isKnownVideo, bulkAction, videoVisibility,
   releaseScheduled, videoPublic, listManifest, checkDuplicate, getSystemMetrics,
-  mergeManifestEntry,
+  mergeManifestEntry, backfillNotifications, reviewSource,
 } from './lib/ingest.mjs';
 import {
   listForUser as listNotifications, markSeen as markNotificationsSeen,
@@ -50,7 +50,7 @@ import { createGeoGate } from './lib/geo-gate.mjs';
 import { PUBLIC_DIR, MEDIA_DIR, MANIFEST, resolveAssetPath } from './lib/paths.js';
 import { sha256File } from './lib/hash-file.mjs';
 import { diffManifest } from './lib/sync-diff.mjs';
-import { startPublish, getPublishJob } from './lib/sync-client.mjs';
+import { startPublish, getPublishJob, latestPublishJob, controlPublishJob } from './lib/sync-client.mjs';
 import { ADMIN_ROUTE_PREFIX, isLegacyAdminRoute, isPrettyAdminRoute, resolveAdminFilePath } from './lib/admin-routes.js';
 import { sanitizePlaybackVideo, sanitizePublicVideo } from './lib/video-manifest.js';
 
@@ -803,6 +803,27 @@ async function handleApi(req, res, ctx) {
     if (!SYNC_TOKEN) { sendJson(res, 404, { error: 'Not found' }); return true; }
     if (!isSyncAuthed(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
 
+    // POST /api/sync/config { categories?, coupons? } → mirror authored config from
+    // local to production (categories + coupons). Local is the source of truth, so
+    // the live site matches what the owner built locally — this is what carries
+    // category names/emojis/icons over so published videos show their styling.
+    // Runtime/user data (accounts, payments, analytics) is never touched.
+    if (req.method === 'POST' && url.pathname === '/api/sync/config') {
+      let body; try { body = JSON.parse(await readBody(req, 1 << 20)); } catch { body = null; }
+      const result = {};
+      if (body && Array.isArray(body.categories)) {
+        const r = categories.importAll(body.categories);
+        result.categories = r.ok ? r.count : 0;
+      }
+      if (body && Array.isArray(body.coupons)) {
+        const r = coupons.importAll(body.coupons);
+        result.coupons = r.ok ? r.count : 0;
+      }
+      console.log(`[sync] config merged: ${result.categories ?? 0} categories, ${result.coupons ?? 0} coupons`);
+      sendJson(res, 200, { ok: true, ...result });
+      return true;
+    }
+
     // POST /api/sync/diff { videos:[{id,fingerprint}] } → { present, changed, missing }
     if (req.method === 'POST' && url.pathname === '/api/sync/diff') {
       let body; try { body = JSON.parse(await readBody(req, 1 << 20)); } catch { body = null; }
@@ -823,12 +844,40 @@ async function handleApi(req, res, ctx) {
       if (!dest) { sendJson(res, 400, { error: 'Unsafe path.' }); return true; }
       if (size > UPLOAD_MAX_BYTES) { sendJson(res, 413, { error: 'Artifact too large.' }); return true; }
       const partPath = `${dest}.part`;
+      // Content-addressed session id: re-init of the same artifact (after a pause,
+      // cancel, or retry) maps back to the same in-progress transfer.
+      const id = sha256;
+
+      // 1) Already fully present with identical content → nothing to upload. The
+      //    sha sidecar (written at complete) lets us answer without re-hashing a
+      //    multi-GB rendition. This is what makes a re-publish skip unchanged
+      //    artifacts (settings-only edits stay cheap).
+      try {
+        await fsp.access(dest);
+        const have = (await fsp.readFile(`${dest}.sha256`, 'utf8')).trim();
+        if (have && have === sha256) { sendJson(res, 200, { complete: true }); return true; }
+      } catch { /* not present / no sidecar → fall through */ }
+
+      // 2) Resume an interrupted partial: a session for this content is still live
+      //    and its .part is intact at the declared size. Hand back how far we got.
+      const existing = uploads.getSession(id);
+      if (existing && existing.size === size) {
+        let partOk = false;
+        try { partOk = (await fsp.stat(partPath)).size === size; } catch { partOk = false; }
+        if (partOk) {
+          uploads.touch(existing);
+          sendJson(res, 200, { uploadId: id, offset: uploads.contiguousBytes(existing), chunkSize: UPLOAD_CHUNK_SIZE });
+          return true;
+        }
+      }
+
+      // 3) Fresh transfer — (re)allocate the .part and a new content-addressed session.
       await fsp.mkdir(path.dirname(dest), { recursive: true });
       await fsp.unlink(partPath).catch(() => {});
       const fh = await fsp.open(partPath, 'w');
       await fh.truncate(size);
       await fh.close();
-      const id = crypto.randomUUID();
+      uploads.deleteSession(id);
       uploads.createSession(id, { partPath, savedPath: dest, name: relPath, size, sha256 });
       sendJson(res, 200, { uploadId: id, offset: 0, chunkSize: UPLOAD_CHUNK_SIZE });
       return true;
@@ -871,6 +920,9 @@ async function handleApi(req, res, ctx) {
           return true;
         }
         await fsp.rename(session.partPath, session.savedPath);
+        // Record the verified hash so a later publish can confirm "already have
+        // this exact artifact" at init without re-reading the whole file.
+        await fsp.writeFile(`${session.savedPath}.sha256`, session.sha256).catch(() => {});
         uploads.deleteSession(id);
         sendJson(res, 200, { ok: true });
       } catch { sendJson(res, 500, { error: 'Could not finalize artifact.' }); }
@@ -918,20 +970,63 @@ async function handleApi(req, res, ctx) {
       sendJson(res, 400, { error: 'Publishing is not configured — set SYNC_TARGET_URL and SYNC_TOKEN on this machine.' });
       return true;
     }
+    // Don't run two publishes at once — reconnect the caller to the live one.
+    const live = latestPublishJob();
+    if (live && live.status === 'running') { sendJson(res, 200, { jobId: live.jobId, target: SYNC_TARGET_URL, resumed: true }); return true; }
     const { jobId } = startPublish({ targetUrl: SYNC_TARGET_URL, token: SYNC_TOKEN });
     sendJson(res, 200, { jobId, target: SYNC_TARGET_URL });
     return true;
   }
   if (req.method === 'GET' && url.pathname === '/api/admin/publish/status') {
     if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
-    const job = getPublishJob(url.searchParams.get('job') || '');
+    const q = url.searchParams.get('job') || '';
+    // No id (or "latest") → reconnect to the most recent job after a page reload.
+    const job = (!q || q === 'latest') ? latestPublishJob() : getPublishJob(q);
     if (!job) { sendJson(res, 404, { error: 'No such publish job.' }); return true; }
-    sendJson(res, 200, { job });
+    const { control, ...safe } = job; // never leak the internal control handle
+    sendJson(res, 200, { job: safe });
+    return true;
+  }
+  // Pause / resume / cancel an in-flight publish. Cancel leaves every uploaded
+  // byte on the server, so the next Publish resumes from where this stopped.
+  if (req.method === 'POST' && url.pathname === '/api/admin/publish/control') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    let body; try { body = JSON.parse(await readBody(req, 8192)); } catch { body = null; }
+    const jobId = body && typeof body.job === 'string' ? body.job : '';
+    const action = body && typeof body.action === 'string' ? body.action : '';
+    const r = controlPublishJob(jobId, action);
+    sendJson(res, r.ok ? 200 : 400, r);
     return true;
   }
   if (req.method === 'GET' && url.pathname === '/api/admin/publish/config') {
     if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
     sendJson(res, 200, { configured: !!(SYNC_TARGET_URL && SYNC_TOKEN), target: SYNC_TARGET_URL || null });
+    return true;
+  }
+
+  // Stream a not-yet-encoded video's ORIGINAL for admin review (it has no
+  // renditions yet). Admin-only; Range-enabled so the review player can scrub.
+  if (req.method === 'GET' && url.pathname === '/api/admin/review-source') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const src = reviewSource(url.searchParams.get('id') || '');
+    if (!src) { sendJson(res, 404, { error: 'No reviewable original for that video.' }); return true; }
+    try {
+      const stat = await fsp.stat(src.path);
+      const headers = { 'Content-Type': contentType(src.path), 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store' };
+      const range = parseRange(req.headers.range, stat.size);
+      if (range && range.invalid) { res.writeHead(416, withSecurityHeaders({ 'Content-Range': `bytes */${stat.size}` })); res.end(); return true; }
+      if (range) {
+        const { start, end } = range;
+        headers['Content-Range'] = `bytes ${start}-${end}/${stat.size}`;
+        headers['Content-Length'] = end - start + 1;
+        res.writeHead(206, withSecurityHeaders(headers));
+        fs.createReadStream(src.path, { start, end }).pipe(res);
+      } else {
+        headers['Content-Length'] = stat.size;
+        res.writeHead(200, withSecurityHeaders(headers));
+        fs.createReadStream(src.path).pipe(res);
+      }
+    } catch { sendJson(res, 500, { error: 'Could not read the original.' }); }
     return true;
   }
 
@@ -2038,7 +2133,11 @@ const server = http.createServer(async (req, res) => {
       const rawPath = (req.url || '/').split('?')[0];
       const gateBypass = rawPath === '/password.html' || rawPath === '/api/auth/sitepass'
         || rawPath === '/favicon.ico' || rawPath === '/styles.css' || rawPath.startsWith('/css/')
-        || rawPath.startsWith('/fonts/');
+        || rawPath.startsWith('/fonts/')
+        // Machine-to-machine publish: /api/sync/* carries its own Bearer SYNC_TOKEN
+        // auth (and 404s when SYNC_TOKEN is unset), so the browser-oriented site
+        // gate must not block the local→server video push.
+        || rawPath.startsWith('/api/sync/');
       if (!gateBypass) {
         const cookies = parseCookies(req.headers['cookie'] || '');
         if (cookies['siteauth'] !== SITE_AUTH_VALUE) {
@@ -2233,6 +2332,11 @@ server.listen(PORT, async () => {
   console.log(`   http timeouts (ms): requestTimeout=${server.requestTimeout} headersTimeout=${server.headersTimeout} keepAliveTimeout=${server.keepAliveTimeout} timeout=${server.timeout}`);
   await bootSweep(); // any interrupted "processing" entries → "failed"
   await releaseScheduled(); // publish any drips whose time passed while we were down
+  // Backfill "new video" notifications for already-published videos missing a
+  // feed entry (idempotent) — covers videos pushed before the server-side
+  // notification hook existed, so viewers finally get notified.
+  try { const n = await backfillNotifications(); if (n) console.log(`   notifications: ensured feed entries for ${n} published video(s)`); }
+  catch (e) { console.error('   notifications backfill failed:', e.message); }
 });
 
 // Scheduled-release worker: publish due "slow-drip" videos (and notify viewers)

@@ -18,18 +18,25 @@
       <section class="card" id="publish-card" hidden>
         <div class="card-head">
           <h2>Publish to server</h2>
-          <button id="publish-btn" class="btn sm">⬆ Publish to server</button>
-        </div>
-        <p class="muted" id="publish-target" style="margin:0 0 8px">Pushes processed videos (renditions, thumbnails, previews, storyboards) to production. The server does no transcoding.</p>
-        <div id="publish-progress" class="pub-prog" hidden>
-          <div class="pub-cur" id="pub-cur"></div>
-          <div class="pub-bar"><i id="pub-fill"></i><b class="pub-pct" id="pub-pct">0%</b></div>
-          <div class="pub-stats">
-            <span id="pub-speed">—</span>
-            <span id="pub-eta"></span>
-            <span id="pub-bytes"></span>
-            <span id="pub-count" style="margin-left:auto"></span>
+          <div class="pub-actions">
+            <button id="publish-btn" class="btn sm">⬆ Publish to server</button>
+            <button id="pub-pause" class="btn sm ghost" data-action="pause" hidden>⏸ Pause</button>
+            <button id="pub-cancel" class="btn sm danger" hidden>✕ Cancel</button>
           </div>
+        </div>
+        <p class="muted" id="publish-target" style="margin:0 0 8px">Pushes only the videos the server is missing or that changed (renditions, thumbnails, previews, storyboards) to production. The server does no transcoding.</p>
+        <div id="publish-progress" class="pub-prog" hidden>
+          <div class="pub-overall">
+            <div class="pub-cur" id="pub-cur"></div>
+            <div class="pub-bar"><i id="pub-fill"></i><b class="pub-pct" id="pub-pct">0%</b></div>
+            <div class="pub-stats">
+              <span id="pub-count"></span>
+              <span id="pub-speed">—</span>
+              <span id="pub-eta"></span>
+              <span id="pub-bytes" style="margin-left:auto"></span>
+            </div>
+          </div>
+          <ul id="pub-list" class="pub-list" hidden></ul>
         </div>
         <div id="publish-status" class="muted"></div>
       </section>
@@ -51,11 +58,13 @@
                   <div id="state-filter-title" class="ff-label">State</div>
                   <div id="state-filter-group" class="ff-choices">
                     <button class="ff-chip active" type="button" data-filter="state-filter" data-value="" data-tone="all"><span class="ff-chip-icon" aria-hidden="true">◌</span><span class="ff-chip-label">All states</span></button>
-                    <button class="ff-chip" type="button" data-filter="state-filter" data-value="draft-unapproved" data-tone="draft"><span class="ff-chip-icon" aria-hidden="true">◔</span><span class="ff-chip-label">Draft · Unapproved</span></button>
-                    <button class="ff-chip" type="button" data-filter="state-filter" data-value="draft-approved" data-tone="approved"><span class="ff-chip-icon" aria-hidden="true">✓</span><span class="ff-chip-label">Draft · Approved</span></button>
+                    <button class="ff-chip" type="button" data-filter="state-filter" data-value="uploaded" data-tone="review"><span class="ff-chip-icon" aria-hidden="true">◷</span><span class="ff-chip-label">In review</span></button>
+                    <button class="ff-chip" type="button" data-filter="state-filter" data-value="encoding" data-tone="processing"><span class="ff-chip-icon" aria-hidden="true">◔</span><span class="ff-chip-label">Encoding</span></button>
+                    <button class="ff-chip" type="button" data-filter="state-filter" data-value="draft-approved" data-tone="approved"><span class="ff-chip-icon" aria-hidden="true">✓</span><span class="ff-chip-label">Approved</span></button>
                     <button class="ff-chip" type="button" data-filter="state-filter" data-value="published" data-tone="live"><span class="ff-chip-icon" aria-hidden="true">●</span><span class="ff-chip-label">Published (live)</span></button>
-                    <button class="ff-chip" type="button" data-filter="state-filter" data-value="processing" data-tone="processing"><span class="ff-chip-icon" aria-hidden="true">◔</span><span class="ff-chip-label">Processing</span></button>
+                    <button class="ff-chip" type="button" data-filter="state-filter" data-value="rejected" data-tone="failed"><span class="ff-chip-icon" aria-hidden="true">⊘</span><span class="ff-chip-label">Rejected</span></button>
                     <button class="ff-chip" type="button" data-filter="state-filter" data-value="failed" data-tone="failed"><span class="ff-chip-icon" aria-hidden="true">✕</span><span class="ff-chip-label">Failed</span></button>
+                    <button class="ff-chip" type="button" data-filter="state-filter" data-value="draft-unapproved" data-tone="draft"><span class="ff-chip-icon" aria-hidden="true">◌</span><span class="ff-chip-label">Draft · Unapproved</span></button>
                   </div>
                 </section>
 

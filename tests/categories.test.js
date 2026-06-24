@@ -15,6 +15,29 @@ afterEach(() => {
   try { fs.unlinkSync(file); } catch { /* ignore */ }
 });
 
+describe('importAll (config sync)', () => {
+  it('replaces the set, hydrating visuals and de-duplicating by slug', () => {
+    categories.add('Old One'); // will be wiped by the replace
+    const r = categories.importAll([
+      { slug: 'hacking', name: 'Hacking', icon: '💻' },
+      { slug: 'colombia', name: 'Colombia', visual: { kind: 'flag', value: 'CO' } },
+      { slug: 'hacking', name: 'Dupe Hacking' }, // duplicate slug → dropped
+      { name: 'No slug' }, // invalid → skipped
+    ]);
+    expect(r.ok).toBe(true);
+    expect(r.count).toBe(2);
+    const list = categories.list();
+    expect(list.map((c) => c.slug)).toEqual(['hacking', 'colombia']);
+    expect(list.find((c) => c.slug === 'hacking').icon).toBe('💻');
+    expect(list.find((c) => c.slug === 'colombia').flag).toBe('co');
+    expect(categories.has('old-one')).toBe(false); // prior set replaced
+  });
+
+  it('rejects non-array input', () => {
+    expect(categories.importAll(null).ok).toBe(false);
+  });
+});
+
 describe('category flags', () => {
   it('isValidFlag normalizes 2-letter codes and rejects the rest', () => {
     expect(categories.isValidFlag('CO')).toBe('co');

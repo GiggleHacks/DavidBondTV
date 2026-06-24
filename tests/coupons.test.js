@@ -19,6 +19,35 @@ afterEach(() => {
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
 });
 
+describe('importAll (config sync)', () => {
+  it('imports coupon definitions and preserves an existing code\'s redemption count + Stripe link', () => {
+    // Production already has SUMMER_25 with redemptions + a Stripe link.
+    const made = coupons.create({ code: 'SUMMER_25', percentOff: 25, duration: 'once' });
+    coupons.update(made.coupon.id, {}); // no-op to bump updatedAt
+    const arr = coupons.list();
+    arr[0].timesRedeemed = 7;
+    arr[0].stripeCouponId = 'stripe_abc';
+    arr[0].stripeSig = 'sig';
+    fs.writeFileSync(process.env.COUPONS_FILE, JSON.stringify(arr));
+
+    const r = coupons.importAll([
+      { code: 'SUMMER_25', percentOff: 25, duration: 'once' }, // existing → keep runtime fields
+      { code: 'WELCOME10', percentOff: 10, duration: 'forever' }, // new
+      { code: 'bad', percentOff: 999, duration: 'once' }, // invalid percent → skipped
+    ]);
+    expect(r.ok).toBe(true);
+    expect(r.count).toBe(2);
+
+    const summer = coupons.getByCode('SUMMER_25');
+    expect(summer.timesRedeemed).toBe(7); // preserved from prod
+    expect(summer.stripeCouponId).toBe('stripe_abc'); // prod's Stripe link kept
+
+    const welcome = coupons.getByCode('WELCOME10');
+    expect(welcome.timesRedeemed).toBe(0);
+    expect(welcome.stripeCouponId).toBe(null); // new code derives its own later
+  });
+});
+
 describe('coupon registry', () => {
   it('creates, normalizes, disables, updates, and removes percent-off coupons', () => {
     const created = coupons.create({

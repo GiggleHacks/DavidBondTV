@@ -449,8 +449,8 @@ async function runUpload(item) {
     if (comp.status === 401) { location.reload(); return; }
     if (!comp.ok || !comp.data.jobId) { bail(comp.status, comp.data.error); return; }
     setProgress(rowId, 0);
-    setState(rowId, 'processing', { title: '⚙️ Processing…', desc: 'Uploaded ✓ — now processing on the server' });
-    setStats(rowId, 'Starting processing…');
+    setState(rowId, 'processing', { title: '⚙️ Preparing…', desc: 'Uploaded ✓ — generating preview for review (no encoding yet)' });
+    setStats(rowId, 'Preparing preview…');
     pollJob(rowId, comp.data.jobId, item.publishAt);
   } catch {
     if (!ctrl.canceled) bail(0, null);
@@ -512,6 +512,17 @@ async function pollJob(rowId, jobId, publishAt = 0) {
       const etaTag = job.etaSec != null ? ` · ETA ${fmtEta(job.etaSec)}` : '';
       setState(rowId, 'processing', { title: `⚙️ ${label}` });
       setStats(rowId, `${stepTag}${detailTag}${typeof job.pct === 'number' ? Math.round(job.pct) + '%' : ''}${etaTag}`.replace(/^ · /, ''));
+    }
+    // New review-first flow: an upload finishes in the 'uploaded' state — original
+    // stored, poster made, NO encoding yet. It waits in the review queue until an
+    // admin approves it (which is what starts encoding). Terminal here.
+    if (job.status === 'uploaded') {
+      setProgress(rowId, 100);
+      setState(rowId, 'ready', { title: `✅ ${job.title || 'Uploaded'}`, desc: '📋 Uploaded — awaiting review. Approve it to start encoding.' });
+      addRowActions(rowId, job.manifestId);
+      setStats(rowId, '');
+      if (isEnabled()) playSound(getSelected()); // 🔊 completion chime
+      return;
     }
     if (job.status === 'ready') {
       const desc = publishAt ? `⏱ Scheduled for ${new Date(publishAt).toLocaleString()}` : '✓ Published';

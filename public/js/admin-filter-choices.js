@@ -2,11 +2,13 @@ import { categoryDisplayName, categoryVisualText, categoryVisualMarkup } from '.
 
 export const STATE_FILTER_CHOICES = [
   { value: '', label: 'All states', icon: '◌', tone: 'all' },
-  { value: 'draft-unapproved', label: 'Draft · Unapproved', icon: '◔', tone: 'draft' },
-  { value: 'draft-approved', label: 'Draft · Approved', icon: '✓', tone: 'approved' },
+  { value: 'uploaded', label: 'In review', icon: '◷', tone: 'review' },
+  { value: 'encoding', label: 'Encoding', icon: '◔', tone: 'processing' },
+  { value: 'draft-approved', label: 'Approved', icon: '✓', tone: 'approved' },
   { value: 'published', label: 'Published (live)', icon: '●', tone: 'live' },
-  { value: 'processing', label: 'Processing', icon: '◔', tone: 'processing' },
+  { value: 'rejected', label: 'Rejected', icon: '⊘', tone: 'failed' },
   { value: 'failed', label: 'Failed', icon: '✕', tone: 'failed' },
+  { value: 'draft-unapproved', label: 'Draft · Unapproved', icon: '◌', tone: 'draft' },
 ];
 
 export const ACCESS_FILTER_CHOICES = [

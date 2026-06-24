@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { diffManifest, artifactUrlsForEntry } from '../lib/sync-diff.mjs';
+import { diffManifest, artifactUrlsForEntry, metaFingerprintForEntry } from '../lib/sync-diff.mjs';
 
 describe('diffManifest', () => {
   const server = [
@@ -24,6 +24,37 @@ describe('diffManifest', () => {
 
   it('handles empty/garbage inputs', () => {
     expect(diffManifest(null, null)).toEqual({ present: [], changed: [], missing: [] });
+  });
+
+  it('flags a settings-only change (e.g. blur) as changed even when the file is identical', () => {
+    const serverEntry = { id: 'a', fingerprint: 'fa', visibility: 'premium', blur: 'medium' };
+    const sameMeta = metaFingerprintForEntry(serverEntry);
+    const blurChanged = metaFingerprintForEntry({ ...serverEntry, blur: 'strongest' });
+
+    // Same file, same settings → present (skip).
+    expect(diffManifest([serverEntry], [{ id: 'a', fingerprint: 'fa', metaFingerprint: sameMeta }]).present).toEqual(['a']);
+    // Same file, blur edited → changed (re-sync the entry; artifacts short-circuit).
+    expect(diffManifest([serverEntry], [{ id: 'a', fingerprint: 'fa', metaFingerprint: blurChanged }]).changed).toEqual(['a']);
+  });
+
+  it('ignores metaFingerprint when the client omits it (legacy clients)', () => {
+    const server = [{ id: 'a', fingerprint: 'fa', blur: 'off' }];
+    expect(diffManifest(server, [{ id: 'a', fingerprint: 'fa' }]).present).toEqual(['a']);
+  });
+});
+
+describe('metaFingerprintForEntry', () => {
+  it('is stable for the same settings and changes when a synced setting changes', () => {
+    const base = { id: 'v', title: 'T', visibility: 'premium', blur: 'medium', published: true };
+    expect(metaFingerprintForEntry(base)).toBe(metaFingerprintForEntry({ ...base }));
+    expect(metaFingerprintForEntry(base)).not.toBe(metaFingerprintForEntry({ ...base, blur: 'off' }));
+    expect(metaFingerprintForEntry(base)).not.toBe(metaFingerprintForEntry({ ...base, visibility: 'free' }));
+  });
+
+  it('ignores fields that are not part of the publishable settings', () => {
+    const base = { id: 'v', title: 'T', blur: 'medium' };
+    // fingerprint / originalSize are not synced settings — they must not affect the hash.
+    expect(metaFingerprintForEntry(base)).toBe(metaFingerprintForEntry({ ...base, fingerprint: 'xyz', originalSize: 999 }));
   });
 });
 

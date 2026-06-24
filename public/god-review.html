@@ -45,15 +45,15 @@
         </div>
 
         <div class="rv-actions">
-          <button class="rv-btn rv-down" type="button" id="rv-down" title="Delete (←)">
-            <span class="rv-ico">👎</span><span class="rv-lbl">Delete</span>
+          <button class="rv-btn rv-down" type="button" id="rv-down" title="Reject (←)">
+            <span class="rv-ico">👎</span><span class="rv-lbl">Reject</span>
           </button>
           <button class="btn sm ghost rv-undo" type="button" id="rv-undo" title="Undo last (Backspace)">↶ Undo</button>
-          <button class="rv-btn rv-up" type="button" id="rv-up" title="Approve (→)">
+          <button class="rv-btn rv-up" type="button" id="rv-up" title="Approve — starts encoding (→)">
             <span class="rv-ico">👍</span><span class="rv-lbl">Approve</span>
           </button>
         </div>
-        <p class="rv-hint muted">→ / F approve · ← / D delete · Space play-pause · Backspace undo</p>
+        <p class="rv-hint muted">→ / F approve (encode) · ← / D reject · Space play-pause · Backspace undo</p>
       </section>
 
       <!-- End-of-session summary -->
@@ -61,7 +61,7 @@
         <div class="card-head"><h2>Review summary</h2></div>
         <div class="rv-sum-grid">
           <div class="rv-sum-stat rv-sum-up"><b id="rv-sum-up">0</b><span>to approve</span></div>
-          <div class="rv-sum-stat rv-sum-down"><b id="rv-sum-down">0</b><span>to delete</span></div>
+          <div class="rv-sum-stat rv-sum-down"><b id="rv-sum-down">0</b><span>to reject</span></div>
           <div class="rv-sum-stat"><b id="rv-sum-skip">0</b><span>skipped</span></div>
         </div>
         <p class="rv-sum-warn" id="rv-sum-warn"></p>

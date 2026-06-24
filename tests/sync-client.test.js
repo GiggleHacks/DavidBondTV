@@ -28,7 +28,13 @@ describe('computeMissing', () => {
     expect(call.opts.method).toBe('POST');
     expect(call.opts.headers.Authorization).toBe('Bearer tok');
     const sent = JSON.parse(call.opts.body);
-    expect(sent.videos).toEqual([{ id: 'a', fingerprint: 'fa' }, { id: 'b', fingerprint: 'fb' }]);
+    // Each video now carries a metaFingerprint so settings-only edits (blur,
+    // visibility, …) are detected by the server diff without re-uploading bytes.
+    expect(sent.videos.map((v) => ({ id: v.id, fingerprint: v.fingerprint }))).toEqual([
+      { id: 'a', fingerprint: 'fa' },
+      { id: 'b', fingerprint: 'fb' },
+    ]);
+    expect(sent.videos.every((v) => typeof v.metaFingerprint === 'string' && v.metaFingerprint.length === 64)).toBe(true);
   });
 
   it('throws on a non-OK diff response', async () => {

@@ -16,18 +16,35 @@ const REVIEW_QUEUE_KEY = 'dbtv-review-queue'; // handoff to god-review.html
 // so existing videos are never trapped in the draft-review queue.
 const approvalOf = (v) => (v.approval || 'approved');
 
-// Derive the single owner-facing state of a video. Lifecycle (processing/failed)
-// takes precedence, then live, then the draft approval split.
+// Derive the single owner-facing state of a video. The review-first lifecycle:
+// uploaded → (approve) → encoding → ready/approved → published. Lifecycle states
+// take precedence, then live, then the draft approval split.
 function stateOf(v) {
-  if (v.status === 'processing') return 'processing';
+  if (v.status === 'uploaded') return 'uploaded';
+  if (v.status === 'encoding' || v.status === 'processing') return 'encoding';
+  if (v.status === 'rejected') return 'rejected';
   if (v.status === 'failed') return 'failed';
   if (v.published === true) return 'published';
   return approvalOf(v) === 'approved' ? 'draft-approved' : 'draft-unapproved';
 }
-const isUnapprovedDraft = (v) => v.published === false && approvalOf(v) === 'unapproved';
-const isApprovedDraft = (v) => v.published === false && approvalOf(v) === 'approved';
+// The review queue is now everything still in the pre-encode 'uploaded' state —
+// these are the videos awaiting the approve/reject decision that starts encoding.
+const needsReview = (v) => v.status === 'uploaded';
+const isApprovedDraft = (v) => v.published === false && approvalOf(v) === 'approved' && (v.status || 'ready') === 'ready';
 
 const chunk = (a, n) => { const o = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o; };
+
+// Human-readable byte size. The "file size" we show per video is the encoded
+// footprint on disk (compressedSize) — what actually gets published — falling
+// back to the original size for videos not yet encoded (new review-first flow).
+function fmtBytes(b) {
+  if (!b && b !== 0) return '';
+  const gb = b / 1e9; if (gb >= 1) return `${gb.toFixed(2)} GB`;
+  const mb = b / 1e6; if (mb >= 1) return `${mb.toFixed(0)} MB`;
+  if (b >= 1e3) return `${(b / 1e3).toFixed(0)} KB`;
+  return `${b} B`;
+}
+const videoSize = (v) => v.compressedSize || v.originalSize || 0;
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 let all = [];
@@ -149,10 +166,12 @@ function badges(v) {
   const out = [];
   // Exactly one state badge per row (lifecycle → live → draft approval split).
   const st = stateOf(v);
-  if (st === 'processing') out.push('<span class="vb vb-proc">Processing</span>');
+  if (st === 'uploaded') out.push('<span class="vb vb-upload">In review</span>');
+  else if (st === 'encoding') out.push('<span class="vb vb-proc">Encoding</span>');
+  else if (st === 'rejected') out.push('<span class="vb vb-rej">Rejected</span>');
   else if (st === 'failed') out.push('<span class="vb vb-fail">Failed</span>');
   else if (st === 'published') out.push('<span class="vb vb-live">Live</span>');
-  else if (st === 'draft-approved') out.push('<span class="vb vb-appr">Draft · Approved</span>');
+  else if (st === 'draft-approved') out.push('<span class="vb vb-appr">Approved</span>');
   else out.push('<span class="vb vb-draft">Draft · Unapproved</span>');
   if (v.visibility === 'premium') out.push('<span class="vb vb-prem">Premium</span>');
   if (v.category && catBySlug(v.category)) {
@@ -164,7 +183,7 @@ function badges(v) {
 
 // Keep the review/publish toolbar counts in sync with the full library.
 function updateReviewCounts() {
-  const un = all.filter(isUnapprovedDraft).length;
+  const un = all.filter(needsReview).length;
   const ap = all.filter(isApprovedDraft).length;
   const ra = $('review-all');
   const pa = $('publish-approved');
@@ -248,7 +267,9 @@ function libRow(v) {
       </div>
     </div>`;
   row.querySelector('b').textContent = v.title || v.id;
-  row.querySelector('.meta').innerHTML = `${esc(v.durLabel || '')} · ${esc(v.uploaded || '')} ${badges(v)}`.trim();
+  const size = videoSize(v);
+  const sizeSeg = size ? ` · <span class="vsize" title="${v.compressedSize ? 'Encoded size (published)' : 'Original size (not yet encoded)'}">${esc(fmtBytes(size))}</span>` : '';
+  row.querySelector('.meta').innerHTML = `${esc(v.durLabel || '')} · ${esc(v.uploaded || '')}${sizeSeg} ${badges(v)}`.trim();
 
   const rmBtn = row.querySelector('.row-menu-btn');
   rmBtn.addEventListener('click', () => togglePanel(rmBtn, row.querySelector('.row-menu-panel'), closeAllPopovers));
@@ -379,7 +400,7 @@ function wire() {
   }, closeAllPopovers));
 
   // Review strip
-  $('review-all')?.addEventListener('click', () => startReview(all.filter(isUnapprovedDraft).map((v) => v.id)));
+  $('review-all')?.addEventListener('click', () => startReview(all.filter(needsReview).map((v) => v.id)));
   $('publish-approved')?.addEventListener('click', publishApproved);
   $('more-review-selected')?.addEventListener('click', () => { closeAllPopovers(); startReview([...selected]); });
 

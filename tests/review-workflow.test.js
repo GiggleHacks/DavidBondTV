@@ -61,6 +61,36 @@ describe('bulkAction approval flags', () => {
   });
 });
 
+describe('review-first encoding (upload → review → approve → encode)', () => {
+  it('reject marks the video rejected, clears sourcePath, and deletes the original', async () => {
+    const src = path.join(TMP, 'media', 'reject-me.mp4');
+    fs.mkdirSync(path.dirname(src), { recursive: true });
+    fs.writeFileSync(src, 'fake video bytes');
+    seed([{ id: 'r', published: false, approval: 'unapproved', status: 'uploaded', sourcePath: src }]);
+
+    await bulkAction(['r'], 'reject');
+    const e = byId('r');
+    expect(e.status).toBe('rejected');
+    expect(e.published).toBe(false);
+    expect('sourcePath' in e).toBe(false); // cleared
+    expect(fs.existsSync(src)).toBe(false); // un-encoded original reclaimed
+  });
+
+  it('approve on an uploaded video flips it to approved and out of the uploaded state (encoding begins)', async () => {
+    const src = path.join(TMP, 'media', 'approve-me.mp4');
+    fs.mkdirSync(path.dirname(src), { recursive: true });
+    fs.writeFileSync(src, 'fake video bytes');
+    seed([{ id: 'a2', published: false, approval: 'unapproved', status: 'uploaded', sourcePath: src }]);
+
+    await bulkAction(['a2'], 'approve');
+    const e = byId('a2');
+    expect(e.approval).toBe('approved');            // approval is the durable decision
+    expect(e.published).toBe(false);                // approving never publishes
+    expect(e.status).not.toBe('uploaded');          // left the review queue → encoding (or failed w/o ffmpeg)
+    expect(['encoding', 'failed', 'ready']).toContain(e.status);
+  });
+});
+
 describe('releaseScheduled honors approval', () => {
   it('releases an approved due draft but not an unapproved one', async () => {
     const past = 1; // a publishAt firmly in the past

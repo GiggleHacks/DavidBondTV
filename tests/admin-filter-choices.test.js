@@ -52,9 +52,16 @@ describe('findChoiceLabel', () => {
 
 describe('filter metadata', () => {
   it('defines tones and icons for state and access chips', () => {
-    expect(STATE_FILTER_CHOICES.find((choice) => choice.value === 'processing')).toEqual({
-      value: 'processing',
-      label: 'Processing',
+    // Review-first lifecycle states: uploaded (in review) → encoding → approved.
+    expect(STATE_FILTER_CHOICES.find((choice) => choice.value === 'uploaded')).toEqual({
+      value: 'uploaded',
+      label: 'In review',
+      icon: '◷',
+      tone: 'review',
+    });
+    expect(STATE_FILTER_CHOICES.find((choice) => choice.value === 'encoding')).toEqual({
+      value: 'encoding',
+      label: 'Encoding',
       icon: '◔',
       tone: 'processing',
     });

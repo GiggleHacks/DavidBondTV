@@ -56,6 +56,17 @@ function bestSrc(v) {
   return (q[0] && q[0].url) || '';
 }
 
+// What to play for review. Encoded videos play their best rendition; videos still
+// awaiting encoding (the new review-first flow) stream their ORIGINAL via the
+// admin-only review endpoint — so the admin watches the real footage before any
+// CPU is spent encoding it.
+function srcFor(v) {
+  if ((v.status || 'ready') === 'ready') return bestSrc(v);
+  return `/api/admin/review-source?id=${encodeURIComponent(v.id)}`;
+}
+// Is this entry reviewable (has something to play)?
+const reviewable = (v) => ((v.status || 'ready') === 'ready' ? !!bestSrc(v) : (v.status === 'uploaded' || v.status === 'failed'));
+
 function renderCard() {
   if (idx >= queue.length) { renderSummary(); return; }
   show('stage');
@@ -70,7 +81,7 @@ function renderCard() {
   const bits = [v.durLabel, v.uploaded, v.visibility === 'premium' ? 'Premium' : 'Free'].filter(Boolean);
   $('rv-sub').textContent = bits.join(' · ');
   const vid = $('rv-video');
-  const src = bestSrc(v);
+  const src = srcFor(v);
   vid.poster = v.thumb || '';
   vid.src = src;
   vid.muted = false;
@@ -87,9 +98,9 @@ function renderSummary() {
   $('rv-sum-skip').textContent = skipped;
   const undecided = queue.length - approved.size - toDelete.size;
   $('rv-sum-warn').innerHTML = toDelete.size
-    ? `⚠ <b>${toDelete.size}</b> video${toDelete.size === 1 ? '' : 's'} will be <b>permanently deleted</b> (files removed from the server). This cannot be undone.`
-    : 'No videos marked for deletion.';
-  $('rv-sum-msg').textContent = undecided > 0 ? `${undecided} not yet reviewed (left as unapproved drafts).` : '';
+    ? `<b>${toDelete.size}</b> video${toDelete.size === 1 ? '' : 's'} will be <b>rejected</b> — marked rejected and their (un-encoded) original removed. Approved videos start encoding now.`
+    : 'No videos marked for rejection. Approved videos start encoding now.';
+  $('rv-sum-msg').textContent = undecided > 0 ? `${undecided} not yet reviewed (left awaiting review).` : '';
 }
 
 // --- decisions --------------------------------------------------------------
@@ -162,7 +173,7 @@ async function confirmSession() {
   $('rv-sum-msg').textContent = 'Applying…';
   try {
     if (approved.size) { if (!(await bulk([...approved], 'approve'))) return; }
-    if (toDelete.size) { if (!(await bulk([...toDelete], 'delete'))) return; }
+    if (toDelete.size) { if (!(await bulk([...toDelete], 'reject'))) return; }
     try { sessionStorage.removeItem(QUEUE_KEY); sessionStorage.removeItem(PROGRESS_KEY); } catch { /* ignore */ }
     back();
   } catch (e) {
@@ -207,11 +218,12 @@ async function main() {
   try { all = (await (await fetch(`/api/admin/videos?_=${Date.now()}`)).json()).videos || []; } catch { all = []; }
   const byId = new Map(all.map((v) => [v.id, v]));
 
-  // Keep the queued order; only review fully-processed ('ready') videos.
+  // Keep the queued order; include videos awaiting review (uploaded, pre-encode)
+  // and any encoded ones, skipping anything with nothing playable.
   for (const id of ids) {
     const v = byId.get(id);
     if (!v) continue;
-    if ((v.status || 'ready') === 'ready' && bestSrc(v)) queue.push(v);
+    if (reviewable(v)) queue.push(v);
     else skipped += 1;
   }
 

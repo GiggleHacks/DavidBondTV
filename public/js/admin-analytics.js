@@ -374,6 +374,10 @@ async function loadMetrics() {
     s('met-media', fmtBytes(m.disk?.media));
     s('met-total', fmtBytes(m.disk?.total));
     s('met-avg', fmtBytes(m.videos?.avgOriginalSize));
+    // Real filesystem capacity (statfs). Falls back to em-dash when unavailable.
+    s('met-stused', m.storage ? `${fmtBytes(m.storage.used)} (${m.storage.pctUsed}%)` : '—');
+    s('met-stcap', m.storage ? fmtBytes(m.storage.total) : '—');
+    s('met-stfree', m.storage ? fmtBytes(m.storage.available) : '—');
     s('met-cores', `${m.cpu?.cores || '—'} × ${(m.cpu?.model || '').split(/\s+/).slice(0, 3).join(' ')}`);
     const ld = m.cpu?.load;
     s('met-load', ld ? ld.map((l) => l.toFixed(2)).join(' / ') : '—');
