@@ -4,8 +4,11 @@
 //
 // Flow: the page may carry ?next=<video> so that after a successful checkout we
 // send the user straight back to the content they wanted. Stripe redirects to
-// ?status=success&next=…; since the webhook may lag, we poll /api/auth/me until
-// the membership flips active, then redirect to `next`.
+// ?status=success&session_id=<cs_…>&next=…. We activate SYNCHRONOUSLY by posting
+// that session id to /api/pay/stripe/reconcile (so activation never depends on
+// the webhook), then fall back to a short poll. A successful payment NEVER
+// re-shows the sales offer — at worst it shows a "finalizing" state with a
+// "Check again" button.
 import { fetchMe, postJSON } from '/js/account.js';
 import { deriveBillingView } from '/js/billing-view.js';
 import { initTheme } from '/js/theme.js';
@@ -17,7 +20,14 @@ const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const rawNext = params.get('next');
 const next = (rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')) ? rawNext : '';
+const sessionId = params.get('session_id') || '';
 let primaryInterval = 'month';
+
+const isActive = (me) => !!(me && me.membership && me.membership.active);
+const hasAccessFor = (me) => {
+  const v = me ? deriveBillingView(me) : deriveBillingView(null);
+  return v.kind === 'member' || v.kind === 'admin-access';
+};
 
 function setMsg(text, kind) {
   const m = $('msg');
@@ -50,6 +60,7 @@ function fmtMoney(amount, currency) {
 
 function showMember(me) {
   $('plans-view').hidden = true;
+  $('pending-actions').hidden = true;
   $('member-view').hidden = false;
   const view = deriveBillingView(me);
   const title = document.querySelector('#member-view .mb-title');
@@ -67,7 +78,53 @@ function showMember(me) {
 
 function showPlans() {
   $('member-view').hidden = true;
+  $('pending-actions').hidden = true;
   $('plans-view').hidden = false;
+}
+
+/**
+ * Paid, but membership not yet reflected locally. Show an honest "finalizing"
+ * state with a manual re-check — NEVER the sales offer (which reads as "the
+ * payment failed").
+ */
+function showPending() {
+  $('plans-view').hidden = true;
+  $('member-view').hidden = true;
+  $('pending-actions').hidden = false;
+  showBanner('Payment received — finalizing your access. This can take a few seconds. We’ve emailed your receipt; tap “Check again” below.', 'ok');
+}
+
+/** Synchronous server-side activation from the checkout session on the URL. */
+async function reconcileSession() {
+  if (!sessionId) return null;
+  const r = await postJSON('/api/pay/stripe/reconcile', { sessionId });
+  return r && r.ok ? r.data : null;
+}
+
+/** Surface the VIP Telegram join button for eligible members (auto-prompt). */
+async function maybeShowTelegram() {
+  const btn = $('tg-join');
+  if (!btn) return;
+  try {
+    const s = await (await fetch('/api/telegram/status')).json();
+    if (!s || !s.enabled || !s.eligible) { btn.hidden = true; return; }
+    btn.hidden = false;
+    btn.textContent = s.linkState === 'joined' ? 'Open the VIP Telegram →' : 'Join the VIP Telegram →';
+    btn.onclick = async () => {
+      btn.disabled = true;
+      const r = await postJSON('/api/telegram/link', {});
+      btn.disabled = false;
+      if (r.ok && r.data.deepLink) window.open(r.data.deepLink, '_blank', 'noopener');
+      else setMsg((r.data && r.data.error) || 'Could not get your Telegram invite — try again from your account.', 'error');
+    };
+  } catch { btn.hidden = true; }
+}
+
+/** Render the success/member state + auto-prompt Telegram. */
+function enterMember(me, { celebrate } = {}) {
+  if (celebrate) showBanner('You’re all set — welcome to David Bond TV membership! 🎉', 'ok');
+  showMember(me);
+  maybeShowTelegram();
 }
 
 async function startCheckout(interval, btn) {
@@ -175,11 +232,25 @@ async function applyConfig() {
   }
 }
 
+async function recheck(btn) {
+  if (btn) btn.disabled = true;
+  showBanner('Checking…', 'ok');
+  await reconcileSession();
+  const me = await fetchMe();
+  if (hasAccessFor(me)) {
+    enterMember(me, { celebrate: true });
+  } else {
+    if (btn) btn.disabled = false;
+    showBanner('Still finalizing. If this keeps happening, check your email for the receipt or contact us on Telegram — your access is safe.', 'warn');
+  }
+}
+
 async function render() {
   $('pay-card').addEventListener('click', (e) => startCheckout(primaryInterval, e.currentTarget));
   const payYear = $('pay-year');
   if (payYear) payYear.addEventListener('click', (e) => startCheckout('year', e.currentTarget));
   $('manage-btn').addEventListener('click', (e) => openPortal(e.currentTarget));
+  $('recheck-btn')?.addEventListener('click', (e) => recheck(e.currentTarget));
 
   const status = params.get('status');
   if (status === 'cancel') showBanner('Checkout canceled — no charge was made.', 'warn');
@@ -187,31 +258,36 @@ async function render() {
   await applyConfig();
   let me = await fetchMe();
 
-  if (status === 'success') {
-    if (!(me && me.membership && me.membership.active)) {
-      showBanner('Payment received — activating your membership…', 'ok');
-      me = await pollUntilActive();
-    }
+  if (status === 'success' && !isActive(me)) {
+    showBanner('Payment received — activating your membership…', 'ok');
+    // 1) Synchronous activation tied to THIS user's checkout session (no webhook
+    //    dependency). 2) Re-read. 3) Short poll as a backstop.
+    await reconcileSession();
+    me = await fetchMe();
+    if (!isActive(me)) me = await pollUntilActive(4);
   }
 
-  const view = me ? deriveBillingView(me) : deriveBillingView(null);
-  const hasAccess = view.kind === 'member' || view.kind === 'admin-access';
+  const hasAccess = hasAccessFor(me);
 
-  // Already a member (or just became one) and we have somewhere to send them back
-  // to → go straight to the content they wanted.
+  // Member (or just activated) with a destination → straight to the content.
   if (hasAccess && next) {
     showBanner('You’re all set — taking you to your video…', 'ok');
-    setTimeout(() => { location.href = next; }, 1000);
-    showMember(me);
+    enterMember(me);
+    setTimeout(() => { location.href = next; }, 1200);
     return;
   }
 
   if (hasAccess) {
-    if (status === 'success') showBanner('You’re all set — welcome to David Bond TV membership!', 'ok');
-    showMember(me);
-  } else {
-    showPlans();
+    enterMember(me, { celebrate: status === 'success' });
+    return;
   }
+
+  // Not a member. A successful payment must NEVER fall back to the sales offer.
+  if (status === 'success') {
+    showPending();
+    return;
+  }
+  showPlans();
 }
 
 render();

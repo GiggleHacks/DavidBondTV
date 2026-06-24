@@ -395,3 +395,147 @@ describe('configured flag', () => {
     expect(sp.configured).toBe(true);
   });
 });
+
+// A spy mailer so we can assert "exactly one confirmation email".
+function fakeMailer() {
+  const calls = { membership: [], product: [] };
+  return {
+    mailerConfigured: () => true,
+    sendMembershipGrantedEmail: async (to, link) => { calls.membership.push({ to, link }); },
+    sendProductGrantedEmail: async (to, name, link) => { calls.product.push({ to, name, link }); },
+    _calls: calls,
+  };
+}
+
+const reconcileRes = () => ({
+  statusCode: null, body: null,
+  writeHead(s) { this.statusCode = s; },
+  end(p) { this.body = p; },
+});
+const resJson = (res) => { try { return JSON.parse(res.body); } catch { return null; } };
+
+// fetchImpl that answers the two GETs reconcile makes: the checkout session and
+// (for subscriptions) the subscription object.
+function reconcileFetch({ session, sub }) {
+  return async (url, opts) => {
+    if (url.includes('/checkout/sessions/')) return { ok: true, json: async () => session };
+    if (url.includes('/subscriptions/')) return { ok: true, json: async () => sub };
+    return { ok: true, json: async () => ({}) };
+  };
+}
+
+describe('reconcile (synchronous activation on return from checkout)', () => {
+  const makeReconcileSP = (user, fetchImpl, mailer) => createStripePayments({
+    store: fakeStore({ [user.id]: user }), paymentsStore: fakePayments(),
+    currentUser: () => user, baseUrl: 'http://x', secretKey: 'sk_test', webhookSecret: SECRET,
+    priceMonthly: 'price_m', fetchImpl, mailer,
+  });
+
+  it('rejects a session whose client_reference_id is a different user (403, no activation)', async () => {
+    const user = { id: 'u1', email: 'a@b.com' };
+    const mailer = fakeMailer();
+    const sp = createStripePayments({
+      store: fakeStore({ u1: user }), paymentsStore: fakePayments(),
+      currentUser: () => user, baseUrl: 'http://x', secretKey: 'sk_test', webhookSecret: SECRET, priceMonthly: 'price_m',
+      mailer,
+      fetchImpl: reconcileFetch({ session: { id: 'cs_x', mode: 'subscription', client_reference_id: 'someone_else', payment_status: 'paid', subscription: 'sub_1' }, sub: subObject() }),
+    });
+    const req = Readable.from([Buffer.from(JSON.stringify({ sessionId: 'cs_attacker' }))]);
+    const res = reconcileRes();
+    await sp._test.reconcile(req, res);
+    expect(res.statusCode).toBe(403);
+    expect(mailer._calls.membership).toHaveLength(0);
+  });
+
+  it('rejects a malformed session id (400)', async () => {
+    const user = { id: 'u1', email: 'a@b.com' };
+    const sp = makeReconcileSP(user, reconcileFetch({ session: {}, sub: subObject() }), fakeMailer());
+    const req = Readable.from([Buffer.from(JSON.stringify({ sessionId: 'not-a-session' }))]);
+    const res = reconcileRes();
+    await sp._test.reconcile(req, res);
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('activates membership from a paid subscription session and returns active', async () => {
+    const user = { id: 'u1', email: 'a@b.com' };
+    const sp = makeReconcileSP(
+      user,
+      reconcileFetch({ session: { id: 'cs_ok', mode: 'subscription', client_reference_id: 'u1', payment_status: 'paid', subscription: 'sub_1' }, sub: subObject() }),
+      fakeMailer(),
+    );
+    const req = Readable.from([Buffer.from(JSON.stringify({ sessionId: 'cs_ok' }))]);
+    const res = reconcileRes();
+    await sp._test.reconcile(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(resJson(res).membership.active).toBe(true);
+  });
+
+  it('is idempotent and sends exactly one welcome email across webhook + reconcile', async () => {
+    const user = { id: 'u1', email: 'a@b.com' };
+    const store = fakeStore({ u1: user });
+    const mailer = fakeMailer();
+    const sp = createStripePayments({
+      store, paymentsStore: fakePayments(),
+      currentUser: () => user, baseUrl: 'http://x', secretKey: 'sk_test', webhookSecret: SECRET, priceMonthly: 'price_m',
+      mailer,
+      fetchImpl: reconcileFetch({ session: { id: 'cs_ok', mode: 'subscription', client_reference_id: 'u1', payment_status: 'paid', subscription: 'sub_1' }, sub: subObject() }),
+    });
+
+    // Webhook activates first…
+    await sp._test.handleEvent({ id: 'evt_w', type: 'customer.subscription.updated', data: { object: subObject() } });
+    // …then the user returns and we reconcile the same subscription.
+    const req = Readable.from([Buffer.from(JSON.stringify({ sessionId: 'cs_ok' }))]);
+    await sp._test.reconcile(req, reconcileRes());
+    // …and a redundant second reconcile.
+    const req2 = Readable.from([Buffer.from(JSON.stringify({ sessionId: 'cs_ok' }))]);
+    await sp._test.reconcile(req2, reconcileRes());
+
+    expect(store._users.u1.hasPurchased).toBe(true);
+    expect(store._users.u1.membership.welcomeEmailFor).toBe('sub_1');
+    expect(mailer._calls.membership).toHaveLength(1); // exactly once, never double-sent
+  });
+
+  it('does not activate when the session is not yet paid', async () => {
+    const user = { id: 'u1', email: 'a@b.com' };
+    const sp = makeReconcileSP(
+      user,
+      reconcileFetch({ session: { id: 'cs_unpaid', mode: 'subscription', client_reference_id: 'u1', payment_status: 'unpaid', subscription: 'sub_1' }, sub: subObject() }),
+      fakeMailer(),
+    );
+    const req = Readable.from([Buffer.from(JSON.stringify({ sessionId: 'cs_unpaid' }))]);
+    const res = reconcileRes();
+    await sp._test.reconcile(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(resJson(res).membership.active).toBe(false);
+  });
+});
+
+describe('resyncUser (admin safety-net)', () => {
+  it('pulls the latest active subscription from Stripe and activates the user', async () => {
+    const store = fakeStore({ u1: { id: 'u1', email: 'a@b.com', stripeCustomerId: 'cus_1' } });
+    const mailer = fakeMailer();
+    const sp = createStripePayments({
+      store, paymentsStore: fakePayments(), currentUser: () => null,
+      baseUrl: 'http://x', secretKey: 'sk_test', webhookSecret: SECRET, priceMonthly: 'price_m', mailer,
+      fetchImpl: async (url) => {
+        if (url.includes('/subscriptions?customer=')) return { ok: true, json: async () => ({ data: [subObject({ status: 'active' })] }) };
+        return { ok: true, json: async () => ({}) };
+      },
+    });
+    const out = await sp.resyncUser('u1');
+    expect(out.ok).toBe(true);
+    expect(out.membership.active).toBe(true);
+    expect(store._users.u1.hasPurchased).toBe(true);
+  });
+
+  it('returns an error when the user has no Stripe customer', async () => {
+    const store = fakeStore({ u1: { id: 'u1', email: 'a@b.com' } });
+    const sp = createStripePayments({
+      store, paymentsStore: fakePayments(), currentUser: () => null,
+      baseUrl: 'http://x', secretKey: 'sk_test', webhookSecret: SECRET, priceMonthly: 'price_m',
+      fetchImpl: async () => ({ ok: true, json: async () => ({}) }),
+    });
+    const out = await sp.resyncUser('u1');
+    expect(out.ok).toBe(false);
+  });
+});

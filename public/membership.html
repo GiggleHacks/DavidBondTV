@@ -120,12 +120,19 @@
   <div class="mb-wrap">
     <div id="banner" class="sub-banner" hidden></div>
 
+    <!-- Finalizing (paid, activation in flight) — never the sales offer -->
+    <div id="pending-actions" hidden style="text-align:center;margin-bottom:16px">
+      <button class="acc-btn mb-cta" id="recheck-btn" type="button" style="max-width:300px;margin:0 auto">Check again</button>
+      <p class="mb-foot" style="margin-top:12px">Need help? <a href="https://t.me/HelloDavid99" target="_blank" rel="noopener">Contact us on Telegram →</a></p>
+    </div>
+
     <!-- Active member -->
     <div id="member-view" class="mb-card" hidden>
       <span class="mb-badge">★ Member</span>
       <h1 class="mb-title">You're in.</h1>
       <p class="mb-sub" id="member-status"></p>
       <button class="acc-btn mb-cta" id="manage-btn" type="button">Manage billing</button>
+      <a class="acc-btn acc-btn-ghost mb-cta" id="tg-join" hidden style="margin-top:10px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center">Join the VIP Telegram →</a>
       <p class="mb-foot"><a href="/">Browse exclusive videos →</a></p>
     </div>
 

@@ -1449,6 +1449,26 @@ async function handleApi(req, res, ctx) {
       return true;
     }
 
+    // POST resync-stripe — admin safety-net: pull this user's real subscription
+    // from Stripe and activate locally (use when a payment succeeded but the
+    // membership didn't activate, e.g. a missed webhook). Reuses applySubscription
+    // (sends the deduped welcome email).
+    if (req.method === 'POST' && action === 'resync-stripe') {
+      const admin = accounts.currentUser(req);
+      const result = await stripePayments.resyncUser(userId);
+      if (!result.ok) { sendJson(res, 400, { error: result.error || 'Could not resync.' }); return true; }
+      await paymentsStore.addTxn(userId, { kind: 'admin.stripe.resync', ts: Date.now(), by: admin ? admin.id : null });
+      if (result.membership && result.membership.active) {
+        addAccountNotification(userId, {
+          title: 'Membership activated 🎉',
+          body: 'You now have full access to all exclusive videos.',
+          link: '/account.html',
+        }).catch(() => {});
+      }
+      sendJson(res, 200, { ok: true, ...result });
+      return true;
+    }
+
     // POST delete — permanently remove the account. Refuses active Stripe
     // members (cancel via the billing portal first, so we never orphan a payer).
     // Analytics rollups + payment history are intentionally left intact; they're

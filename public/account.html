@@ -58,7 +58,9 @@
     </div>
 
     <div class="acc-card" id="billing-card" style="margin-top:16px">
-      <h2 style="margin-top:0">Membership</h2>
+      <h2 style="margin-top:0;display:flex;align-items:center;gap:10px">Membership
+        <span id="billing-badge" hidden style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:3px 9px;border-radius:999px"></span>
+      </h2>
       <p class="acc-sub" id="billing-status">&nbsp;</p>
       <button class="acc-btn" id="billing-action" type="button" hidden></button>
       <button class="acc-btn" id="billing-cancel" type="button" hidden
@@ -176,6 +178,17 @@
       status.textContent = view.status;
       action.hidden = true; action.onclick = null;
       cancelBtn.hidden = true; cancelBtn.onclick = null;
+
+      // At-a-glance status pill.
+      const badge = $('billing-badge');
+      if (badge) {
+        let label = 'Inactive', bg = 'rgba(148,163,184,.18)', fg = '#94a3b8';
+        if (view.kind === 'admin-access') { label = 'Admin'; bg = 'rgba(129,140,248,.18)'; fg = '#a5b4fc'; }
+        else if (m && m.active && m.cancelAtPeriodEnd) { label = 'Cancelling'; bg = 'rgba(245,158,11,.16)'; fg = '#fbbf24'; }
+        else if (m && m.active && m.status === 'past_due') { label = 'Past due'; bg = 'rgba(239,68,68,.16)'; fg = '#fca5a5'; }
+        else if (m && m.active) { label = 'Active'; bg = 'rgba(16,185,129,.16)'; fg = '#34d399'; }
+        badge.textContent = label; badge.style.background = bg; badge.style.color = fg; badge.hidden = false;
+      }
 
       if (view.action === 'join') {
         action.textContent = 'Become a member';

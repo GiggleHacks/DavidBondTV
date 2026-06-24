@@ -87,6 +87,7 @@ async function showDetail(id) {
     </div>
     <button id="toggle-block" class="btn sm ghost">${d.blocked ? 'Unblock user' : 'Block user'}</button>
     ${membershipButton(d.subscribed, u.membership)}
+    <button id="resync-stripe" class="btn sm ghost" title="Pull this user's real subscription from Stripe and activate (use after a missed webhook)">Resync Stripe</button>
     <button id="delete-user" class="btn sm danger" style="margin-left:auto">Delete user</button>
 
     <h3 style="margin-top:18px">Product access</h3>
@@ -124,6 +125,18 @@ async function showDetail(id) {
       const action = d.subscribed ? 'revoke' : 'grant';
       const r = await api(`/api/admin/users/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: '{}' });
       if (r && r.error) { alert(r.error); return; }
+      await loadList();
+      showDetail(id);
+    });
+  }
+  const resyncBtn = $('resync-stripe');
+  if (resyncBtn) {
+    resyncBtn.addEventListener('click', async () => {
+      resyncBtn.disabled = true; resyncBtn.textContent = 'Resyncing…';
+      const r = await api(`/api/admin/users/${encodeURIComponent(id)}/resync-stripe`, { method: 'POST', body: '{}' });
+      resyncBtn.disabled = false; resyncBtn.textContent = 'Resync Stripe';
+      if (r && r.error) { alert(r.error); return; }
+      alert(r && r.membership && r.membership.active ? 'Synced from Stripe — membership is now active.' : 'Synced from Stripe.');
       await loadList();
       showDetail(id);
     });
