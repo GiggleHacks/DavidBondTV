@@ -89,6 +89,20 @@ describe('review-first encoding (upload → review → approve → encode)', () 
     expect(e.status).not.toBe('uploaded');          // left the review queue → encoding (or failed w/o ffmpeg)
     expect(['encoding', 'failed', 'ready']).toContain(e.status);
   });
+
+  it('approve re-encodes a FAILED video from its stored original (restart-recovery)', async () => {
+    // A previous encode died (e.g. server restart mid-ffmpeg) → status 'failed',
+    // but the original is still on disk. Approving it must re-queue the encode.
+    const src = path.join(TMP, 'media', 'retry-me.mp4');
+    fs.mkdirSync(path.dirname(src), { recursive: true });
+    fs.writeFileSync(src, 'fake video bytes');
+    seed([{ id: 'f1', published: false, approval: 'approved', status: 'failed', sourcePath: src }]);
+
+    const r = await bulkAction(['f1'], 'approve');
+    expect(r.count).toBe(1);                         // it WAS sent back into the pipeline
+    expect(byId('f1').status).not.toBe('uploaded');
+    expect(['encoding', 'failed', 'ready']).toContain(byId('f1').status);
+  });
 });
 
 describe('releaseScheduled honors approval', () => {
