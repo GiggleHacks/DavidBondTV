@@ -1,10 +1,11 @@
-// Viewer privacy reblur toggle (the header "eye" button). Paid/admin viewers see
-// thumbnails unblurred by default; this lets ANY viewer re-blur every thumbnail,
-// hover preview and in-grid still on demand — for discretion in public or shared
-// spaces — without affecting what they can actually open. The preference is
-// stored in localStorage and applied to <html> as early as possible so blurred
-// imagery never flashes unblurred on load. See the `html.privacy-blur` rules in
-// styles.css and the `.hdr-eye*` button styling.
+// "Preview locked view" toggle (the header "eye" button). Paid/admin viewers see
+// premium thumbnails unblurred by default; this lets them preview each premium
+// thumbnail at its admin-configured blur level — exactly what a non-subscriber
+// sees — without changing what they can actually open. Cards with no configured
+// blur (blur-off / free videos) are unaffected. The preference is stored in
+// localStorage and applied to <html> as early as possible so imagery never
+// flashes. See the `html.privacy-blur` rules in styles.css (which key off each
+// card's `blur-*` level) and the `.hdr-eye*` button styling.
 (() => {
   const KEY = 'dbtv_privacy_blur';
 
@@ -35,7 +36,7 @@
     root.className = 'hdr-eye';
     root.innerHTML = `
       <button class="hdr-eye-btn" type="button" aria-pressed="false"
-        aria-label="Blur thumbnails for privacy" title="Blur thumbnails for privacy">${EYE}</button>
+        aria-label="Preview how non-members see thumbnails" title="Preview how non-members see thumbnails">${EYE}</button>
       <div class="hdr-eye-toast" role="status" hidden></div>`;
 
     // Sit just left of the bell (Eye → Bell → Avatar); fall back to before the
@@ -54,7 +55,7 @@
     const sync = (on) => {
       btn.classList.toggle('on', on);
       btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-      btn.title = on ? 'Thumbnails blurred — click to show' : 'Blur thumbnails for privacy';
+      btn.title = on ? 'Previewing non-member view — click to show full quality' : 'Preview how non-members see thumbnails';
       btn.setAttribute('aria-label', btn.title);
     };
     sync(isOn());
@@ -62,7 +63,7 @@
     btn.addEventListener('click', () => {
       const on = !document.documentElement.classList.contains('privacy-blur');
       apply(on); save(on); sync(on);
-      toast.hidden = false; toast.textContent = on ? 'Thumbnails blurred' : 'Thumbnails visible';
+      toast.hidden = false; toast.textContent = on ? 'Previewing non-member view' : 'Showing full quality';
       // Force reflow so re-adding .show re-triggers the transition.
       void toast.offsetWidth;
       toast.classList.add('show');

@@ -933,14 +933,18 @@ body {
 .vcard.is-locked.blur-medium .vthumb::before { filter: blur(6px) brightness(.86); }
 .vcard.is-locked.blur-off .vthumb img { filter: brightness(.94); }
 
-/* Viewer privacy mode — the header eye toggle (blur-toggle.js) sets
-   html.privacy-blur to re-blur exclusive/premium thumbnails only. */
-html.privacy-blur .vcard:has(.vexcl) .vthumb img,
-html.privacy-blur .vcard:has(.vexcl) .vthumb::before,
-html.privacy-blur .vcard:has(.vexcl) .vpreview { filter: blur(22px) brightness(.7) !important; }
+/* Viewer "preview locked view" mode — the header eye toggle (blur-toggle.js)
+   sets html.privacy-blur to show each premium thumbnail at its admin-configured
+   blur level, exactly as a non-subscriber sees it. Only premium cards that
+   actually carry a blur level are affected; blur-off stays effectively clear. */
+html.privacy-blur .vcard.is-premium.blur-strongest .vthumb img,
+html.privacy-blur .vcard.is-premium.blur-strongest .vthumb::before { filter: blur(26px) brightness(.62) !important; }
+html.privacy-blur .vcard.is-premium.blur-strong .vthumb img,
+html.privacy-blur .vcard.is-premium.blur-strong .vthumb::before { filter: blur(12px) brightness(.78) !important; }
+html.privacy-blur .vcard.is-premium.blur-medium .vthumb img,
+html.privacy-blur .vcard.is-premium.blur-medium .vthumb::before { filter: blur(6px) brightness(.86) !important; }
+html.privacy-blur .vcard.is-premium.blur-off .vthumb img { filter: brightness(.94) !important; }
 html.privacy-blur .bell-premium-locked .bell-thumb { filter: blur(12px) brightness(.72) !important; }
-html.privacy-blur .vcard:has(.vexcl) .vthumb img,
-html.privacy-blur .vcard:has(.vexcl) .vpreview { transform: scale(1.12); }
 .vlock {
   position: absolute; inset: 0; z-index: 2; display: flex;
   align-items: center; justify-content: center; pointer-events: none;
