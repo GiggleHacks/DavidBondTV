@@ -14,7 +14,7 @@ let currency = 'usd';
 // fallback, and the "reset to default" button.
 const DEFAULT_OFFER = {
   badge: '★ Members only',
-  headline: "You're one tap from the good stuff",
+  headline: 'Get instant access to the full library',
   body: 'Unlock this video — and the entire David Bond TV exclusive library — the moment you join. New drops first, no ads, cancel anytime.',
   ctaLabel: 'Unlock Now',
 };

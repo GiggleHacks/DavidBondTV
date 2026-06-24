@@ -92,7 +92,7 @@ describe('pricing store', () => {
     expect(r.config.offer.body).toBe(pricing.getConfig().offer.body); // untouched field preserved
     // A blank field reverts to the default copy (never renders empty).
     r = pricing.update({ offer: { headline: '   ' } });
-    expect(r.config.offer.headline).toBe("You're one tap from the good stuff");
+    expect(r.config.offer.headline).toBe('Get instant access to the full library');
     // Updating offer must not disturb prices.
     expect(pricing.getConfig().monthly.amount).toBe(1700);
   });
