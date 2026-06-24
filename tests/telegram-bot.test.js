@@ -48,11 +48,24 @@ describe('createTelegramNotifier', () => {
 describe('formatMessage', () => {
   const n = createTelegramNotifier({ botToken: TOKEN, chatId: CHAT });
 
-  it('formats new_subscription', () => {
-    const msg = n._test.formatMessage('new_subscription', { username: 'Alice', interval: 'month' });
+  it('formats new_subscription with who / plan / price', () => {
+    const msg = n._test.formatMessage('new_subscription', {
+      username: 'Alice', email: 'alice@x.com', interval: 'month', amount: 1700, currency: 'usd',
+    });
     expect(msg).toContain('🎉');
+    expect(msg).toContain('NEW SALE');
     expect(msg).toContain('Alice');
-    expect(msg).toContain('month');
+    expect(msg).toContain('alice@x.com');
+    expect(msg).toContain('Monthly membership');
+    expect(msg).toContain('$17.00/mo');
+  });
+
+  it('formats course_purchase', () => {
+    const msg = n._test.formatMessage('course_purchase', { username: 'Sam', product: 'Tracking 101', amount: 4900, currency: 'usd' });
+    expect(msg).toContain('🛒');
+    expect(msg).toContain('Sam');
+    expect(msg).toContain('Tracking 101');
+    expect(msg).toContain('$49.00');
   });
 
   it('formats renewal', () => {
