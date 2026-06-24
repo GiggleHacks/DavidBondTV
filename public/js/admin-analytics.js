@@ -11,7 +11,7 @@ import { flagIcon } from './world-data.js';
 import { COUNTRIES } from './countries.js';
 import { requireAdmin } from './god-auth.js';
 import { ADMIN_PATHS } from './admin-paths.js';
-import { LAYOUTS, DEFAULT_LAYOUT } from './dashboard-layouts.js';
+import { LAYOUTS, DEFAULT_LAYOUT, setGauge } from './dashboard-layouts.js';
 
 const $ = (id) => document.getElementById(id);
 const COUNTRY_NAME = Object.fromEntries(COUNTRIES.map((c) => [c.code, c.name]));
@@ -428,10 +428,61 @@ function fmtUptime(sec) {
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
 }
+// ---------- live server monitoring (rings + graphs) ----------
+const MON_CAP = 48; // ~2 min of history at 2.5s
+const metHist = { cpu: [], mem: [] };
+
+// Green < 60, amber 60–85, red > 85.
+function loadColor(pct) {
+  if (pct == null) return '#64748b';
+  if (pct >= 85) return '#fb7185';
+  if (pct >= 60) return '#f59e0b';
+  return '#34d399';
+}
+
+// Set a gauge arc + recolor its arc/value by threshold.
+function setRing(id, pct) {
+  setGauge(id, (pct || 0) / 100);
+  const arc = $(`gauge-${id}`);
+  const val = $(`gauge-${id}-val`);
+  const col = loadColor(pct);
+  if (arc) arc.setAttribute('stroke', col);
+  if (val) { val.textContent = pct == null ? '—' : `${Math.round(pct)}%`; val.style.color = col; }
+}
+
+// Draw a filled live area graph (newest on the right) into an SVG.
+function monGraph(svg, values, color) {
+  if (!svg) return;
+  const W = 220, H = 70;
+  const v = values.length ? values : [0];
+  const max = 100; // percentages
+  const step = v.length > 1 ? W / (v.length - 1) : W;
+  const pts = v.map((y, i) => [Math.round(i * step), Math.round(H - (Math.min(max, y) / max) * (H - 6) - 3)]);
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0]} ${p[1]}`).join(' ');
+  const area = `${line} L${pts[pts.length - 1][0]} ${H} L${pts[0][0]} ${H} Z`;
+  svg.innerHTML = `<path d="${area}" fill="${color}" fill-opacity="0.14"/>`
+    + `<path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+}
+
+async function loadLive() {
+  try {
+    const m = await api('/api/admin/metrics/live');
+    const cpuPct = (m.cpu && typeof m.cpu.percent === 'number') ? m.cpu.percent : null;
+    const memPct = (m.memory && m.memory.total) ? Math.round((m.memory.used / m.memory.total) * 100) : null;
+    if (cpuPct != null) { metHist.cpu.push(cpuPct); if (metHist.cpu.length > MON_CAP) metHist.cpu.shift(); }
+    if (memPct != null) { metHist.mem.push(memPct); if (metHist.mem.length > MON_CAP) metHist.mem.shift(); }
+    setRing('cpu', cpuPct);
+    setRing('mem', memPct);
+    monGraph($('graph-cpu'), metHist.cpu, loadColor(cpuPct));
+    monGraph($('graph-mem'), metHist.mem, loadColor(memPct));
+  } catch { /* ignore */ }
+}
+
 async function loadMetrics() {
   try {
     const m = await api('/api/admin/metrics');
     rawMetrics = m;
+    if (m.storage) setRing('storage', m.storage.pctUsed);
     const s = (id, v) => { const el = $(id); if (el) el.textContent = v; };
     s('met-content', fmtBytes(m.disk?.content));
     s('met-media', fmtBytes(m.disk?.media));
@@ -470,8 +521,9 @@ async function main() {
   setInterval(() => { loadOverview().catch(() => {}); }, 10000);
   setInterval(() => { loadVisitors().catch(() => {}); }, 10000);
   setInterval(() => { loadMetrics().catch(() => {}); }, 10000);
+  setInterval(() => { loadLive().catch(() => {}); }, 2500); // live CPU/memory graphs
   try {
-    await Promise.all([loadOverview(), loadCountries('viewers'), loadGeo(), loadExtras(), loadVisitors(), loadMetrics()]);
+    await Promise.all([loadOverview(), loadCountries('viewers'), loadGeo(), loadExtras(), loadVisitors(), loadMetrics(), loadLive()]);
   } catch { /* a 401 mid-flight reloads into the gate */ }
 }
 main();

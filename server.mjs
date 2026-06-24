@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { contentType, parseRange, sendJson, readBody, readRawBody, clientIp, withSecurityHeaders } from './lib/http-util.js';
 import { createChallenge, verifyChallenge } from './lib/challenge.js';
@@ -86,6 +87,22 @@ const SECRET = crypto.randomBytes(32).toString('hex');
 // Admin token signing key. Set ADMIN_SECRET to keep tokens valid across restarts;
 // otherwise a fresh random key logs admins out on each restart (fine for one admin).
 const ADMIN_SECRET = process.env.ADMIN_SECRET || crypto.randomBytes(32).toString('hex');
+// Instantaneous CPU utilisation (0–100) from os.cpus() time deltas between calls.
+// Cross-platform (Windows + Linux) and cheap. Returns null on the first call (no
+// baseline yet). Module-level state holds the previous aggregate snapshot.
+let _cpuLast = null;
+function cpuPercentDelta() {
+  const cpus = os.cpus();
+  let idle = 0, total = 0;
+  for (const c of cpus) { for (const k in c.times) total += c.times[k]; idle += c.times.idle; }
+  const prev = _cpuLast;
+  _cpuLast = { idle, total };
+  if (!prev) return null;
+  const dt = total - prev.total, di = idle - prev.idle;
+  if (dt <= 0) return null;
+  return Math.max(0, Math.min(100, Math.round((1 - di / dt) * 100)));
+}
+
 // Temporary site-wide password gate. Set SITE_PASSWORD='' (empty) to open the site to the public.
 const SITE_PASSWORD = process.env.SITE_PASSWORD ?? 'testing123lol';
 const SITE_AUTH_VALUE = SITE_PASSWORD
@@ -793,6 +810,21 @@ async function handleApi(req, res, ctx) {
     } catch (err) {
       sendJson(res, 500, { error: 'Failed to collect metrics' });
     }
+    return true;
+  }
+
+  // GET /api/admin/metrics/live → cheap, uncached CPU%/memory for the live graphs.
+  // CPU% is derived from os.cpus() time deltas between calls (works on Windows +
+  // Linux, unlike loadavg which is 0 on Windows). No disk walk → safe to poll fast.
+  if (req.method === 'GET' && url.pathname === '/api/admin/metrics/live') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const mem = { total: os.totalmem(), free: os.freemem() };
+    mem.used = mem.total - mem.free;
+    sendJson(res, 200, {
+      t: Date.now(),
+      cpu: { percent: cpuPercentDelta(), cores: os.cpus().length, load: os.loadavg() },
+      memory: mem,
+    });
     return true;
   }
 

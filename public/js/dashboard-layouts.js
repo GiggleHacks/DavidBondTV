@@ -39,7 +39,7 @@ function gaugeRing(id, label, color, size = 100, stroke = 8) {
 }
 
 // Update a gauge arc to a 0–1 fraction.
-function setGauge(id, fraction) {
+export function setGauge(id, fraction) {
   const arc = document.getElementById(`gauge-${id}`);
   if (!arc) return;
   const r = parseFloat(arc.getAttribute('r'));
@@ -120,31 +120,44 @@ function buildCommandCenter() {
       </div>
     </div>
     <div class="grid g-3 row-gap">
-      <div class="dpanel">
-        <div class="dp-title"><span class="dico">💾</span> STORAGE</div>
-        <div class="dvit" id="met-storage">
-          <div><span class="k">CONTENT</span><span class="g" id="met-content">—</span></div>
-          <div><span class="k">MEDIA</span><span class="g" id="met-media">—</span></div>
-          <div><span class="k">TOTAL</span><span class="c" id="met-total">—</span></div>
-          <div><span class="k">AVG ORIGINAL</span><span class="a" id="met-avg">—</span></div>
+      <div class="dpanel mon-panel">
+        <div class="dp-title"><span class="dico">🧠</span> CPU <span class="mon-live">● live</span></div>
+        <div class="mon-row">
+          ${gaugeRing('cpu', 'CPU', '#22d3ee', 96, 9)}
+          <svg class="mon-graph" id="graph-cpu" viewBox="0 0 220 70" preserveAspectRatio="none" aria-hidden="true"></svg>
         </div>
+        <div class="mon-foot"><span id="met-cores">—</span> · load <span id="met-load">—</span></div>
       </div>
-      <div class="dpanel">
-        <div class="dp-title"><span class="dico">🧠</span> CPU &amp; MEMORY</div>
-        <div class="dvit" id="met-cpu">
-          <div><span class="k">CORES</span><span class="g" id="met-cores">—</span></div>
-          <div><span class="k">LOAD 1m/5m/15m</span><span class="c" id="met-load">—</span></div>
-          <div><span class="k">RAM USED</span><span class="a" id="met-ram">—</span></div>
-          <div><span class="k">RAM FREE</span><span class="g" id="met-ramfree">—</span></div>
+      <div class="dpanel mon-panel">
+        <div class="dp-title"><span class="dico">🧮</span> MEMORY <span class="mon-live">● live</span></div>
+        <div class="mon-row">
+          ${gaugeRing('mem', 'RAM', '#a855f7', 96, 9)}
+          <svg class="mon-graph" id="graph-mem" viewBox="0 0 220 70" preserveAspectRatio="none" aria-hidden="true"></svg>
         </div>
+        <div class="mon-foot">used <span id="met-ram">—</span> · free <span id="met-ramfree">—</span></div>
       </div>
-      <div class="dpanel">
+      <div class="dpanel mon-panel">
+        <div class="dp-title"><span class="dico">📀</span> STORAGE</div>
+        <div class="mon-row">
+          ${gaugeRing('storage', 'DISK', '#34d399', 96, 9)}
+          <div class="mon-meta">
+            <div><b id="met-stused">—</b><span>used</span></div>
+            <div><b id="met-stcap">—</b><span>capacity</span></div>
+            <div><b id="met-stfree">—</b><span>free</span></div>
+          </div>
+        </div>
+        <div class="mon-foot">content <span id="met-content">—</span> · media <span id="met-media">—</span> · avg <span id="met-avg">—</span></div>
+      </div>
+    </div>
+    <div class="grid g-3 row-gap">
+      <div class="dpanel span3">
         <div class="dp-title"><span class="dico">⏱️</span> SERVER</div>
-        <div class="dvit" id="met-server">
+        <div class="dvit dvit-wide" id="met-server">
           <div><span class="k">UPTIME</span><span class="g" id="met-uptime">—</span></div>
           <div><span class="k">PLATFORM</span><span class="c" id="met-platform">—</span></div>
           <div><span class="k">NODE</span><span class="a" id="met-node">—</span></div>
           <div><span class="k">PROCESSING</span><span class="c" id="met-proccount">—</span></div>
+          <div><span class="k">TOTAL DISK</span><span class="g" id="met-total">—</span></div>
         </div>
       </div>
     </div>`;
