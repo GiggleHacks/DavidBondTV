@@ -1,4 +1,4 @@
-import { categoryDisplayName, categoryVisualText } from './category-visuals.js';
+import { categoryDisplayName, categoryVisualText, categoryVisualMarkup } from './category-visuals.js';
 
 export const STATE_FILTER_CHOICES = [
   { value: '', label: 'All states', icon: '◌', tone: 'all' },
@@ -29,6 +29,9 @@ export function buildCategoryChoices(categories, videos) {
       value: c.slug,
       label: categoryDisplayName(c),
       icon: categoryVisualText(c, '#'),
+      // SVG/markup glyph (self-hosted flag or icon span) for HTML chip contexts —
+      // flags render as images here, never as broken emoji.
+      iconHtml: categoryVisualMarkup(c, 'cat-glyph'),
       tone: 'category',
     })));
   if ((videos || []).some((v) => !v.category)) {

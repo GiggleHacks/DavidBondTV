@@ -11,7 +11,7 @@ import { ADMIN_PATHS } from './admin-paths.js';
 import { attachEmojiPicker } from './emoji-picker.js';
 import {
   RECENT_UPLOAD_RETENTION_MS, fmtSize, describeUploadError,
-  categoryOptionLabel, categoryBadge, filterRetainedJobs,
+  categoryOptionLabel, categoryBadge, filterRetainedJobs, categoryDisplayName,
 } from './upload-utils.js';
 
 // Large uploads must skip Cloudflare's ~100MB proxy cap, so the upload page is
@@ -96,7 +96,7 @@ function syncCategoryBadge() {
   if (!categoryBadgeEl) return;
   const selected = categoriesBySlug.get(currentCategory());
   const badge = categoryBadge(selected);
-  const name = selected ? categoryOptionLabel(selected).replace(/^[^\s]+\s/, '') : 'Uncategorized';
+  const name = selected ? categoryDisplayName(selected) : 'Uncategorized';
   if (badge.kind === 'flag' && badge.code) {
     categoryBadgeEl.innerHTML = `<img src="/vendor/flags/4x3/${badge.code}.svg" alt="" loading="lazy" onerror="this.remove()"> <span>${name}</span>`;
     return;

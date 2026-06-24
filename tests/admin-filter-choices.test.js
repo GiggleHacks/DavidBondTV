@@ -14,28 +14,26 @@ describe('buildCategoryChoices', () => {
     const withUncategorized = buildCategoryChoices(cats, [{ id: 'a' }, { id: 'b', category: 'privacy' }]);
     const withoutUncategorized = buildCategoryChoices(cats, [{ id: 'b', category: 'privacy' }]);
 
-    expect(withUncategorized).toEqual([
-      { value: '', label: 'All categories', icon: '◌', tone: 'all' },
-      { value: 'privacy', label: 'Privacy', icon: '#', tone: 'category' },
-      { value: '__none__', label: 'Uncategorized', icon: '∅', tone: 'uncategorized' },
-    ]);
-    expect(withoutUncategorized).toEqual([
-      { value: '', label: 'All categories', icon: '◌', tone: 'all' },
-      { value: 'privacy', label: 'Privacy', icon: '#', tone: 'category' },
-    ]);
+    expect(withUncategorized.map((c) => c.value)).toEqual(['', 'privacy', '__none__']);
+    expect(withUncategorized[0]).toEqual({ value: '', label: 'All categories', icon: '◌', tone: 'all' });
+    expect(withUncategorized[1]).toMatchObject({ value: 'privacy', label: 'Privacy', icon: '#', tone: 'category' });
+    expect(withUncategorized[2]).toEqual({ value: '__none__', label: 'Uncategorized', icon: '∅', tone: 'uncategorized' });
+    expect(withoutUncategorized.map((c) => c.value)).toEqual(['', 'privacy']);
   });
 
-  it('uses category icon or flag when available', () => {
+  it('renders category flags as self-hosted SVG markup, never emoji', () => {
     const cats = [
       { slug: 'hacking', name: 'Hacking', icon: '💻' },
       { slug: 'colombia', name: 'Colombia Harem', flag: 'co' },
     ];
-
-    expect(buildCategoryChoices(cats, [])).toEqual([
-      { value: '', label: 'All categories', icon: '◌', tone: 'all' },
-      { value: 'hacking', label: 'Hacking', icon: '💻', tone: 'category' },
-      { value: 'colombia', label: 'Colombia Harem', icon: '🇨🇴', tone: 'category' },
-    ]);
+    const [, hacking, colombia] = buildCategoryChoices(cats, []);
+    // Plain emoji icons still render as text (they work cross-platform).
+    expect(hacking).toMatchObject({ value: 'hacking', label: 'Hacking', icon: '💻', tone: 'category' });
+    expect(hacking.iconHtml).toContain('💻');
+    // Flags carry NO emoji glyph; the chip uses the self-hosted SVG flag instead.
+    expect(colombia.icon).toBe('#');
+    expect(colombia.iconHtml).toContain('/vendor/flags/4x3/co.svg');
+    expect(colombia.iconHtml).not.toMatch(/[\u{1F1E6}-\u{1F1FF}]/u); // no regional-indicator emoji
   });
 });
 

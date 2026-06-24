@@ -71,11 +71,11 @@ function normalizeName(name) {
   return text || String(name || '').trim() || 'Untitled category';
 }
 
-function flagEmoji(code) {
-  const upper = String(code || '').trim().toUpperCase();
-  if (!/^[A-Z]{2}$/.test(upper)) return '';
-  return [...upper].map((ch) => String.fromCodePoint(127397 + ch.charCodeAt(0))).join('');
-}
+// NOTE: Unicode flag emoji (regional-indicator pairs) are deliberately NOT used —
+// they don't render on Windows or many browsers and show as broken boxes. Flags
+// always render as the self-hosted SVGs under /vendor/flags/4x3 via
+// categoryVisualMarkup(); in text-only contexts (e.g. <option>s) the flag simply
+// contributes no glyph and the category name stands on its own.
 
 export function categoryDisplayName(category) {
   return normalizeName(category && category.name);
@@ -88,7 +88,7 @@ export function resolveCategoryVisual(category) {
   const value = visual && typeof visual.value === 'string' ? visual.value.trim() : '';
   if (kind === 'flag' && /^[a-z]{2}$/i.test(value)) {
     const code = value.toLowerCase();
-    return { kind: 'flag', value: code, text: flagEmoji(code), label: FLAG_NAME_BY_CODE.get(code) || code.toUpperCase() };
+    return { kind: 'flag', value: code, text: '', label: FLAG_NAME_BY_CODE.get(code) || code.toUpperCase() };
   }
   if (kind === 'custom' && value) {
     const custom = CUSTOM_CATEGORY_ICONS.find((item) => item.key === value);
@@ -101,7 +101,7 @@ export function resolveCategoryVisual(category) {
   }
   if (category.flag && /^[a-z]{2}$/i.test(category.flag)) {
     const code = String(category.flag).toLowerCase();
-    return { kind: 'flag', value: code, text: flagEmoji(code), label: FLAG_NAME_BY_CODE.get(code) || code.toUpperCase() };
+    return { kind: 'flag', value: code, text: '', label: FLAG_NAME_BY_CODE.get(code) || code.toUpperCase() };
   }
   if (category.icon) return { kind: 'emoji', value: category.icon, text: category.icon, label: category.icon };
   return null;
@@ -157,7 +157,7 @@ export function buildCategoryIconLibrary() {
     kind: 'flag',
     value: country.code.toLowerCase(),
     label: country.name,
-    text: flagEmoji(country.code),
+    text: '',
     keywords: `${country.name} ${country.code} flag country`,
   }));
   return { customs, emojis, flags, all: [...customs, ...emojis, ...flags] };

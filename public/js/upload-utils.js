@@ -4,6 +4,8 @@ import {
   categoryBadge as categoryVisualBadge,
 } from './category-visuals.js';
 
+export { categoryDisplayName };
+
 export const RECENT_UPLOAD_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 export function fmtSize(bytes) {

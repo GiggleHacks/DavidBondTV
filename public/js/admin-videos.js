@@ -6,7 +6,7 @@ import { requireAdmin } from './god-auth.js';
 import { ADMIN_PATHS } from './admin-paths.js';
 import { closeAfterAction, togglePanel } from './admin-dropdowns.js';
 import { buildCategoryChoices, choiceIcon, choiceTone } from './admin-filter-choices.js';
-import { categoryDisplayName, categoryLabelWithVisual, categoryVisualText } from './category-visuals.js';
+import { categoryDisplayName, categoryLabelWithVisual, categoryVisualText, categoryVisualMarkup } from './category-visuals.js';
 
 const $ = (id) => document.getElementById(id);
 const PAGE = 50;
@@ -96,7 +96,10 @@ function renderCatFilter() {
     b.dataset.filter = 'cat-filter';
     b.dataset.value = choice.value;
     b.dataset.tone = choiceTone(choice, 'category');
-    b.innerHTML = `<span class="ff-chip-icon" aria-hidden="true">${esc(choiceIcon(choice, '#'))}</span><span class="ff-chip-label">${esc(choice.label)}</span>`;
+    // Categories carry SVG markup (self-hosted flag / icon span) so flags render
+    // as images, not broken emoji; other filters use a plain text glyph.
+    const chipIcon = choice.iconHtml || esc(choiceIcon(choice, '#'));
+    b.innerHTML = `<span class="ff-chip-icon" aria-hidden="true">${chipIcon}</span><span class="ff-chip-label">${esc(choice.label)}</span>`;
     return b;
   }));
 }
@@ -152,7 +155,10 @@ function badges(v) {
   else if (st === 'draft-approved') out.push('<span class="vb vb-appr">Draft · Approved</span>');
   else out.push('<span class="vb vb-draft">Draft · Unapproved</span>');
   if (v.visibility === 'premium') out.push('<span class="vb vb-prem">Premium</span>');
-  if (v.category && catBySlug(v.category)) out.push(`<span class="vb vb-cat">${esc(categoryLabelWithVisual(catBySlug(v.category)))}</span>`);
+  if (v.category && catBySlug(v.category)) {
+    const cat = catBySlug(v.category);
+    out.push(`<span class="vb vb-cat">${categoryVisualMarkup(cat, 'cat-glyph')}${esc(categoryDisplayName(cat))}</span>`);
+  }
   return out.join(' ');
 }
 
