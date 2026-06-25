@@ -24,8 +24,14 @@ let hoverTimer = null;
 const state = {
   videos: [], sort: 'recent', section: 'all', category: '',
   isAdmin: false, isMember: false, loggedIn: false,
-  me: null, products: [], videoCourseMap: new Map(),
+  me: null, products: [], videoCourseMap: new Map(), views: {},
 };
+
+/** "No views" / "1 view" / "1,234 views" — compact, human view-count label. */
+function formatViews(n) {
+  if (typeof n !== 'number' || n <= 0) return 'No views';
+  return n === 1 ? '1 view' : `${n.toLocaleString()} views`;
+}
 
 function hydrateStateFromUrl() {
   const params = new URLSearchParams(location.search);
@@ -133,7 +139,7 @@ function card(v) {
       <div class="vavatar">${PLAY}</div>
       <div class="vmeta">
         <div class="vtitle"></div>
-        <div class="vchannel">David Bond TV <span class="check">✔</span></div>
+        <div class="vviews"></div>
         ${catVisualRow(v)}
         <div class="vdesc"></div>
         <div class="vstats"></div>
@@ -144,6 +150,7 @@ function card(v) {
   // YouTube-style "continue watching" bar (from this device's saved progress).
   if (!locked) renderThumbProgress(a.querySelector('.vthumb'), v.id);
   a.querySelector('.vtitle').textContent = v.title || '';
+  a.querySelector('.vviews').textContent = formatViews(state.views[v.id] || 0);
   a.querySelector('.vdesc').textContent = v.description || '';
   a.querySelector('.vstats').textContent = v.uploaded || '';
 
@@ -390,6 +397,11 @@ async function init() {
     const cats = (await (await fetch('/api/categories')).json()).categories || [];
     state.categoryMap = new Map(cats.map((c) => [c.slug, c]));
   } catch { /* no categories */ }
+  try {
+    // Per-video view counts for the card byline (best-effort; cards still render
+    // without it, just showing "No views").
+    state.views = await (await fetch('/api/videos/views')).json();
+  } catch { /* views unavailable */ }
   try {
     const res = await fetch('/thumbs/videos.json');
     state.videos = await res.json();

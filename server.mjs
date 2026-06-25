@@ -2604,6 +2604,21 @@ const server = http.createServer(async (req, res) => {
       return res.end(xml);
     }
 
+    // Public view counts for the homepage grid: a compact { videoId: views } map
+    // so each card can show its count without an analytics call per video.
+    if (pathname === '/api/videos/views') {
+      const all = analytics.getAllVideoStats();
+      const map = {};
+      for (const [id, s] of Object.entries(all)) map[id] = (s && s.views) || 0;
+      const json = JSON.stringify(map);
+      res.writeHead(200, withSecurityHeaders({
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': Buffer.byteLength(json),
+        'Cache-Control': 'no-cache',
+      }));
+      return res.end(json);
+    }
+
     // The manifest is a static file, but it must not leak scheduled-but-unreleased
     // titles/thumbs. Serve a filtered copy to non-admins (admins get the full list
     // so the upload/edit/manage pages still work).
