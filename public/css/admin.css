@@ -993,3 +993,79 @@ a.tr:hover .name { color: var(--accent); }
   .cal-side { order: -1; }
   .cal-cell { min-height: 64px; }
 }
+
+/* ── 3D globe: info popup anchored to the selected marker ──────────────────── */
+.globe-popup {
+  position: absolute; z-index: 6; transform: translate(-50%, calc(-100% - 14px));
+  min-width: 150px; max-width: 240px; pointer-events: auto;
+  background: color-mix(in srgb, var(--surface) 92%, #000); color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--section-accent) 45%, var(--border));
+  border-radius: 10px; padding: 9px 11px 10px; box-shadow: 0 10px 28px rgba(0,0,0,.45);
+  font-size: 12.5px; line-height: 1.35;
+}
+/* little pointer triangle at the bottom, aimed at the marker */
+.globe-popup::after {
+  content: ''; position: absolute; left: 50%; bottom: -7px; transform: translateX(-50%);
+  border: 7px solid transparent; border-top-color: color-mix(in srgb, var(--surface) 92%, #000);
+}
+.globe-popup-x {
+  position: absolute; top: 4px; right: 5px; width: 18px; height: 18px; line-height: 1;
+  border: none; background: none; color: var(--text-dim); font-size: 15px; cursor: pointer; padding: 0;
+}
+.globe-popup-x:hover { color: var(--text); }
+.globe-popup .gp-loc { display: flex; align-items: center; gap: 6px; font-weight: 600; padding-right: 14px; }
+.globe-popup .gp-loc .flag { width: 18px; flex: 0 0 auto; }
+.globe-popup .gp-who { color: var(--section-accent); font-weight: 600; margin-top: 3px; }
+.globe-popup .gp-extra { color: var(--text-dim); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Pan/zoom map: search box + info popup ────────────────────────────────── */
+.flatmap-search {
+  position: absolute; top: 10px; left: 10px; z-index: 6; width: min(260px, 60%);
+  display: flex; flex-direction: column; gap: 0;
+}
+.flatmap-search input {
+  width: 100%; box-sizing: border-box; padding: 7px 11px; font: inherit; font-size: 13px;
+  border-radius: 8px; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 92%, #000); color: var(--text);
+  box-shadow: 0 4px 14px rgba(0,0,0,.3);
+}
+.flatmap-search input:focus { outline: none; border-color: var(--section-accent); }
+.flatmap-results {
+  margin-top: 4px; background: color-mix(in srgb, var(--surface) 95%, #000);
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  box-shadow: 0 8px 22px rgba(0,0,0,.4);
+}
+.flatmap-results:empty { display: none; }
+.flatmap-results button {
+  display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
+  padding: 7px 10px; border: none; background: none; color: var(--text);
+  font: inherit; font-size: 12.5px; cursor: pointer; border-bottom: 1px solid var(--border);
+}
+.flatmap-results button:last-child { border-bottom: none; }
+.flatmap-results button:hover, .flatmap-results button.active {
+  background: color-mix(in srgb, var(--section-accent) 16%, transparent);
+}
+.flatmap-results .fr-count { margin-left: auto; color: var(--text-dim); font-size: 11px; }
+.flatmap-results .flag { width: 16px; flex: 0 0 auto; }
+
+.flatmap-popup {
+  position: absolute; z-index: 6; transform: translate(-50%, calc(-100% - 12px));
+  min-width: 150px; max-width: 240px;
+  background: color-mix(in srgb, var(--surface) 92%, #000); color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--section-accent) 45%, var(--border));
+  border-radius: 10px; padding: 9px 11px 10px; box-shadow: 0 10px 28px rgba(0,0,0,.45);
+  font-size: 12.5px; line-height: 1.35; pointer-events: auto;
+}
+.flatmap-popup::after {
+  content: ''; position: absolute; left: 50%; bottom: -7px; transform: translateX(-50%);
+  border: 7px solid transparent; border-top-color: color-mix(in srgb, var(--surface) 92%, #000);
+}
+.flatmap-popup-x {
+  position: absolute; top: 4px; right: 5px; width: 18px; height: 18px; line-height: 1;
+  border: none; background: none; color: var(--text-dim); font-size: 15px; cursor: pointer; padding: 0;
+}
+.flatmap-popup-x:hover { color: var(--text); }
+.flatmap-popup .gp-loc { display: flex; align-items: center; gap: 6px; font-weight: 600; padding-right: 14px; }
+.flatmap-popup .gp-loc .flag { width: 18px; flex: 0 0 auto; }
+.flatmap-popup .gp-who { color: var(--section-accent); font-weight: 600; margin-top: 3px; }
+.flatmap-popup .gp-extra { color: var(--text-dim); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -24,7 +24,7 @@ let hoverTimer = null;
 const state = {
   videos: [], sort: 'recent', section: 'all', category: '',
   isAdmin: false, isMember: false, loggedIn: false,
-  me: null, products: [], videoCourseMap: new Map(), views: {},
+  me: null, products: [], videoCourseMap: new Map(), views: {}, newWin: null,
 };
 
 /** "No views" / "1 view" / "1,234 views" — compact, human view-count label. */
@@ -90,8 +90,42 @@ function stopPreview() {
   preview.remove();
 }
 
-const NEW_WINDOW_MS = 3 * 24 * 60 * 60 * 1000; // "NEW" badge visible for 3 days
-const isNew = (v) => typeof v.uploadedAt === 'number' && (Date.now() - v.uploadedAt) < NEW_WINDOW_MS;
+// Per-user "NEW" badge window, persisted in localStorage keyed per account (so
+// different viewers / devices don't share state). A video is NEW to this viewer if
+// it was published after their PREVIOUS visit, for up to 24h measured from whichever
+// is later: their return, or the video's publish time. So a viewer away for a month
+// comes back to everything-since-then flagged NEW for one day, then it clears —
+// instead of every recent upload showing "NEW" to everyone forever.
+const NEW_TTL = 24 * 60 * 60 * 1000;
+
+function loadNewWindow(userKey) {
+  const key = `dbtv_newwin_${userKey || 'guest'}`;
+  const now = Date.now();
+  let st = null;
+  try { st = JSON.parse(localStorage.getItem(key) || 'null'); } catch { /* ignore */ }
+  if (!st || typeof st.lastVisit !== 'number' || typeof st.windowStart !== 'number') {
+    // First visit on this device/account: don't flag the whole existing library —
+    // start the clock now so only genuinely-new uploads get badged from here on.
+    st = { lastVisit: now, windowStart: now, baseline: now };
+  } else if (now - st.windowStart >= NEW_TTL) {
+    // The previous 24h window elapsed → open a fresh one whose baseline is the last
+    // time the viewer was actually here (so everything from the gap counts as new).
+    st = { lastVisit: now, windowStart: now, baseline: st.lastVisit };
+  } else {
+    // Still inside an active window → keep its baseline; just record this visit.
+    st = { baseline: st.baseline, windowStart: st.windowStart, lastVisit: now };
+  }
+  try { localStorage.setItem(key, JSON.stringify(st)); } catch { /* ignore */ }
+  return st;
+}
+
+const isNew = (v) => {
+  const w = state.newWin;
+  if (!w) return false;
+  const ts = sortTs(v);
+  if (!ts || ts <= w.baseline) return false;            // not published since last visit
+  return Date.now() - Math.max(ts, w.windowStart) < NEW_TTL;
+};
 
 const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -380,6 +414,8 @@ async function init() {
     state.isAdmin = !!(me && Array.isArray(me.roles) && me.roles.includes('admin'));
     state.isMember = !!(me && me.membership && me.membership.active);
   } catch { /* anonymous */ }
+  // Resolve the per-user "NEW" badge window now that we know who's viewing.
+  state.newWin = loadNewWindow(state.me ? state.me.id : 'guest');
   try {
     state.products = (await (await fetch('/api/products')).json()).products || [];
     const map = new Map();

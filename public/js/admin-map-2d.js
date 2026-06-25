@@ -6,9 +6,10 @@
 // scroll wheel (or the +/−/reset buttons). Exposes the SAME { dispose, update }
 // contract as renderGlobe so admin-analytics can swap them.
 import { WORLD_LAND } from './world-map-paths.js';
-import { project } from './world-data.js';
+import { project, flagIcon } from './world-data.js';
 
 const NS = 'http://www.w3.org/2000/svg';
+const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const COLORS = { watch: '#22d3ee', subscriber: '#eab308', blocked: '#fb7185' };
 
 // World extent + zoom limits (viewBox width in equirectangular units).
@@ -65,6 +66,98 @@ export function renderFlatMap(container, markers = [], { onSelect, onHover } = {
   hint.textContent = 'Scroll to zoom · drag to pan';
   container.appendChild(hint);
 
+  // Search box (top-left) — find a place by city/region/country and fly to it,
+  // Google-Maps style. Built from whatever markers are currently loaded.
+  const search = document.createElement('div');
+  search.className = 'flatmap-search';
+  search.innerHTML = '<input type="text" placeholder="Search a city or country…" aria-label="Search the map" autocomplete="off" />'
+    + '<div class="flatmap-results" role="listbox"></div>';
+  container.appendChild(search);
+  const searchInput = search.querySelector('input');
+  const results = search.querySelector('.flatmap-results');
+
+  // Info popup anchored to the selected marker (repositioned on every pan/zoom).
+  const popup = document.createElement('div');
+  popup.className = 'flatmap-popup';
+  popup.hidden = true;
+  container.appendChild(popup);
+  let selected = null; // the selected marker (its lat/lon drives the popup)
+  let currentList = []; // markers currently plotted (search source)
+
+  function labelFor(m) {
+    return [m.city, m.region, m.country || m.cc].filter(Boolean).join(', ') || 'Unknown';
+  }
+  // Map a scene point (0..360 × 0..180) to a container-relative pixel position.
+  function sceneToClient(x, y) {
+    const m = svg.getScreenCTM();
+    if (!m) return null;
+    const pt = svg.createSVGPoint(); pt.x = x; pt.y = y;
+    const p = pt.matrixTransform(m);
+    const rect = container.getBoundingClientRect();
+    return { x: p.x - rect.left, y: p.y - rect.top };
+  }
+  function positionPopup() {
+    if (!selected || popup.hidden) return;
+    const inView = selected._x >= vb.x && selected._x <= vb.x + vb.w && selected._y >= vb.y && selected._y <= vb.y + vb.h;
+    const c = inView ? sceneToClient(selected._x, selected._y) : null;
+    if (c) { popup.style.display = ''; popup.style.left = `${c.x}px`; popup.style.top = `${c.y}px`; }
+    else popup.style.display = 'none';
+  }
+  function openPopup(marker) {
+    const p = project(marker.lat, marker.lon);
+    selected = { ...marker, _x: p.x, _y: p.y };
+    const extra = escHtml(marker.videoTitle || marker.reason || marker.ip || '');
+    popup.innerHTML = `<button class="flatmap-popup-x" type="button" aria-label="Close">×</button>`
+      + `<div class="gp-loc">${marker.cc ? flagIcon(marker.cc) : ''}<b>${escHtml(labelFor(marker))}</b></div>`
+      + `<div class="gp-who">${escHtml(marker.username || 'Guest')}</div>`
+      + (extra ? `<div class="gp-extra">${extra}</div>` : '');
+    popup.hidden = false;
+    popup.querySelector('.flatmap-popup-x').addEventListener('click', () => { selected = null; popup.hidden = true; });
+    positionPopup();
+  }
+  // Smoothly center + zoom the camera on a lat/lon (a single eased step).
+  function flyTo(lat, lon) {
+    const p = project(lat, lon);
+    const targetW = Math.max(MIN_VBW, 56);
+    vb.w = targetW; vb.h = targetW / 2;
+    vb.x = p.x - vb.w / 2; vb.y = p.y - vb.h / 2;
+    clampPan(); apply();
+  }
+  function renderSearch() {
+    const q = searchInput.value.trim().toLowerCase();
+    if (!q) { results.replaceChildren(); return; }
+    // Group markers by location label so a busy city shows one row with a count.
+    const groups = new Map();
+    for (const m of currentList) {
+      if (typeof m.lat !== 'number' || typeof m.lon !== 'number') continue;
+      const label = labelFor(m);
+      if (!label.toLowerCase().includes(q)) continue;
+      if (!groups.has(label)) groups.set(label, { label, cc: m.cc, marker: m, count: 0 });
+      groups.get(label).count += 1;
+    }
+    const top = [...groups.values()].sort((a, b) => b.count - a.count).slice(0, 7);
+    results.replaceChildren(...top.map((grp) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = `${grp.cc ? flagIcon(grp.cc) : ''}<span>${escHtml(grp.label)}</span><span class="fr-count">${grp.count}</span>`;
+      b.addEventListener('click', () => {
+        flyTo(grp.marker.lat, grp.marker.lon);
+        openPopup(grp.marker);
+        if (onSelect) onSelect(grp.marker);
+        results.replaceChildren();
+        searchInput.value = grp.label;
+      });
+      return b;
+    }));
+  }
+  searchInput.addEventListener('input', renderSearch);
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { const first = results.querySelector('button'); if (first) first.click(); }
+    else if (e.key === 'Escape') { results.replaceChildren(); searchInput.blur(); }
+  });
+  // Don't let drags that start on the search UI pan the map.
+  search.addEventListener('pointerdown', (e) => e.stopPropagation());
+
   // Keep markers a constant on-screen size regardless of zoom.
   function markerScale() { return vb.w / FULL_W; }
   function applyMarkerScale() {
@@ -79,6 +172,7 @@ export function renderFlatMap(container, markers = [], { onSelect, onHover } = {
     applyMarkerScale();
     ui.querySelector('[data-act="out"]').disabled = vb.w >= MAX_VBW - 0.01;
     ui.querySelector('[data-act="in"]').disabled = vb.w <= MIN_VBW + 0.01;
+    positionPopup();
   }
 
   // Clamp the camera so it never leaves the world rectangle.
@@ -161,6 +255,7 @@ export function renderFlatMap(container, markers = [], { onSelect, onHover } = {
 
   // ---- markers ----------------------------------------------------------
   function build(list) {
+    currentList = list || [];
     dots.replaceChildren();
     const coords = (list || []).filter((m) => typeof m.lat === 'number' && typeof m.lon === 'number');
     coords.forEach((marker) => {
@@ -173,8 +268,8 @@ export function renderFlatMap(container, markers = [], { onSelect, onHover } = {
       g.addEventListener('mouseenter', () => onHover && onHover(marker));
       g.addEventListener('mouseleave', () => onHover && onHover(null));
       g.addEventListener('focus', () => onHover && onHover(marker));
-      g.addEventListener('click', () => { if (Date.now() < suppressClickUntil) return; onSelect && onSelect(marker); });
-      g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onSelect && onSelect(marker); } });
+      g.addEventListener('click', () => { if (Date.now() < suppressClickUntil) return; openPopup(marker); onSelect && onSelect(marker); });
+      g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openPopup(marker); onSelect && onSelect(marker); } });
       dots.appendChild(g);
     });
     applyMarkerScale();
@@ -188,6 +283,6 @@ export function renderFlatMap(container, markers = [], { onSelect, onHover } = {
       container.innerHTML = '';
       container.style.position = '';
     },
-    update(next) { build(next || []); },
+    update(next) { selected = null; popup.hidden = true; build(next || []); },
   };
 }

@@ -1,6 +1,7 @@
 import * as THREE from '../vendor/three/three.module.js';
 import { OrbitControls } from '../vendor/three/addons/controls/OrbitControls.js';
 import { flagIcon } from './world-data.js';
+import { WORLD_LAND } from './world-map-paths.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -18,27 +19,45 @@ function latLonToVector(lat, lon, radius = 2.02) {
   );
 }
 
+// Bake a detailed equirectangular Earth onto a canvas: ocean gradient + a 15°
+// graticule + the real Natural Earth coastlines (WORLD_LAND, the same vector data
+// the flat map uses). The path lives in a 0..360 × 0..180 space (x = lon+180,
+// y = 90−lat) — exactly the sphere's UV mapping — so a uniform scale onto the
+// canvas lines the continents up perfectly with the lat/lon markers.
 function earthTexture() {
+  const W = 2048, H = 1024;
   const c = document.createElement('canvas');
-  c.width = 1024; c.height = 512;
+  c.width = W; c.height = H;
   const g = c.getContext('2d');
-  const sea = g.createLinearGradient(0, 0, c.width, c.height);
-  sea.addColorStop(0, '#07111f'); sea.addColorStop(.48, '#0f2a3c'); sea.addColorStop(1, '#071827');
-  g.fillStyle = sea; g.fillRect(0, 0, c.width, c.height);
-  g.strokeStyle = 'rgba(255,255,255,.08)'; g.lineWidth = 1;
-  for (let x = 0; x <= c.width; x += c.width / 24) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, c.height); g.stroke(); }
-  for (let y = 0; y <= c.height; y += c.height / 12) { g.beginPath(); g.moveTo(0, y); g.lineTo(c.width, y); g.stroke(); }
-  g.fillStyle = 'rgba(74, 222, 128, .18)';
-  const blobs = [
-    [210, 170, 170, 95], [310, 250, 95, 150], [505, 160, 120, 80],
-    [560, 245, 95, 120], [690, 185, 150, 88], [775, 300, 95, 70],
-    [845, 355, 125, 55], [460, 345, 45, 32],
-  ];
-  for (const [x, y, w, h] of blobs) {
-    g.beginPath(); g.ellipse(x, y, w, h, -.18, 0, Math.PI * 2); g.fill();
-  }
+
+  // Ocean — slightly darker toward the poles for depth.
+  const sea = g.createLinearGradient(0, 0, 0, H);
+  sea.addColorStop(0, '#06121f'); sea.addColorStop(.5, '#0c2336'); sea.addColorStop(1, '#06121f');
+  g.fillStyle = sea; g.fillRect(0, 0, W, H);
+
+  // Graticule (every 15°), with a brighter equator + prime meridian.
+  g.strokeStyle = 'rgba(120,170,210,.10)'; g.lineWidth = 1;
+  for (let lon = 0; lon <= 360; lon += 15) { const x = lon / 360 * W; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+  for (let lat = 0; lat <= 180; lat += 15) { const y = lat / 180 * H; g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  g.strokeStyle = 'rgba(120,170,210,.20)'; g.lineWidth = 1.5;
+  g.beginPath(); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke();   // equator
+  g.beginPath(); g.moveTo(W / 2, 0); g.lineTo(W / 2, H); g.stroke();   // prime meridian
+
+  // Real coastlines over the top (land drawn last so it sits above the graticule).
+  g.save();
+  g.scale(W / 360, H / 180);
+  const land = new Path2D(WORLD_LAND);
+  g.fillStyle = 'rgba(48,165,102,.58)';
+  g.fill(land);
+  g.lineJoin = 'round';
+  g.lineWidth = 0.5;
+  g.strokeStyle = 'rgba(126,232,176,.75)';
+  g.stroke(land);
+  g.restore();
+
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
   return tex;
 }
 
@@ -56,9 +75,16 @@ export function renderGlobe(container, markers = [], { onSelect, onHover } = {})
   container.innerHTML = '';
   if (!window.WebGLRenderingContext) { fallback(container, markers, onSelect); return { dispose() {}, update(next) { fallback(container, next || [], onSelect); } }; }
 
+  container.style.position = 'relative';
   const canvas = document.createElement('canvas');
   canvas.className = 'traffic-globe-canvas';
   container.appendChild(canvas);
+
+  // Info popup anchored to the selected marker (projected to screen each frame).
+  const popup = document.createElement('div');
+  popup.className = 'globe-popup';
+  popup.hidden = true;
+  container.appendChild(popup);
 
   let renderer;
   try {
@@ -167,6 +193,25 @@ export function renderGlobe(container, markers = [], { onSelect, onHover } = {})
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2(10, 10);
   let hovered = null;
+  let selected = null; // { marker, mesh } — drives the anchored popup
+
+  function popupHtml(m) {
+    const loc = [m.city, m.region, m.country || m.cc].filter(Boolean).join(', ') || 'Unknown location';
+    const extra = esc(m.videoTitle || m.reason || m.ip || '');
+    return `<button class="globe-popup-x" type="button" aria-label="Close">×</button>`
+      + `<div class="gp-loc">${m.cc ? flagIcon(m.cc) : ''}<b>${esc(loc)}</b></div>`
+      + `<div class="gp-who">${esc(m.username || 'Guest')}</div>`
+      + (extra ? `<div class="gp-extra">${extra}</div>` : '');
+  }
+  function openPopup(marker, mesh) {
+    selected = { marker, mesh };
+    popup.innerHTML = popupHtml(marker);
+    popup.hidden = false;
+    popup.style.display = '';
+    popup.querySelector('.globe-popup-x').addEventListener('click', (e) => { e.stopPropagation(); closePopup(); });
+    controls.autoRotate = false; resumeAt = 0; // hold still so the info is readable
+  }
+  function closePopup() { selected = null; popup.hidden = true; }
 
   function setPointer(ev) {
     const rect = canvas.getBoundingClientRect();
@@ -180,7 +225,8 @@ export function renderGlobe(container, markers = [], { onSelect, onHover } = {})
     setPointer(ev);
     raycaster.setFromCamera(pointer, camera);
     const hit = raycaster.intersectObjects(pickables, false)[0];
-    if (hit) onSelect && onSelect(hit.object.userData.marker);
+    if (hit) { openPopup(hit.object.userData.marker, hit.object); onSelect && onSelect(hit.object.userData.marker); }
+    else closePopup();
   });
 
   function resize() {
@@ -219,6 +265,24 @@ export function renderGlobe(container, markers = [], { onSelect, onHover } = {})
       hovered = next;
       onHover && onHover(next ? next.userData.marker : null);
     }
+
+    // Anchor the info popup to the selected marker; hide it when the marker rotates
+    // to the far side of the globe (so it never floats over empty space).
+    if (selected && selected.mesh && !popup.hidden) {
+      const pos = selected.mesh.position.clone();
+      const ndc = pos.clone().project(camera);
+      const cw = renderer.domElement.clientWidth || 1;
+      const ch = renderer.domElement.clientHeight || 1;
+      const facing = pos.clone().normalize().dot(camera.position.clone().normalize()) > 0.02;
+      if (facing && ndc.z < 1) {
+        popup.style.display = '';
+        popup.style.left = `${(ndc.x * 0.5 + 0.5) * cw}px`;
+        popup.style.top = `${(-ndc.y * 0.5 + 0.5) * ch}px`;
+      } else {
+        popup.style.display = 'none';
+      }
+    }
+
     renderer.render(scene, camera);
   }
 
@@ -229,8 +293,10 @@ export function renderGlobe(container, markers = [], { onSelect, onHover } = {})
       renderer.setAnimationLoop(null);
       renderer.dispose();
       controls.dispose();
+      popup.remove();
     },
     // Live refresh: swap markers in place — camera, rotation, and controls persist.
-    update(next) { build(next || []); },
+    // The previously-selected mesh is gone after a rebuild, so close the popup.
+    update(next) { closePopup(); build(next || []); },
   };
 }
