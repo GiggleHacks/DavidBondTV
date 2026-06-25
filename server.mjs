@@ -68,7 +68,7 @@ const APP_VERSION = (() => {
 })();
 // Self-contained (inline-styled) so it renders regardless of which stylesheet a
 // page loads; pointer-events:none so it never blocks clicks (e.g. player controls).
-const VERSION_BADGE = `<div id="site-version" style="position:fixed;bottom:8px;right:10px;z-index:2147483000;`
+const VERSION_BADGE = `<div id="site-version" style="position:fixed;bottom:8px;left:10px;z-index:2147483000;`
   + `font:600 11px/1 system-ui,-apple-system,sans-serif;color:rgba(255,255,255,.4);`
   + `background:rgba(0,0,0,.35);padding:3px 7px;border-radius:6px;pointer-events:none;user-select:none">`
   + `v${APP_VERSION}</div>`;
