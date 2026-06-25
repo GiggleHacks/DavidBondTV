@@ -10,7 +10,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dbtv-review-'));
 process.env.CONTENT_DIR = TMP;
 process.env.MEDIA_DIR = path.join(TMP, 'media');
 
-const { bulkAction, releaseScheduled, enqueue } = await import('../lib/ingest.mjs');
+const { bulkAction, releaseScheduled, enqueue, editVideo, sweepRejected } = await import('../lib/ingest.mjs');
 const { MANIFEST } = await import('../lib/paths.js');
 
 const seed = (entries) => {
@@ -72,6 +72,7 @@ describe('review-first encoding (upload → review → approve → encode)', () 
     const e = byId('r');
     expect(e.status).toBe('rejected');
     expect(e.published).toBe(false);
+    expect(typeof e.rejectedAt).toBe('number'); // auto-purge clock started
     expect('sourcePath' in e).toBe(false); // cleared
     expect(fs.existsSync(src)).toBe(false); // un-encoded original reclaimed
   });
@@ -102,6 +103,45 @@ describe('review-first encoding (upload → review → approve → encode)', () 
     expect(r.count).toBe(1);                         // it WAS sent back into the pipeline
     expect(byId('f1').status).not.toBe('uploaded');
     expect(['encoding', 'failed', 'ready']).toContain(byId('f1').status);
+  });
+});
+
+describe('rejected videos are terminal', () => {
+  it('editVideo refuses to change a rejected video', async () => {
+    seed([{ id: 'rx', published: false, approval: 'unapproved', status: 'rejected', visibility: 'premium' }]);
+    const r = await editVideo('rx', { title: 'New title', visibility: 'free' });
+    expect(r.ok).toBe(false);
+    expect(byId('rx').visibility).toBe('premium'); // unchanged
+  });
+
+  it('bulkAction skips rejected ids for non-delete actions (premium/approve/publish)', async () => {
+    seed([{ id: 'rb', published: false, approval: 'unapproved', status: 'rejected', visibility: 'free' }]);
+    for (const action of ['premium', 'approve', 'publish']) {
+      // eslint-disable-next-line no-await-in-loop
+      await bulkAction(['rb'], action);
+    }
+    const e = byId('rb');
+    expect(e.visibility).toBe('free');     // not re-tiered
+    expect(e.approval).toBe('unapproved'); // not re-approved
+    expect(e.published).toBe(false);       // not published
+    expect(e.status).toBe('rejected');     // still terminal
+  });
+
+  it('sweepRejected purges entries past the grace period and keeps fresh ones', async () => {
+    const now = Date.now();
+    seed([
+      { id: 'old', status: 'rejected', published: false, rejectedAt: now - 60 * 60 * 1000 }, // 1h ago → due
+      { id: 'new', status: 'rejected', published: false, rejectedAt: now },                  // just now → kept
+      { id: 'legacy', status: 'rejected', published: false },                                // no stamp → due
+      { id: 'live', status: 'ready', published: true },                                      // untouched
+    ]);
+    const count = await sweepRejected();
+    expect(count).toBe(2);
+    const ids = read().map((e) => e.id);
+    expect(ids).not.toContain('old');
+    expect(ids).not.toContain('legacy');
+    expect(ids).toContain('new');
+    expect(ids).toContain('live');
   });
 });
 

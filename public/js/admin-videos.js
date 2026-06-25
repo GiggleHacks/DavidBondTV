@@ -7,6 +7,7 @@ import { ADMIN_PATHS } from './admin-paths.js';
 import { closeAfterAction, togglePanel } from './admin-dropdowns.js';
 import { buildCategoryChoices, choiceIcon, choiceTone } from './admin-filter-choices.js';
 import { categoryDisplayName, categoryLabelWithVisual, categoryVisualText, categoryVisualMarkup } from './category-visuals.js';
+import { createCalendar, scheduledVideos } from './admin-calendar.js';
 
 const $ = (id) => document.getElementById(id);
 const PAGE = 50;
@@ -54,6 +55,7 @@ let cats = []; // [{slug,name}]
 const selected = new Set();
 let encByManifest = {}; // manifestId → encoding % (live, from /api/admin/status)
 let encPoll = null;     // interval handle while any video is encoding
+let calendar = null;    // lazy-built publishing calendar (Calendar tab)
 
 // Map the live job registry to { manifestId: percent } for encoding jobs.
 function buildEncMap(jobs) {
@@ -172,6 +174,16 @@ function render() {
   updateSel();
   updateReviewCounts();
   manageEncPoll();
+  syncScheduled();
+}
+
+// Keep the Calendar-tab badge + (if built) the calendar itself in sync with the
+// full library. The badge counts videos with a future scheduled publish date.
+function syncScheduled() {
+  const n = scheduledVideos(all).length;
+  const badge = $('sched-count');
+  if (badge) { badge.textContent = n; badge.hidden = n === 0; }
+  if (calendar) calendar.update(all);
 }
 
 function renderPager() {
@@ -323,11 +335,14 @@ function libRow(v) {
   const row = document.createElement('div');
   row.className = 'lib-row';
   row.dataset.vid = v.id;
-  row.innerHTML = `
-    <input type="checkbox" class="row-check" ${selected.has(v.id) ? 'checked' : ''} />
-    <img alt="" ${v.thumb ? `src="${v.thumb}?_=${Date.now()}"` : ''} />
-    <div class="lt"><b></b><span class="meta"></span></div>
-    <div class="lib-actions">
+  // Rejected videos are non-editable (original gone, auto-deletion pending), so
+  // they get only a Delete action — no Edit link, no Quick edit.
+  const rejected = stateOf(v) === 'rejected';
+  const actions = rejected
+    ? `<div class="lib-actions">
+        <button class="btn sm danger row-del" type="button">Delete now</button>
+      </div>`
+    : `<div class="lib-actions">
       <a class="btn-edit" href="${ADMIN_PATHS.edit}?v=${encodeURIComponent(v.id)}">Edit</a>
       <div class="row-menu">
         <button class="row-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="More actions">⋯</button>
@@ -337,14 +352,22 @@ function libRow(v) {
         </div>
       </div>
     </div>`;
+  row.innerHTML = `
+    <input type="checkbox" class="row-check" ${selected.has(v.id) ? 'checked' : ''} />
+    <img alt="" ${v.thumb ? `src="${v.thumb}?_=${Date.now()}"` : ''} />
+    <div class="lt"><b></b><span class="meta"></span></div>
+    ${actions}`;
   row.querySelector('b').textContent = v.title || v.id;
   const size = videoSize(v);
   const sizeSeg = size ? ` · <span class="vsize" title="${v.compressedSize ? 'Encoded size (published)' : 'Original size (not yet encoded)'}">${esc(fmtBytes(size))}</span>` : '';
-  row.querySelector('.meta').innerHTML = `${esc(v.durLabel || '')} · ${esc(v.uploaded || '')}${sizeSeg} ${badges(v)}`.trim();
+  const rejSeg = rejected ? ' · <span class="vrej-note">removing automatically</span>' : '';
+  row.querySelector('.meta').innerHTML = `${esc(v.durLabel || '')} · ${esc(v.uploaded || '')}${sizeSeg} ${badges(v)}${rejSeg}`.trim();
 
-  const rmBtn = row.querySelector('.row-menu-btn');
-  rmBtn.addEventListener('click', () => togglePanel(rmBtn, row.querySelector('.row-menu-panel'), closeAllPopovers));
-  row.querySelector('.row-quick').addEventListener('click', () => { closeAllPopovers(); startQuickEdit(row, v); });
+  if (!rejected) {
+    const rmBtn = row.querySelector('.row-menu-btn');
+    rmBtn.addEventListener('click', () => togglePanel(rmBtn, row.querySelector('.row-menu-panel'), closeAllPopovers));
+    row.querySelector('.row-quick').addEventListener('click', () => { closeAllPopovers(); startQuickEdit(row, v); });
+  }
 
   const check = row.querySelector('.row-check');
   check.addEventListener('change', () => { if (check.checked) selected.add(v.id); else selected.delete(v.id); updateSel(); });
@@ -452,8 +475,28 @@ function chooseFilter(filterId, value) {
   closeAllPopovers();
 }
 
+// Switch between the Library list and the publishing Calendar. The calendar is
+// built lazily on first open, then kept fresh by syncScheduled() on every render.
+function showTab(tab) {
+  const onCal = tab === 'calendar';
+  $('library-view').hidden = onCal;
+  $('calendar-view').hidden = !onCal;
+  $('tab-library').classList.toggle('active', !onCal);
+  $('tab-calendar').classList.toggle('active', onCal);
+  $('tab-library').setAttribute('aria-selected', String(!onCal));
+  $('tab-calendar').setAttribute('aria-selected', String(onCal));
+  if (onCal && !calendar) {
+    calendar = createCalendar($('calendar-view'), {
+      onSelect: (v) => { location.href = `${ADMIN_PATHS.edit}?v=${encodeURIComponent(v.id)}`; },
+    });
+  }
+  if (onCal && calendar) calendar.update(all);
+}
+
 function wire() {
   $('search').addEventListener('input', applyFilter);
+  $('tab-library')?.addEventListener('click', () => showTab('library'));
+  $('tab-calendar')?.addEventListener('click', () => showTab('calendar'));
 
   // Filters popover
   const fb = $('filters-btn');

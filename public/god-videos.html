@@ -91,6 +91,12 @@
           </div>
         </div>
 
+        <div class="mv-tabs" role="tablist" aria-label="Videos view">
+          <button id="tab-library" class="mv-tab active" type="button" role="tab" aria-selected="true">Library</button>
+          <button id="tab-calendar" class="mv-tab" type="button" role="tab" aria-selected="false">Calendar <span id="sched-count" class="mv-tab-badge" hidden>0</span></button>
+        </div>
+
+        <div id="library-view">
         <div id="review-strip" class="review-strip" hidden>
           <span class="rs-label">Review queue</span>
           <button id="review-all" class="rs-link" type="button" hidden><span id="unapproved-count">0</span> unapproved →</button>
@@ -138,6 +144,9 @@
 
         <div id="library"></div>
         <div id="pager" class="pager"></div>
+        </div>
+
+        <div id="calendar-view" class="calendar-view" hidden></div>
       </section>
     </main>
   </div>

@@ -45,6 +45,19 @@ async function main() {
   const entry = videoId ? await loadEntry(videoId) : null;
   if (!entry) { $('edit-missing').classList.remove('hidden'); return; }
 
+  // Rejected videos are non-editable — their original is gone and they're queued
+  // for automatic deletion, so there's nothing meaningful to change. Show a notice
+  // (with a quick way back to the library) instead of the editable form.
+  if (entry.status === 'rejected') {
+    const m = $('edit-missing');
+    m.classList.remove('hidden');
+    m.classList.remove('muted');
+    m.innerHTML = '<h3 style="margin:0 0 6px">This video was rejected</h3>'
+      + '<p class="muted" style="margin:0 0 12px">Rejected videos can’t be edited — the original has been removed and the record is scheduled for automatic deletion.</p>'
+      + `<a class="btn sm ghost" href="${ADMIN_PATHS.videos}">← Back to videos</a>`;
+    return;
+  }
+
   $('edit-body').classList.remove('hidden');
   document.title = `Edit · ${entry.title || entry.id} — David Bond TV`;
   $('ev-title').value = entry.title || '';

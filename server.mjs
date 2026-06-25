@@ -30,7 +30,7 @@ import { avatarUrl } from './lib/avatars.js';
 import {
   enqueue, getJob, listJobs, newUploadTarget, acceptableUpload, bootSweep, deleteVideo,
   editVideo, thumbTarget, setThumb, isKnownVideo, bulkAction, videoVisibility,
-  releaseScheduled, videoPublic, listManifest, checkDuplicate, getSystemMetrics,
+  releaseScheduled, sweepRejected, videoPublic, listManifest, checkDuplicate, getSystemMetrics,
   mergeManifestEntry, backfillNotifications, reviewSource,
 } from './lib/ingest.mjs';
 import {
@@ -2732,6 +2732,7 @@ server.listen(PORT, async () => {
   console.log(`   http timeouts (ms): requestTimeout=${server.requestTimeout} headersTimeout=${server.headersTimeout} keepAliveTimeout=${server.keepAliveTimeout} timeout=${server.timeout}`);
   await bootSweep(); // any interrupted "processing" entries → "failed"
   await releaseScheduled(); // publish any drips whose time passed while we were down
+  await sweepRejected().catch(() => {}); // purge rejected videos past their grace period
   // Backfill "new video" notifications for already-published videos missing a
   // feed entry (idempotent) — covers videos pushed before the server-side
   // notification hook existed, so viewers finally get notified.
@@ -2753,7 +2754,10 @@ server.listen(PORT, async () => {
 
 // Scheduled-release worker: publish due "slow-drip" videos (and notify viewers)
 // roughly every minute. unref() so it never holds the process open.
-setInterval(() => { releaseScheduled().catch(() => {}); }, 60_000).unref();
+setInterval(() => {
+  releaseScheduled().catch(() => {});
+  sweepRejected().catch(() => {}); // auto-delete rejected videos after their grace period
+}, 60_000).unref();
 
 // Telegram access worker: remove group members whose access has lapsed (no active
 // membership and no owned products). Only runs when the gate is configured.
