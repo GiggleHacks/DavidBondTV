@@ -100,6 +100,18 @@ describe('crypto webhook', () => {
     expect(mails).toEqual(['product']);
   });
 
+  it('marks an order underpaid and alerts the owner without granting', async () => {
+    const { cp, store, orders, tg, mails } = make();
+    await orders.create({ id: 'u3', userId: 'u1', kind: 'product', productId: 'p1', coin: 'ETH', amount: '0.05', status: 'waiting', confirmations: 6 });
+    const res = fakeRes();
+    await cp._test.webhook(webhookReq({ orderId: 'u3', coin: 'ETH', outcome: 'underpaid', amount: '0.05', confirmations: 6 }), res);
+    expect(res.statusCode).toBe(200);
+    expect(orders._orders.u3.status).toBe('underpaid');
+    expect(store._users.u1.products).toHaveLength(0);   // NOT granted
+    expect(mails).toEqual([]);                            // no grant email
+    expect(tg.filter((x) => x.t === 'crypto_underpaid')).toHaveLength(1);
+  });
+
   it('grants fixed-term membership on a confirmed callback', async () => {
     const { cp, store, orders } = make();
     await orders.create({ id: 'm1', userId: 'u1', kind: 'membership', termMonths: 3, coin: 'LTC', amount: '1.0', status: 'waiting', confirmations: 6 });

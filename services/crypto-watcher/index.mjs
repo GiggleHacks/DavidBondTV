@@ -96,6 +96,12 @@ async function pollOnce() {
         if (r.matched) {
           const ok = await sendCallback(w.callbackUrl, { orderId, coin: w.coin, txid: null, amount: w.expectedAmount, confirmations: w.confirmations }, CALLBACK_SECRET);
           if (ok) { watches.delete(orderId); console.log(`[watcher] paid ${orderId}`); }
+        } else if (r.status === 'underpaid' && !w.alerted) {
+          // A short deposit arrived. Alert the main app ONCE; keep watching in case
+          // the buyer tops up to the full amount (which would then confirm).
+          console.warn(`[watcher] UNDERPAID ${orderId} ${w.coin} expected ${w.expectedAmount}`);
+          const ok = await sendCallback(w.callbackUrl, { orderId, coin: w.coin, outcome: 'underpaid', amount: w.expectedAmount, confirmations: w.confirmations }, CALLBACK_SECRET);
+          if (ok) w.alerted = true;
         }
       } catch (e) { console.error(`[watcher] poll ${orderId}: ${e.message}`); }
     }
