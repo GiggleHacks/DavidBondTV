@@ -22,6 +22,9 @@ import { createCommentGuard, DEFAULT_BANNED } from './lib/comment-guard.js';
 import { adminUser } from './lib/users-store.js';
 import { createPaymentsStore } from './lib/payments-store.js';
 import { createStripePayments } from './lib/stripe-payments.js';
+import { createCryptoOrdersStore } from './lib/crypto-orders-store.js';
+import { createCryptoPayments } from './lib/crypto-payments.js';
+import { loadCryptoConfig } from './lib/crypto-config.js';
 import { createTelegramNotifier, createTelegramGroupGate } from './lib/telegram-bot.js';
 import { announceBoot } from './lib/deploy-notify.mjs';
 import { createTelegramAccess } from './lib/telegram-access.js';
@@ -230,6 +233,27 @@ const stripePayments = createStripePayments({
   coupons,
   telegramNotifier,
 });
+
+const CRYPTO_ORDERS_FILE = path.join(__dirname, 'data', 'crypto-orders.json');
+const CRYPTO_CONFIG_FILE = path.join(__dirname, 'data', 'crypto-config.json');
+const cryptoOrdersStore = createCryptoOrdersStore(CRYPTO_ORDERS_FILE);
+const cryptoConfig = loadCryptoConfig(CRYPTO_CONFIG_FILE);
+const cryptoPayments = createCryptoPayments({
+  store: accounts.store,
+  currentUser: accounts.currentUser,
+  ordersStore: cryptoOrdersStore,
+  paymentsStore,
+  baseUrl: BASE_URL,
+  webhookSecret: process.env.CRYPTO_WEBHOOK_SECRET,
+  watcherUrl: process.env.CRYPTO_WATCHER_URL || null,
+  watcherToken: process.env.CRYPTO_WATCHER_TOKEN || null,
+  cryptoConfig,
+  products,
+  pricing,
+  coupons,
+  telegramNotifier,
+});
+console.log(`[crypto] enabled coins: ${cryptoConfig.enabledCoins.join(', ') || '(none)'}`);
 
 // --- Private Telegram group access gate ---
 // Paid users get a one-time, single-use invite to a private Telegram group; the
@@ -2309,6 +2333,10 @@ async function handleApi(req, res, ctx) {
   // Payments (/api/pay/stripe/*). Before accounts so the public webhook (no
   // session) is reached; the webhook reads the raw body for signature checking.
   if (await stripePayments.handle(req, res, url)) return true;
+
+  // Self-hosted crypto payments (/api/pay/crypto/*). Public webhook (HMAC-signed
+  // by the watcher) shares the pre-accounts slot like the Stripe webhook.
+  if (await cryptoPayments.handle(req, res, url)) return true;
 
   // Private Telegram group gate (/api/telegram/*). The bot webhook is session-less
   // (authenticated by ?token=), so it shares the pre-accounts slot; the link/status
