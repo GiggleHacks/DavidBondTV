@@ -18,4 +18,7 @@ describe('crypto-amount', () => {
     expect(r.baseUnits).toBe(149507n);
     expect(r.amount).toBe('0.149507');
   });
+  it('throws if decimals exceeds the float-safe range (money-math guard)', () => {
+    expect(() => uniqueAmount({ usd: 10, rate: 2000, decimals: 18, jitter: 0 })).toThrow();
+  });
 });
