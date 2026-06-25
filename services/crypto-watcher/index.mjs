@@ -10,6 +10,11 @@ const TOKEN = process.env.CRYPTO_WATCHER_TOKEN;
 const CALLBACK_SECRET = process.env.CRYPTO_WEBHOOK_SECRET;
 const POLL_MS = Number(process.env.POLL_MS || 20_000);
 
+if (!TOKEN || !CALLBACK_SECRET) {
+  console.error('[watcher] FATAL: CRYPTO_WATCHER_TOKEN and CRYPTO_WEBHOOK_SECRET must both be set');
+  process.exit(1);
+}
+
 const adapters = {};
 if (process.env.LTC_RPC_URL) adapters.LTC = makeLtcAdapter({ rpcUrl: process.env.LTC_RPC_URL, rpcUser: process.env.LTC_RPC_USER, rpcPass: process.env.LTC_RPC_PASS });
 if (process.env.ETH_RPC_URL) adapters.ETH = makeEthAdapter({ rpcUrl: process.env.ETH_RPC_URL });
@@ -23,12 +28,13 @@ function toBaseUnits(decimalStr, decimals) {
 
 // In-memory watch list (orders are short-lived; main app is the source of truth).
 const watches = new Map(); // orderId → { coin, address, expectedAmount, expectedBaseUnits, baselineBaseUnits, confirmations, expiresAt, callbackUrl }
+let polling = false;
 
 async function coinGeckoRate(coin) {
   const id = { ETH: 'ethereum', LTC: 'litecoin', XMR: 'monero' }[coin];
   const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`);
   const j = await r.json();
-  return j[id].usd;
+  return j && j[id] ? j[id].usd : null;
 }
 
 function authed(req) {
@@ -47,9 +53,12 @@ const server = http.createServer(async (req, res) => {
     if (!authed(req)) { res.writeHead(401); return res.end('unauthorized'); }
 
     if (req.method === 'GET' && url.pathname === '/quote') {
-      const coin = url.searchParams.get('coin').toUpperCase();
+      const coinParam = url.searchParams.get('coin');
+      const coin = coinParam ? coinParam.toUpperCase() : '';
       const usd = Number(url.searchParams.get('usd'));
+      if (!COIN_DISPLAY_DECIMALS[coin] || !(usd > 0)) { res.writeHead(400); return res.end('bad quote params'); }
       const rate = await coinGeckoRate(coin);
+      if (!(rate > 0)) { res.writeHead(502); return res.end('rate unavailable'); }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ coin, usd, rate, amount: (usd / rate).toFixed(COIN_DISPLAY_DECIMALS[coin]), ts: Date.now() }));
     }
@@ -75,17 +84,23 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function pollOnce() {
-  const now = Date.now();
-  for (const [orderId, w] of [...watches]) {
-    if (now > w.expiresAt) { watches.delete(orderId); continue; }
-    try {
-      const received = await adapters[w.coin].getReceived(w.address, w.confirmations);
-      const r = matchReceived(w, received);
-      if (r.matched) {
-        const ok = await sendCallback(w.callbackUrl, { orderId, coin: w.coin, txid: null, amount: w.expectedAmount, confirmations: w.confirmations }, CALLBACK_SECRET);
-        if (ok) { watches.delete(orderId); console.log(`[watcher] paid ${orderId}`); }
-      }
-    } catch (e) { console.error(`[watcher] poll ${orderId}: ${e.message}`); }
+  if (polling) return;
+  polling = true;
+  try {
+    const now = Date.now();
+    for (const [orderId, w] of [...watches]) {
+      if (now > w.expiresAt) { watches.delete(orderId); continue; }
+      try {
+        const received = await adapters[w.coin].getReceived(w.address, w.confirmations);
+        const r = matchReceived(w, received);
+        if (r.matched) {
+          const ok = await sendCallback(w.callbackUrl, { orderId, coin: w.coin, txid: null, amount: w.expectedAmount, confirmations: w.confirmations }, CALLBACK_SECRET);
+          if (ok) { watches.delete(orderId); console.log(`[watcher] paid ${orderId}`); }
+        }
+      } catch (e) { console.error(`[watcher] poll ${orderId}: ${e.message}`); }
+    }
+  } finally {
+    polling = false;
   }
 }
 
