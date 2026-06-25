@@ -23,6 +23,7 @@ import { adminUser } from './lib/users-store.js';
 import { createPaymentsStore } from './lib/payments-store.js';
 import { createStripePayments } from './lib/stripe-payments.js';
 import { createTelegramNotifier, createTelegramGroupGate } from './lib/telegram-bot.js';
+import { announceBoot } from './lib/deploy-notify.mjs';
 import { createTelegramAccess } from './lib/telegram-access.js';
 import { hasActiveMembership } from './lib/membership.js';
 import { avatarUrl } from './lib/avatars.js';
@@ -35,7 +36,7 @@ import {
 import {
   listForUser as listNotifications, markSeen as markNotificationsSeen,
   dismiss as dismissNotification, clearAll as clearNotifications,
-  addAccountNotification, decorateForViewer as decorateNotificationsForViewer,
+  addAccountNotification, addAdminNotification, decorateForViewer as decorateNotificationsForViewer,
 } from './lib/notifications-store.js';
 import { sendMembershipGrantedEmail, sendProductGrantedEmail } from './lib/mailer.js';
 import { hasFfmpeg } from './lib/media.mjs';
@@ -279,6 +280,20 @@ function isSyncAuthed(req) {
   return verifyBearerSecret(SYNC_TOKEN, req) || isAdminReq(req);
 }
 
+// Ids of every admin account, for fanning system/comment/server alerts into their
+// notification bell. Cheap (in-memory user list); recomputed per emit so a newly
+// promoted admin starts receiving alerts without a restart.
+function adminUserIds() {
+  return accounts.store.listAll()
+    .filter((u) => Array.isArray(u.roles) && u.roles.includes('admin'))
+    .map((u) => u.id);
+}
+
+/** Best-effort admin bell alert (new comment, server event, deploy, …). Never throws. */
+function notifyAdmins(payload) {
+  try { addAdminNotification(adminUserIds(), payload); } catch { /* best-effort */ }
+}
+
 /**
  * Ensure the David Bond admin exists as a normal user with roles:['admin'],
  * migrating the password from data/admin.json once so the existing credentials
@@ -358,13 +373,14 @@ function decorateLogEvent(e, titles = manifestTitleMap(), names = userNameMap())
   if (!e || typeof e !== 'object') return e;
   const videoId = e.videoId || e.video || null;
   const userId = e.userId || null;
+  // Prefer the manifest title; the stored videoTitle is often just the slug
+  // (normalizeEvent fallback) rather than a real human title.
+  const storedTitle = e.videoTitle && e.videoTitle !== videoId ? e.videoTitle : null;
   return {
     ...e,
     ip: normalizeIp(e.ip),
     videoId,
-    // Resolve to a human title; never expose the raw UUID — null lets the UI show
-    // a friendly "(removed video)" instead.
-    videoTitle: e.videoTitle || (videoId ? (titles[videoId] || null) : null),
+    videoTitle: (videoId ? titles[videoId] : null) || storedTitle || null,
     username: e.username || (userId ? names.get(userId) || 'deleted user' : null),
   };
 }
@@ -749,6 +765,18 @@ async function handleApi(req, res, ctx) {
           avatarSeed: crypto.randomBytes(4).toString('hex'),
           gifUrl,
           country,
+        });
+      }
+      // Ping the owner's bell about the new comment (skip the admin's own posts).
+      const authorIsAdmin = !!(user && Array.isArray(user.roles) && user.roles.includes('admin'));
+      if (!authorIsAdmin && stored) {
+        const who = stored.username || stored.name || 'Someone';
+        const snippet = String(stored.text || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+        notifyAdmins({
+          kind: 'comment',
+          title: `New comment from ${who}`,
+          body: snippet,
+          link: `/watch?v=${encodeURIComponent(video || 'bikinis')}`,
         });
       }
       sendJson(res, 200, { ok: true, comment: stored });
@@ -2552,7 +2580,11 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(403, withSecurityHeaders());
         return res.end('Forbidden');
       }
-      const json = JSON.stringify({ video: sanitizePlaybackVideo(entry) });
+      const vstats = analytics.getVideoStats(vid);
+      const json = JSON.stringify({
+        video: sanitizePlaybackVideo(entry),
+        views: vstats ? (vstats.views || 0) : 0,
+      });
       res.writeHead(200, withSecurityHeaders({
         'Content-Type': 'application/json; charset=utf-8',
         'Content-Length': Buffer.byteLength(json),
@@ -2686,6 +2718,18 @@ server.listen(PORT, async () => {
   // notification hook existed, so viewers finally get notified.
   try { const n = await backfillNotifications(); if (n) console.log(`   notifications: ensured feed entries for ${n} published video(s)`); }
   catch (e) { console.error('   notifications backfill failed:', e.message); }
+  // Announce deploys (version/commit changed → owner bell + Telegram summary) vs
+  // plain reboots (bell only). Best-effort; never blocks readiness.
+  try {
+    const r = await announceBoot({
+      version: APP_VERSION,
+      cwd: __dirname,
+      stateFile: path.join(__dirname, 'data', 'boot-state.json'),
+      notifyAdmins,
+      sendTelegram: telegramNotifier.configured ? (t) => telegramNotifier.send(t) : null,
+    });
+    console.log(`   boot: ${r.kind}${r.kind === 'update' ? ` (from v${r.from}, ${r.commits} commit(s))` : ''}`);
+  } catch (e) { console.error('   boot announce failed:', e.message); }
 });
 
 // Scheduled-release worker: publish due "slow-drip" videos (and notify viewers)

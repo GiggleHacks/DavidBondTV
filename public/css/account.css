@@ -114,21 +114,18 @@ body.has-sidebar-shell .acc-page { margin-top: 40px; }
 
 /* ---------- Watch page meta row + reactions ---------- */
 .v-subrow { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 8px 2px 4px; }
-.v-channel { font-weight: 700; font-size: 14px; }
-.v-channel .check { color: var(--accent); }
+.v-views { font-weight: 700; font-size: 14px; }
+.v-views:empty { display: none; }
+.v-category {
+  font-size: 12.5px; font-weight: 700; color: var(--text-dim);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 3px 11px; text-transform: capitalize;
+}
+.v-category:empty { display: none; }
 .v-date { color: var(--text-dim); font-size: 13px; }
+.v-date:empty { display: none; }
 .v-desc { color: var(--text-dim); font-size: 14px; line-height: 1.5; margin: 6px 2px 0; white-space: pre-wrap; }
 .reactions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-/* Subscribe (free follow) button */
-.sub-btn {
-  border: none; cursor: pointer; border-radius: 999px; padding: 8px 16px;
-  font-size: 13px; font-weight: 700; background: var(--accent); color: var(--accent-contrast); min-height: 44px;
-  transition: filter .15s, transform .05s, background .15s, color .15s;
-}
-.sub-btn:hover { filter: brightness(1.08); }
-.sub-btn:active { transform: scale(.97); }
-.sub-btn.is-subbed { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
-.sub-count { color: var(--text-dim); font-size: 13px; }
 /* Share button — mirrors the reaction pill; sits at the end of the action row */
 .share-btn {
   display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
@@ -186,7 +183,6 @@ a.comment-name:hover { color: var(--accent); text-decoration: underline; }
     width: 100%;
     flex-wrap: wrap;
   }
-  .sub-btn,
   .react-btn {
     min-height: 44px;
   }
@@ -265,8 +261,9 @@ a.comment-name:hover { color: var(--accent); text-decoration: underline; }
 .verify-card h2 { clear: both; margin: 0 0 10px; font-size: 24px; line-height: 1.15; color: #111827; }
 .verify-card p { margin: 0; color: #58657a; line-height: 1.45; }
 .verify-card strong { color: #111827; }
-.code-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; margin: 24px 0 12px; }
+.code-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; margin: 24px 0 12px; }
 .code-box {
+  width: 100%; min-width: 0; box-sizing: border-box;
   height: 44px; border-radius: 8px; border: 1px solid #dce3ee; background: #fff; color: #111827;
   font-size: 22px; font-weight: 800; text-align: center; font-family: inherit;
 }

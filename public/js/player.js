@@ -11,10 +11,12 @@ import { initComments } from './comments.js';
 import { initReactions } from './reactions.js';
 import { initShare } from './share.js';
 import { initWatchTracker } from './watch-tracker.js';
+import { attachWatchProgress } from './watch-progress.js';
 import { canUserWatchPremium, isAdminUser, canWatchVideo } from './viewer-access.js';
 import { startPurchase, fmtMoney } from './course-buy.js';
 import { getOfferCopy } from './offer-copy.js';
 import { ADMIN_PATHS } from './admin-paths.js';
+import { toggleFullscreen } from './fullscreen.js';
 
 const $ = (id) => document.getElementById(id);
 const FPS = 30000 / 1001; // source frame rate (~29.97)
@@ -174,10 +176,21 @@ async function loadPlayback(id) {
   try {
     const res = await fetch(`/api/videos/${encodeURIComponent(id)}/playback`);
     if (!res.ok) return null;
-    return (await res.json()).video || null;
+    const data = await res.json();
+    const video = data.video || null;
+    // Carry the public view count alongside the playback payload so the meta row
+    // can show it without a second request.
+    if (video) video.views = typeof data.views === 'number' ? data.views : 0;
+    return video;
   } catch {
     return null;
   }
+}
+
+/** "1 view" / "1,234 views" — compact, human view-count label. */
+function formatViews(n) {
+  if (typeof n !== 'number' || n <= 0) return '';
+  return n === 1 ? '1 view' : `${n.toLocaleString()} views`;
 }
 
 async function init() {
@@ -238,6 +251,9 @@ async function init() {
   $('v-title').textContent = locked ? 'Members-only video' : (entry.title || 'David Bond TV');
   $('v-desc').textContent = locked ? '' : (entry.description || '');
   $('v-date').textContent = (!locked && entry.uploaded) ? entry.uploaded : '';
+  // Category sits in the meta row; views are filled once playback loads below.
+  const vCategory = $('v-category');
+  if (vCategory) vCategory.textContent = (!locked && entry.category) ? entry.category : '';
   document.title = locked
     ? 'Members only — David Bond TV'
     : (entry.title ? `${entry.title} — David Bond TV` : 'David Bond TV');
@@ -268,8 +284,17 @@ async function init() {
   // Premium gate: exclusive videos play for admins only; everyone else sees a
   // lock + subscribe prompt instead of the stream (the server 403s the media too).
   if (locked) {
-    if (gateProduct) showCourseGate(container, entry, gateProduct);
-    else showPremiumGate(container, entry);
+    if (gateProduct) {
+      showCourseGate(container, entry, gateProduct);
+    } else if (me) {
+      // Signed-in account holder (not yet a member): skip the generic in-player
+      // "unlock" teaser and go straight to the membership page, which shows the
+      // full pricing + coupon offer immediately. One click, no interstitial.
+      location.href = `/membership.html?next=${encodeURIComponent(location.pathname + location.search)}`;
+      return;
+    } else {
+      showPremiumGate(container, entry);
+    }
     initReactions(commentVideo);
     initComments(commentVideo);
     return;
@@ -282,6 +307,8 @@ async function init() {
     initComments(commentVideo);
     return;
   }
+  const vViews = $('v-views');
+  if (vViews) vViews.textContent = formatViews(playback.views);
 
   // hls.js controller is created lazily; the settings menu reaches it via this ref.
   const hlsRef = { ctrl: null };
@@ -341,10 +368,7 @@ async function init() {
     seekToEnd: () => { if (video.duration) video.currentTime = video.duration; },
     frameStep: (dir) => { if (!video.paused) video.pause(); video.currentTime += dir / FPS; },
     speedStep: (dir) => { video.playbackRate = nextRate(video.playbackRate, dir); },
-    toggleFullscreen: () => {
-      if (document.fullscreenElement === container) document.exitFullscreen();
-      else container.requestFullscreen();
-    },
+    toggleFullscreen: () => toggleFullscreen(container, video),
   });
 
   // Per-video social features
@@ -353,6 +377,8 @@ async function init() {
 
   // Watch-time analytics (only for real manifest videos, not the legacy demo).
   if (entry) initWatchTracker(video, entry.id);
+  // Resume-from-last-position + per-device progress for the thumbnail bar.
+  if (entry) attachWatchProgress(video, entry.id);
 
   // Admin-only creator controls (YouTube-style) in the meta row: Analytics + Edit.
   if (await viewerIsAdmin()) {

@@ -135,3 +135,25 @@ describe('traffic markers', () => {
     expect(Math.abs(bakersfield[0].lat - fresno.lat)).toBeGreaterThan(1);
   });
 });
+
+describe('activity feed dedup', () => {
+  it('collapses repeated heartbeats of one view into a single watched entry with summed seconds', () => {
+    const analytics = createAnalytics({ dir });
+    // Three heartbeats for the SAME view, interleaved with another viewer's view.
+    analytics.record({ t: Date.parse('2026-06-20T12:00:00Z'), video: 'v1', videoTitle: 'V1', viewId: 'view-A', ip: '1.1.1.1', dt: 5, pos: 5 });
+    analytics.record({ t: Date.parse('2026-06-20T12:00:05Z'), video: 'v1', videoTitle: 'V1', viewId: 'view-B', ip: '2.2.2.2', dt: 5, pos: 5 });
+    analytics.record({ t: Date.parse('2026-06-20T12:00:10Z'), video: 'v1', videoTitle: 'V1', viewId: 'view-A', ip: '1.1.1.1', dt: 5, pos: 10 });
+    analytics.record({ t: Date.parse('2026-06-20T12:00:20Z'), video: 'v1', videoTitle: 'V1', viewId: 'view-A', ip: '1.1.1.1', dt: 7, pos: 17 });
+
+    const recent = analytics.getRecentEvents(50);
+    // 4 raw heartbeats → 2 distinct views (A collapsed, B alone).
+    expect(recent).toHaveLength(2);
+    const a = recent.find((e) => e.viewId === 'view-A');
+    expect(a.seconds).toBe(17);          // 5 + 5 + 7 summed
+    expect(a.position).toBe(17);         // furthest position retained
+
+    // Logs query collapses the same way.
+    const logs = analytics.queryLogs({ from: '2026-06-20', to: '2026-06-20', limit: 50 });
+    expect(logs.events.filter((e) => e.viewId === 'view-A')).toHaveLength(1);
+  });
+});

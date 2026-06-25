@@ -60,6 +60,23 @@ describe('formatMessage', () => {
     expect(msg).toContain('$17.00/mo');
   });
 
+  it('new_subscription shows charged-today, ongoing price, fee + net, and coupon', () => {
+    const msg = n._test.formatMessage('new_subscription', {
+      username: 'Alice', email: 'alice@x.com', interval: 'month',
+      recurringAmount: 1700, chargedToday: 100, currency: 'usd',
+      couponCode: 'LAUNCH', couponPercentOff: 50,
+    });
+    expect(msg).toContain('Charged today');
+    expect(msg).toContain('$1.00');           // intro charged today
+    expect(msg).toContain('Ongoing');
+    expect(msg).toContain('$17.00/mo');        // ongoing recurring
+    expect(msg).toContain('LAUNCH');
+    expect(msg).toContain('50%');
+    expect(msg).toContain('net deposited');
+    // net of $1.00 after ~2.9% + 30¢ ≈ $0.67
+    expect(msg).toContain('$0.67');
+  });
+
   it('formats course_purchase', () => {
     const msg = n._test.formatMessage('course_purchase', { username: 'Sam', product: 'Tracking 101', amount: 4900, currency: 'usd' });
     expect(msg).toContain('🛒');
@@ -78,6 +95,13 @@ describe('formatMessage', () => {
   it('handles unknown event type gracefully', () => {
     const msg = n._test.formatMessage('unknown_event', { foo: 'bar' });
     expect(msg).toContain('unknown_event');
+  });
+
+  it('estimateStripeNet applies ~2.9% + 30¢', () => {
+    const { estimateStripeNet } = n._test;
+    expect(estimateStripeNet(1700)).toEqual({ fee: Math.round(1700 * 0.029) + 30, net: 1700 - (Math.round(1700 * 0.029) + 30) });
+    expect(estimateStripeNet(0)).toEqual({ fee: 0, net: 0 });
+    expect(estimateStripeNet(null)).toEqual({ fee: 0, net: 0 });
   });
 
   it('handles null amount gracefully', () => {

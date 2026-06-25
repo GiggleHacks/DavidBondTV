@@ -1,12 +1,12 @@
 import { formatTime } from './format.js';
 import { ICONS } from './icons.js';
+import { toggleFullscreen, isFullscreen } from './fullscreen.js';
 
 export function createControls({ video, container, els, onToggleSettings }) {
   function renderPlay() {
     const playing = !video.paused;
     els.playBtn.innerHTML = playing ? ICONS.pause : ICONS.play;
-    els.bigPlay.innerHTML = ICONS.play;
-    els.bigPlay.hidden = playing;
+    if (els.bigPlay) { els.bigPlay.innerHTML = ICONS.play; els.bigPlay.hidden = playing; }
     container.classList.toggle('paused', video.paused);
   }
 
@@ -23,7 +23,7 @@ export function createControls({ video, container, els, onToggleSettings }) {
   }
 
   function renderFullscreen() {
-    const fs = document.fullscreenElement === container;
+    const fs = isFullscreen(container, video);
     els.fullscreenBtn.innerHTML = fs ? ICONS.exitFullscreen : ICONS.enterFullscreen;
   }
 
@@ -48,13 +48,10 @@ export function createControls({ video, container, els, onToggleSettings }) {
 
   // Button wiring
   els.playBtn.addEventListener('click', togglePlay);
-  els.bigPlay.addEventListener('click', togglePlay);
+  if (els.bigPlay) els.bigPlay.addEventListener('click', togglePlay);
   els.muteBtn.addEventListener('click', () => { video.muted = !video.muted; });
   els.settingsBtn.addEventListener('click', (e) => { e.stopPropagation(); onToggleSettings(); });
-  els.fullscreenBtn.addEventListener('click', () => {
-    if (document.fullscreenElement === container) document.exitFullscreen();
-    else container.requestFullscreen();
-  });
+  els.fullscreenBtn.addEventListener('click', () => toggleFullscreen(container, video));
 
   // Volume drag
   let draggingVol = false;
@@ -76,6 +73,10 @@ export function createControls({ video, container, els, onToggleSettings }) {
   video.addEventListener('timeupdate', renderTime);
   video.addEventListener('loadedmetadata', renderTime);
   document.addEventListener('fullscreenchange', renderFullscreen);
+  document.addEventListener('webkitfullscreenchange', renderFullscreen);
+  // iPhone fullscreens the <video> directly and fires these instead.
+  video.addEventListener('webkitbeginfullscreen', renderFullscreen);
+  video.addEventListener('webkitendfullscreen', renderFullscreen);
 
   // Initial paint
   els.settingsBtn.innerHTML = ICONS.settings;

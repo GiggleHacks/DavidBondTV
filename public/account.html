@@ -68,10 +68,23 @@
     </div>
 
     <div class="acc-card" id="telegram-card" style="margin-top:16px" hidden>
-      <h2 style="margin-top:0">Private Telegram group</h2>
+      <h2 style="margin-top:0;display:flex;align-items:center;gap:9px">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="#229ED9" aria-hidden="true"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg>
+        Private Telegram Group
+      </h2>
       <p class="acc-sub" id="telegram-status">&nbsp;</p>
       <button class="acc-btn" id="telegram-action" type="button" hidden></button>
+      <a class="acc-btn acc-btn-ghost" id="telegram-bot" target="_blank" rel="noopener" hidden
+        style="margin-top:10px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center"></a>
       <p class="acc-msg" id="telegram-msg" hidden></p>
+      <details id="telegram-how" hidden style="margin-top:14px">
+        <summary style="cursor:pointer;color:var(--text-dim);font-size:13px;font-weight:700">How does the Telegram group work?</summary>
+        <p style="color:var(--text-dim);font-size:13px;line-height:1.6;margin:10px 0 0">
+          The group link is kept private so only paying members can get in. Tap <strong>“Get my invite link”</strong>
+          above — that opens our bot in Telegram. Press <strong>Start</strong> and the bot sends you a personal,
+          single-use invite that expires shortly. Your spot is tied to your membership, so keep it active to stay in.
+        </p>
+      </details>
     </div>
 
     <div class="acc-card" id="connections-card" style="margin-top:16px">
@@ -246,20 +259,35 @@
       const card = $('telegram-card');
       const statusEl = $('telegram-status');
       const action = $('telegram-action');
+      const botLink = $('telegram-bot');
+      const how = $('telegram-how');
       const st = await getJSON('/api/telegram/status');
       // Hidden entirely when the feature isn't configured server-side.
       if (!st || !st.enabled) { card.hidden = true; return; }
       card.hidden = false;
       setTgMsg('');
+      // Direct bot link as a secondary, always-visible entry point.
+      if (botLink) {
+        if (st.botUsername) {
+          botLink.href = `https://t.me/${st.botUsername}`;
+          botLink.textContent = `Open @${st.botUsername} in Telegram →`;
+          botLink.hidden = false;
+        } else {
+          botLink.hidden = true;
+        }
+      }
 
       if (!st.eligible) {
         statusEl.textContent = 'Members and course owners get access to our private Telegram group. Join to unlock it.';
         action.textContent = 'See membership';
         action.hidden = false;
+        if (botLink) botLink.hidden = true; // non-members shouldn't be sent to the bot yet
+        if (how) how.hidden = true;
         action.onclick = () => { window.location.href = '/membership.html'; };
         return;
       }
 
+      if (how) how.hidden = false;
       statusEl.textContent = st.linkState === 'joined'
         ? 'You’re linked to the group. Need back in? Generate a fresh single-use invite below.'
         : 'You have access! Tap below for your personal, single-use invite link.';

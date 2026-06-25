@@ -148,10 +148,26 @@ function drawDonut(svg, legendEl, countries) {
 // ---------- data loaders ----------
 let countryData = { viewers: {}, subscribers: {}, blocked: {} };
 let trafficMarkers = [];
-let globeCtl = null;       // { dispose, update } from renderGlobe
+let mapCtl = null;         // active { dispose, update } (2D map or 3D globe)
+let mapCtlView = null;     // which view ('2d'|'3d') mapCtl was built for
 let currentMapMode = 'viewers';
 let selectedTrafficMarker = null;
-let renderGlobe = null;
+let renderGlobe = null;    // lazy import of the WebGL globe
+let renderFlatMap = null;  // lazy import of the 2D flat map
+// Default to the dependency-free 2D map (always works); remember the owner's choice.
+let mapView = (() => { try { return localStorage.getItem('dbtv_map_view') === '3d' ? '3d' : '2d'; } catch { return '2d'; } })();
+
+// Make sure the module for the active view is loaded. If the 3D globe fails to
+// import (missing/blocked WebGL vendor bundle), silently fall back to 2D.
+async function ensureMapModule() {
+  if (mapView === '3d') {
+    if (!renderGlobe) { try { ({ renderGlobe } = await import('./admin-map.js')); } catch { renderGlobe = null; } }
+    if (!renderGlobe) mapView = '2d';
+  }
+  if (mapView === '2d' && !renderFlatMap) {
+    try { ({ renderFlatMap } = await import('./admin-map-2d.js')); } catch { renderFlatMap = null; }
+  }
+}
 
 // ---------- date-range filter ----------
 const RANGES = [
@@ -279,20 +295,23 @@ function drawMap(mode) {
     : mode === 'subscribers'
       ? trafficMarkers.filter((m) => m.subscriber && m.type !== 'blocked')
       : trafficMarkers.filter((m) => m.type !== 'blocked');
-  if (renderGlobe) {
-    // Create once, then update markers in place on live refresh / mode switch so the
-    // camera, auto-rotation, and WebGL context persist (no flicker, no reset).
-    if (!globeCtl) {
-      globeCtl = renderGlobe($('map'), markers, {
+  const factory = mapView === '3d' ? renderGlobe : renderFlatMap;
+  if (factory) {
+    // Rebuild the controller when the view (2D/3D) changes; otherwise update markers
+    // in place on live refresh / mode switch so the 3D camera + WebGL context persist.
+    if (mapCtl && mapCtlView !== mapView) { try { mapCtl.dispose(); } catch { /* ignore */ } mapCtl = null; }
+    if (!mapCtl) {
+      mapCtl = factory($('map'), markers, {
         onHover: (m) => { $('map-hover').innerHTML = m ? trafficLabel(m) : ''; },
         onSelect: renderTrafficDetail,
       });
+      mapCtlView = mapView;
     } else {
-      globeCtl.update(markers);
+      mapCtl.update(markers);
     }
   } else {
     const map = $('map');
-    if (map) map.innerHTML = '<div class="globe-fallback"><p class="muted">Traffic globe is unavailable. Marker details remain available below.</p></div>';
+    if (map) map.innerHTML = '<div class="globe-fallback"><p class="muted">Traffic map is unavailable. Marker details remain available below.</p></div>';
   }
   const markerCounts = {};
   for (const m of markers) {
@@ -312,9 +331,7 @@ function drawMap(mode) {
   if (!markers.includes(selectedTrafficMarker)) renderTrafficDetail(markers[0] || null);
 }
 async function loadCountries(mode) {
-  if (!renderGlobe) {
-    try { ({ renderGlobe } = await import('./admin-map.js')); } catch { renderGlobe = null; }
-  }
+  await ensureMapModule();
   const [countries, traffic] = await Promise.all([
     api('/api/admin/analytics/countries'),
     api('/api/admin/analytics/traffic?limit=1000'),
@@ -329,7 +346,7 @@ async function loadCountries(mode) {
 // (no rebuild) so new visitors appear in near-real-time. Only runs once the
 // globe has been created by the first loadCountries().
 async function refreshTraffic() {
-  if (!globeCtl) return;
+  if (!mapCtl) return;
   const traffic = await api(`/api/admin/analytics/traffic?limit=1000&mode=${encodeURIComponent(currentMapMode)}`);
   trafficMarkers = traffic.markers || [];
   drawMap(currentMapMode);
@@ -544,6 +561,19 @@ function wireMapModes() {
     [...$('map-mode').children].forEach((b) => b.classList.toggle('active', b === btn));
     drawMap(btn.dataset.mode);
   });
+  const view = $('map-view');
+  if (view) {
+    // Reflect the persisted/effective view in the toggle on load.
+    [...view.children].forEach((b) => b.classList.toggle('active', b.dataset.view === mapView));
+    view.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button'); if (!btn || btn.dataset.view === mapView) return;
+      mapView = btn.dataset.view === '3d' ? '3d' : '2d';
+      try { localStorage.setItem('dbtv_map_view', mapView); } catch { /* ignore */ }
+      await ensureMapModule(); // may downgrade 3d→2d if the globe can't load
+      [...view.children].forEach((b) => b.classList.toggle('active', b.dataset.view === mapView));
+      drawMap(currentMapMode);
+    });
+  }
 }
 
 // ---------- system metrics panel ----------

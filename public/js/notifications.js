@@ -56,27 +56,32 @@
       listEl.appendChild(empty);
       return;
     }
+    // Emoji per notification kind for the non-video (message-style) items.
+    const KIND_ICON = { account: '🎉', comment: '💬', system: '🛠️', server: '🔁' };
     for (const n of notifications) {
-      const isAccount = n.kind === 'account' || (!n.videoId && !!n.title);
+      // A "message" notification is anything that isn't a video drop: account
+      // alerts plus the admin kinds (comment/system/server). They carry a title,
+      // optional body + link, and an emoji icon instead of a thumbnail.
+      const isMsg = (n.kind && n.kind !== 'video') || (!n.videoId && !!n.title);
       const item = document.createElement('div');
-      item.className = `bell-item${n.read ? '' : ' unread'}${isAccount ? ' bell-account' : ''}${n.premiumLocked ? ` bell-premium-locked blur-${n.blur || 'medium'}` : ''}`;
+      item.className = `bell-item${n.read ? '' : ' unread'}${isMsg ? ' bell-account' : ''}${n.premiumLocked ? ` bell-premium-locked blur-${n.blur || 'medium'}` : ''}`;
       const link = document.createElement('a');
       link.className = 'bell-link';
-      // Account notifications link to their target (default the account page);
+      // Message notifications link to their target (default the account page);
       // video notifications link to the watch page.
-      link.href = isAccount ? (n.link || '/account.html') : `/watch?v=${encodeURIComponent(n.videoId)}`;
-      const icon = isAccount
-        ? '<span class="bell-thumb bell-ico">🎉</span>'
+      link.href = isMsg ? (n.link || '/account.html') : `/watch?v=${encodeURIComponent(n.videoId)}`;
+      const icon = isMsg
+        ? `<span class="bell-thumb bell-ico">${KIND_ICON[n.kind] || '🔔'}</span>`
         : (n.thumb ? `<img class="bell-thumb" loading="lazy" alt="" src="${n.thumb}" />` : '<span class="bell-thumb"></span>');
       link.innerHTML = `
         ${icon}
         <span class="bell-body">
           <span class="bell-title"></span>
-          ${isAccount && n.body ? '<span class="bell-sub"></span>' : ''}
+          ${isMsg && n.body ? '<span class="bell-sub"></span>' : ''}
           <span class="bell-time"></span>
         </span>`;
-      link.querySelector('.bell-title').textContent = isAccount ? n.title : `New video: ${n.title}`;
-      if (isAccount && n.body) link.querySelector('.bell-sub').textContent = n.body;
+      link.querySelector('.bell-title').textContent = isMsg ? n.title : `New video: ${n.title}`;
+      if (isMsg && n.body) link.querySelector('.bell-sub').textContent = n.body;
       link.querySelector('.bell-time').textContent = timeAgo(n.ts);
       const x = document.createElement('button');
       x.className = 'bell-x';
