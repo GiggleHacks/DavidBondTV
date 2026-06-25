@@ -48,7 +48,11 @@ describe('metaFingerprintForEntry', () => {
     const base = { id: 'v', title: 'T', visibility: 'premium', blur: 'medium', published: true };
     expect(metaFingerprintForEntry(base)).toBe(metaFingerprintForEntry({ ...base }));
     expect(metaFingerprintForEntry(base)).not.toBe(metaFingerprintForEntry({ ...base, blur: 'off' }));
-    expect(metaFingerprintForEntry(base)).not.toBe(metaFingerprintForEntry({ ...base, visibility: 'free' }));
+  });
+
+  it('ignores visibility — the live server owns it, so it must not drive sync', () => {
+    const base = { id: 'v', title: 'T', visibility: 'premium', blur: 'medium', published: true };
+    expect(metaFingerprintForEntry(base)).toBe(metaFingerprintForEntry({ ...base, visibility: 'free' }));
   });
 
   it('ignores fields that are not part of the publishable settings', () => {
