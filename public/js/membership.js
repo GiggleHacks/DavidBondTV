@@ -260,7 +260,7 @@ async function setupCrypto() {
   box.hidden = false;
   btn.addEventListener('click', () => {
     btn.disabled = true;
-    startCryptoCheckout({ kind: 'membership', coin: sel.value }, mount);
+    startCryptoCheckout({ kind: 'membership', coin: sel.value }, mount, btn);
   });
 }
 

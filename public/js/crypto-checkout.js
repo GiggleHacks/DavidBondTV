@@ -32,47 +32,66 @@ function renderQR(container, payload) {
  * Open a crypto order. `opts` = { kind:'product'|'membership', productId?, coin, couponCode? }.
  * `mount` is the element to render into.
  */
-export async function startCryptoCheckout(opts, mount) {
+export async function startCryptoCheckout(opts, mount, btn = null) {
   const r = await postJSON('/api/pay/crypto/checkout', opts);
   if (r.status === 401) { location.href = `/signup.html?next=${encodeURIComponent(location.pathname)}`; return; }
   if (r.status === 403) { location.href = '/profile-setup.html'; return; }
   if (!r.ok || !r.data || !r.data.orderId) {
-    mount.innerHTML = `<p class="crypto-err">${(r.data && r.data.error) || 'Could not start a crypto order.'}</p>`;
+    mount.textContent = '';
+    const err = document.createElement('p');
+    err.className = 'crypto-err';
+    err.textContent = (r.data && r.data.error) || 'Could not start a crypto order.';
+    mount.append(err);
+    if (btn) btn.disabled = false;
     return;
   }
   const { orderId, coin, address, amount, qrPayload, expiresAt } = r.data;
-  mount.innerHTML = `
-    <div class="crypto-pay">
-      <p>Send exactly <strong class="crypto-amt">${amount} ${coin}</strong> (${COIN_LABELS[coin] || coin}) to:</p>
-      <code class="crypto-addr">${address}</code>
-      <div class="crypto-qr"></div>
-      <p class="crypto-status">Waiting for payment… <span class="crypto-clock"></span></p>
-      <p class="crypto-hint">Send the <em>exact</em> amount from your own wallet. This page updates automatically.</p>
-    </div>`;
-  renderQR(mount.querySelector('.crypto-qr'), qrPayload);
-  const clock = mount.querySelector('.crypto-clock');
-  const statusEl = mount.querySelector('.crypto-status');
+
+  mount.textContent = '';
+  const wrap = document.createElement('div'); wrap.className = 'crypto-pay';
+
+  const p1 = document.createElement('p');
+  p1.append('Send exactly ');
+  const amt = document.createElement('strong'); amt.className = 'crypto-amt';
+  amt.textContent = `${amount} ${coin}`;
+  p1.append(amt, ` (${COIN_LABELS[coin] || coin}) to:`);
+
+  const addr = document.createElement('code'); addr.className = 'crypto-addr';
+  addr.textContent = address;
+
+  const qrBox = document.createElement('div'); qrBox.className = 'crypto-qr';
+
+  const status = document.createElement('p'); status.className = 'crypto-status';
+  status.append('Waiting for payment… ');
+  const clockEl = document.createElement('span'); clockEl.className = 'crypto-clock';
+  status.append(clockEl);
+
+  const hint = document.createElement('p'); hint.className = 'crypto-hint';
+  hint.textContent = 'Send the exact amount from your own wallet. This page updates automatically.';
+
+  wrap.append(p1, addr, qrBox, status, hint);
+  mount.append(wrap);
+
+  renderQR(qrBox, qrPayload);
+  const clock = clockEl;
+  const statusEl = status;
 
   const tick = setInterval(() => { clock.textContent = fmtCountdown(expiresAt - Date.now()); }, 1000);
 
   while (true) {
+    if (Date.now() > expiresAt) { clearInterval(tick); statusEl.textContent = '⏳ This order expired. Refresh to start over.'; return; }
     await new Promise((res) => setTimeout(res, 5000));
-    let s;
-    try { s = await (await fetch(`/api/pay/crypto/order/${encodeURIComponent(orderId)}`)).json(); }
-    catch { continue; }
-    if (s.status === 'granted') {
+    let s = null;
+    try { s = await (await fetch(`/api/pay/crypto/order/${encodeURIComponent(orderId)}`)).json(); } catch { s = null; }
+    if (s && s.status === 'granted') {
       clearInterval(tick);
-      statusEl.innerHTML = '✅ Payment received — unlocking your access…';
+      statusEl.textContent = '✅ Payment received — unlocking your access…';
       await fetchMe();
       setTimeout(() => location.reload(), 1200);
       return;
     }
-    if (s.status === 'underpaid') { statusEl.textContent = '⚠️ Amount didn’t match — we’ve been alerted and will sort it out.'; }
-    if (s.status === 'expired' || Date.now() > expiresAt) {
-      clearInterval(tick);
-      statusEl.innerHTML = '⏳ This order expired. Refresh to start over.';
-      return;
-    }
+    if (s && s.status === 'underpaid') { statusEl.textContent = '⚠️ Amount didn’t match — we’ve been alerted and will sort it out.'; }
+    if ((s && s.status === 'expired') || Date.now() > expiresAt) { clearInterval(tick); statusEl.textContent = '⏳ This order expired. Refresh to start over.'; return; }
   }
 }
 
