@@ -54,7 +54,6 @@
         <button class="acc-btn" id="submit" type="submit">Save changes</button>
         <p class="acc-msg" id="msg" hidden></p>
       </form>
-      <p class="acc-foot"><a id="view-profile" href="#">View my public profile</a></p>
     </div>
 
     <div class="acc-card" id="billing-card" style="margin-top:16px">
@@ -175,7 +174,6 @@
       const r = await postJSON('/api/profile/update', body);
       if (r.ok && r.data.ok) {
         setMsg('Saved!', 'ok');
-        $('view-profile').href = `/u/${encodeURIComponent(r.data.user.username)}`;
       } else {
         setMsg(r.data.error || 'Could not save.', 'error');
       }
@@ -415,13 +413,13 @@
     (async function start() {
       me = await fetchMe();
       if (!me) { window.location.href = '/login.html'; return; }
-      if (!me.profileComplete) { window.location.href = '/profile-setup.html'; return; }
+      // Profile setup is optional — the account page is reachable even if it was
+      // skipped, and doubles as the place to set a username/avatar later.
       $('email-line').textContent = me.email || 'Social account';
       $('username').value = me.username || '';
       $('about').value = me.about || '';
       $('link').value = me.link || '';
       $('current').src = me.avatarUrl || initialAvatarDataUri(me.username);
-      $('view-profile').href = `/u/${encodeURIComponent(me.username)}`;
       renderBilling(me);
       renderTelegram();
       authCfg = await fetchAuthConfig();

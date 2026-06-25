@@ -50,12 +50,7 @@ function loggedIn(user) {
   menu.className = 'aw-menu';
   menu.hidden = true;
 
-  if (user.username) {
-    const profile = document.createElement('a');
-    profile.href = `/u/${encodeURIComponent(user.username)}`;
-    profile.textContent = 'My public profile';
-    menu.append(profile);
-  } else {
+  if (!user.username) {
     const setup = document.createElement('a');
     setup.href = '/profile-setup.html';
     setup.textContent = 'Finish your profile';

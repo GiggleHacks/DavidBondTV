@@ -295,8 +295,8 @@ async function init() {
     } else {
       showPremiumGate(container, entry);
     }
-    initReactions(commentVideo);
-    initComments(commentVideo);
+    // Don't initialize reactions/comments on a locked video — engagement belongs to
+    // viewers who can actually watch it (the stream itself is 403'd server-side).
     return;
   }
 
@@ -380,17 +380,17 @@ async function init() {
   // Resume-from-last-position + per-device progress for the thumbnail bar.
   if (entry) attachWatchProgress(video, entry.id);
 
-  // Admin-only creator controls (YouTube-style) in the meta row: Analytics + Edit.
+  // Admin-only tools for managing this video (shown only to the owner): Analytics + Edit.
   if (await viewerIsAdmin()) {
     const sub = document.querySelector('.v-subrow');
-    if (sub && !sub.querySelector('.creator-controls')) {
+    if (sub && !sub.querySelector('.admin-controls')) {
       const grp = document.createElement('div');
-      grp.className = 'creator-controls';
+      grp.className = 'admin-controls';
       const vid = encodeURIComponent(entry.id);
       grp.innerHTML = `
-        <a class="creator-btn" href="${ADMIN_PATHS.analytics}?v=${vid}">
+        <a class="admin-btn" href="${ADMIN_PATHS.analytics}?v=${vid}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h4v8H3zM10 3h4v18h-4zM17 9h4v12h-4z"/></svg>Analytics</a>
-        <a class="creator-btn primary" href="${ADMIN_PATHS.edit}?v=${vid}">
+        <a class="admin-btn primary" href="${ADMIN_PATHS.edit}?v=${vid}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>Edit video</a>`;
       sub.appendChild(grp);
     }

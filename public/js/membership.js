@@ -1,6 +1,6 @@
 // Paid-membership page (membership.html): shows the premium offer to non-members
 // (→ Stripe Checkout) and a "Manage billing" button to members (→ Stripe Customer
-// Portal). Distinct from js/subscribe.js, which is the FREE follow button.
+// Portal).
 //
 // Flow: the page may carry ?next=<video> so that after a successful checkout we
 // send the user straight back to the content they wanted. Stripe redirects to

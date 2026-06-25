@@ -444,23 +444,23 @@ body {
 .cmod-btn:hover { color: var(--text); }
 .cmod-btn.danger:hover { color: #f87171; }
 
-/* Admin-only creator controls (Analytics / Edit video) in the watch meta row. */
-.creator-controls { display: inline-flex; gap: 8px; }
-.creator-btn {
+/* Admin-only management controls (Analytics / Edit video) in the watch meta row. */
+.admin-controls { display: inline-flex; gap: 8px; }
+.admin-btn {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--surface-2); color: var(--text); text-decoration: none;
   border: 1px solid var(--border); border-radius: 999px;
   padding: 7px 14px; font-size: 13px; font-weight: 600;
   transition: background .15s, border-color .15s;
 }
-.creator-btn:hover { background: color-mix(in srgb, var(--accent) 16%, var(--surface-2)); border-color: var(--accent); }
-.creator-btn svg { width: 16px; height: 16px; fill: currentColor; }
-/* The Edit-video button is the primary creator action — accent-filled + prominent. */
-.creator-btn.primary {
+.admin-btn:hover { background: color-mix(in srgb, var(--accent) 16%, var(--surface-2)); border-color: var(--accent); }
+.admin-btn svg { width: 16px; height: 16px; fill: currentColor; }
+/* The Edit-video button is the primary admin action — accent-filled + prominent. */
+.admin-btn.primary {
   background: var(--accent); color: var(--accent-contrast); border-color: transparent;
   font-weight: 700;
 }
-.creator-btn.primary:hover { background: var(--accent); filter: brightness(1.08); border-color: transparent; }
+.admin-btn.primary:hover { background: var(--accent); filter: brightness(1.08); border-color: transparent; }
 
 /* ============================================================
    Toast

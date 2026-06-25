@@ -143,16 +143,10 @@ export function initComments(videoId) {
     const head = document.createElement('div');
     head.className = 'comment-head';
 
-    let nameEl;
-    if (c.username) {
-      nameEl = document.createElement('a');
-      nameEl.className = 'comment-name';
-      nameEl.href = `/u/${encodeURIComponent(c.username)}`;
-    } else {
-      const isAnon = !c.name || c.name === 'Anonymous';
-      nameEl = document.createElement('span');
-      nameEl.className = `comment-name${isAnon ? ' anon' : ''}`;
-    }
+    // Commenter names are plain text — there are no public profiles to link to.
+    const isAnon = !c.name || c.name === 'Anonymous';
+    const nameEl = document.createElement('span');
+    nameEl.className = `comment-name${isAnon && !c.username ? ' anon' : ''}`;
     nameEl.textContent = c.name || 'Anonymous';
     head.append(nameEl);
 

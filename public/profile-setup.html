@@ -20,7 +20,7 @@
       <div class="setup-body setup-welcome">
         <div class="setup-spark" aria-hidden="true">✧</div>
         <h1 id="welcome-title">Welcome!</h1>
-        <p>Let's set up your profile so the rest of the community can get to know you. Takes about a minute — you can edit later in settings.</p>
+        <p>Want to add a name and photo for your comments? It's optional and takes a few seconds — or skip straight to watching and set it up later in settings.</p>
       </div>
       <div class="setup-footer">
         <button class="acc-btn acc-btn-ghost" type="button" disabled>← Back</button>
@@ -36,9 +36,8 @@
       </div>
       <form id="form" novalidate>
         <div class="setup-body">
-          <h1 id="profile-title">Add a profile photo</h1>
-          <p>A friendly face helps people connect with you.</p>
-          <div class="setup-note">Use a real photo of yourself and complete your profile. This helps build trust and keeps the community high quality.</div>
+          <h1 id="profile-title">Personalize your account</h1>
+          <p>Choose a name and picture to show on the comments you leave. All optional.</p>
           <div class="setup-photo-row">
             <img id="current" class="avatar-current" alt="Your avatar" src="" />
             <div>
@@ -51,15 +50,15 @@
             <input class="acc-input" id="username" type="text" maxlength="20" autocomplete="off" placeholder="3-20 letters, numbers or _" />
           </div>
           <div class="acc-field">
-            <label for="about">Short bio</label>
-            <textarea class="acc-textarea" id="about" maxlength="500" placeholder="Tell people a little about you"></textarea>
+            <label for="about">Short bio <span class="muted">(optional)</span></label>
+            <textarea class="acc-textarea" id="about" maxlength="500" placeholder="A line about you, shown on your comments"></textarea>
           </div>
           <p class="acc-msg" id="msg" hidden></p>
         </div>
         <div class="setup-footer">
           <button class="acc-btn acc-btn-ghost" id="setup-back" type="button">← Back</button>
-          <button class="setup-skip" id="skip-photo" type="button">Skip</button>
-          <button class="acc-btn" id="submit" type="submit">Next →</button>
+          <button class="setup-skip" id="skip-photo" type="button">Skip for now</button>
+          <button class="acc-btn" id="submit" type="submit">Save →</button>
         </div>
       </form>
     </section>
@@ -91,7 +90,12 @@
       $('profile-step').hidden = true;
       $('welcome-step').hidden = false;
     });
-    $('skip-photo').addEventListener('click', () => $('submit').click());
+    // "Skip for now" leaves profile setup entirely and goes straight to watching —
+    // it's optional, so no username is required. They can set it later in settings.
+    $('skip-photo').addEventListener('click', () => {
+      try { localStorage.setItem('dbtv_onboard', '1'); } catch { /* ignore */ }
+      window.location.href = '/videos';
+    });
 
     $('upload-btn').addEventListener('click', () => $('file').click());
     $('file').addEventListener('change', async () => {

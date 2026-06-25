@@ -45,7 +45,6 @@ import * as coupons from './lib/coupons.js';
 import * as uploads from './lib/upload-sessions.mjs';
 import * as products from './lib/products.js';
 import * as pricing from './lib/pricing.js';
-import * as subscribers from './lib/subscribers.js';
 import { createRequestContext, isBotUa } from './lib/request-context.mjs';
 import { createAnalytics } from './lib/analytics-store.mjs';
 import { createGeoGate } from './lib/geo-gate.mjs';
@@ -405,9 +404,6 @@ function resolveFile(urlPath) {
   if (pathname === '/terms') pathname = '/terms.html';
   if (pathname === '/privacy') pathname = '/privacy.html';
   if (pathname === '/refunds') pathname = '/refunds.html';
-  // Pretty public-profile URLs: /u/<username> all serve the profile page,
-  // which reads the username from the path and fetches /api/users/<name>.
-  if (pathname.startsWith('/u/')) pathname = '/profile.html';
 
   // Map onto the filesystem: /media/* → MEDIA_DIR, the content prefixes
   // (/thumbs,/previews,/videos,/storyboards) → CONTENT_DIR, everything else →
@@ -460,20 +456,6 @@ function generateSitemap() {
     console.error('Sitemap generator: failed to list videos:', err);
   }
 
-  // User profiles
-  try {
-    const allUsers = accounts.store.listAll().filter((u) => u.profileComplete);
-    for (const u of allUsers) {
-      urls.push({
-        loc: `${BASE_URL}/u/${encodeURIComponent(u.username)}`,
-        changefreq: 'weekly',
-        priority: '0.6',
-      });
-    }
-  } catch (err) {
-    console.error('Sitemap generator: failed to list users:', err);
-  }
-
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
   xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
   for (const item of urls) {
@@ -515,27 +497,6 @@ function injectMetaTags(html, reqUrl) {
         }
         ogUrl = `${BASE_URL}/watch?v=${video.id}`;
         ogType = 'video.other';
-      }
-    }
-  } else if (pathname.startsWith('/u/')) {
-    const match = pathname.match(/^\/u\/([^/]+)/);
-    if (match) {
-      const username = match[1];
-      const user = accounts.store.getByUsername(username);
-      if (user) {
-        title = `${user.username} — David Bond TV`;
-        description = user.about || `Check out ${user.username}'s profile on David Bond TV.`;
-        const avatar = avatarUrl(user.avatar, user.username);
-        if (avatar && !avatar.startsWith('data:')) {
-          ogImage = `${BASE_URL}${avatar}`;
-        } else {
-          ogImage = `${BASE_URL}/logo.jpg`;
-        }
-        ogUrl = `${BASE_URL}/u/${encodeURIComponent(user.username)}`;
-        ogType = 'profile';
-      } else {
-        title = 'Profile Not Found — David Bond TV';
-        description = "This user doesn't exist or hasn't finished setting up their profile.";
       }
     }
   } else if (pathname === '/membership' || pathname === '/membership.html') {
@@ -1828,9 +1789,8 @@ async function handleApi(req, res, ctx) {
       }
       const result = await accounts.store.deleteUser(userId);
       if (!result.ok) { sendJson(res, 404, { error: 'User not found' }); return true; }
-      // Cross-store cleanup: drop any geo-block rule + free-follow subscription.
+      // Cross-store cleanup: drop any geo-block rule.
       await geoGate.unblockUser(userId).catch(() => {});
-      try { subscribers.unsubscribe(userId); } catch { /* best effort */ }
       analytics.recordActivity('admin.user.delete', {
         userId, username: u.username || u.email || u.id,
         ip: ctx.ip, cc: ctx.country, geo: ctx.geo, device: ctx.device,
@@ -2039,29 +1999,6 @@ async function handleApi(req, res, ctx) {
       console.log(`[upload] ABORT id=${id}`);
     }
     sendJson(res, 200, { ok: true });
-    return true;
-  }
-
-  // Subscribe (free follow) to the channel. Logged-in users only.
-  if (url.pathname === '/api/subscribe/status' && req.method === 'GET') {
-    const u = accounts.currentUser(req);
-    sendJson(res, 200, { subscribed: u ? subscribers.isSubscribed(u.id) : false, count: subscribers.count() });
-    return true;
-  }
-  if ((url.pathname === '/api/subscribe' || url.pathname === '/api/unsubscribe') && req.method === 'POST') {
-    const u = accounts.currentUser(req);
-    if (!u) { sendJson(res, 401, { error: 'Please sign in to subscribe.' }); return true; }
-    const result = url.pathname === '/api/subscribe' ? subscribers.subscribe(u.id) : subscribers.unsubscribe(u.id);
-    analytics.recordActivity(url.pathname === '/api/subscribe' ? 'subscriber.follow' : 'subscriber.unfollow', {
-      userId: u.id,
-      username: u.username || u.email || u.id,
-      subscriber: hasActiveMembership(u),
-      ip: ctx.ip,
-      cc: ctx.country,
-      geo: ctx.geo,
-      device: ctx.device,
-    });
-    sendJson(res, 200, { ok: true, ...result });
     return true;
   }
 

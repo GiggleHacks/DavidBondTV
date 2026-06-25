@@ -10,7 +10,10 @@
 
 export const SECTIONS = [
   { key: 'dashboard',  label: 'Dashboard',  route: '',            icon: 'dashboard', accent: '#818cf8', nav: true,  desc: 'Live control deck — traffic, viewers, geo-defense.' },
-  { key: 'dashboard2', label: 'Dashboard 2.0', route: '-dashboard2', icon: 'dashboard2', accent: '#f43f5e', nav: true,  desc: 'Next-generation real-time command center.' },
+  // Dashboard 2.0 ("Control Deck") is an unfinished WIP running on mock data — kept
+  // reachable by URL for development but pulled from the nav so there's one real
+  // dashboard. Flip nav:true to resurface it once it's wired to live data.
+  { key: 'dashboard2', label: 'Dashboard 2.0', route: '-dashboard2', icon: 'dashboard2', accent: '#f43f5e', nav: false,  desc: 'Next-generation real-time command center.' },
   { key: 'upload',     label: 'Upload',     route: '-upload',     icon: 'upload',    accent: '#22d3ee', nav: true,  dark: true,  desc: 'Add new videos and track processing.' },
   { key: 'videos',     label: 'Videos',     route: '-videos',     icon: 'video',     accent: '#3b82f6', nav: true,  desc: 'Manage the library — publish, tag, organize.' },
   { key: 'products',   label: 'Products',   route: '-products',   icon: 'package',   accent: '#34d399', nav: true,  dark: true,  desc: 'Courses and one-time purchases.' },

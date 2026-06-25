@@ -73,9 +73,9 @@
         password: $('password').value,
       });
       if (r.ok && r.data.ok) {
-        const u = r.data.user;
-        const dest = u && u.profileComplete ? (next || '/videos') : '/profile-setup.html';
-        window.location.href = dest;
+        // Returning sign-in goes straight to the destination — profile setup is
+        // optional and never blocks watching (it's a one-time prompt at signup).
+        window.location.href = next || '/videos';
       } else {
         setMsg(r.data.error || 'Could not sign you in.', 'error');
         $('submit').disabled = false;

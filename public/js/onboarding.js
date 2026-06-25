@@ -25,13 +25,13 @@ const STEPS = [
     desc: 'Travel films, documentaries and vlogs — start watching.',
     cta: 'Start watching', action: (ov) => { close(ov); return true; } },
   { id: 'member', icon: '⭐', title: 'Explore membership',
-    desc: 'Unlock premium videos and support the channel.',
+    desc: 'Unlock every premium video with a membership.',
     cta: 'See membership', href: '/membership.html' },
   { id: 'theme', icon: '🎨', title: 'Pick your theme',
     desc: 'Make it yours — choose an accent colour.', theme: true },
-  { id: 'profile', icon: '✍️', title: 'Add a bio to your profile',
-    desc: 'Tell the community a little about yourself.',
-    cta: 'Edit profile', href: '/account.html' },
+  { id: 'profile', icon: '✍️', title: 'Personalize your account',
+    desc: 'Optional — add a name and photo for your comments.',
+    cta: 'Open settings', href: '/account.html' },
 ];
 
 let lastFocus = null;

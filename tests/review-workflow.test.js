@@ -145,6 +145,31 @@ describe('rejected videos are terminal', () => {
   });
 });
 
+describe('bulk actions are state-gated', () => {
+  it('unapprove skips a published (live) video — never strands it published-but-unapproved', async () => {
+    seed([
+      { id: 'live', published: true, approval: 'approved', status: 'ready' },
+      { id: 'draft', published: false, approval: 'approved', status: 'ready' },
+    ]);
+    await bulkAction(['live', 'draft'], 'unapprove');
+    expect(byId('live').approval).toBe('approved');     // live video untouched
+    expect(byId('draft').approval).toBe('unapproved');  // draft demoted as intended
+  });
+
+  it('premium/free/blur skip non-ready videos (uploaded/encoding/failed)', async () => {
+    seed([
+      { id: 'up', published: false, approval: 'unapproved', status: 'uploaded', visibility: 'free', blur: 'off' },
+      { id: 'rdy', published: false, approval: 'approved', status: 'ready', visibility: 'free', blur: 'off' },
+    ]);
+    await bulkAction(['up', 'rdy'], 'premium');
+    expect(byId('up').visibility).toBe('free');     // not re-tiered while still uploaded
+    expect(byId('rdy').visibility).toBe('premium'); // ready video changes
+    await bulkAction(['up', 'rdy'], 'blur-strong');
+    expect(byId('up').blur).toBe('off');            // blur not applied to a non-ready video
+    expect(byId('rdy').blur).toBe('strong');
+  });
+});
+
 describe('approve-free combines visibility, blur, and approval', () => {
   it('on a ready premium+blurred video: free + de-blurred + approved, category intact', async () => {
     seed([{
