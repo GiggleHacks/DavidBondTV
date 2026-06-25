@@ -6,17 +6,9 @@
 import { canWatchVideo } from '/js/viewer-access.js';
 import { startPurchase, fmtMoney } from '/js/course-buy.js';
 import { categoryDisplayName, categoryVisualMarkup, resolveCategoryVisual } from '/js/category-visuals.js';
-import { getOfferCopy } from '/js/offer-copy.js';
 import { renderThumbProgress } from '/js/watch-progress.js';
 const PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
 const LOCK = '<svg viewBox="0 0 24 24"><path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2v-9a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm3 8H9V6a3 3 0 016 0v3z"/></svg>';
-// Polished gold padlock for the premium unlock modal (richer than the card LOCK).
-const PREMIUM_LOCK = (sfx) => `<svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
-  <defs><linearGradient id="lk-${sfx}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe7a3"/><stop offset="1" stop-color="#f4a300"/></linearGradient></defs>
-  <path d="M16 22v-5a8 8 0 0 1 16 0v5" stroke="url(#lk-${sfx})" stroke-width="3.6" stroke-linecap="round"/>
-  <rect x="9.5" y="21.5" width="29" height="20" rx="5.5" fill="url(#lk-${sfx})"/>
-  <circle cx="24" cy="29.5" r="3.2" fill="#3a2600"/><rect x="22.5" y="30.5" width="3" height="6.5" rx="1.5" fill="#3a2600"/>
-</svg>`;
 
 // Only do video previews on devices with a real hovering pointer (skip touch).
 const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
@@ -155,11 +147,18 @@ function card(v) {
   a.querySelector('.vdesc').textContent = v.description || '';
   a.querySelector('.vstats').textContent = v.uploaded || '';
 
-  // A locked card opens the right unlock modal instead of navigating: the
-  // branded course modal for course-gated videos, else the membership modal.
+  // A locked card skips the generic "Unlock Now" interstitial: course-gated
+  // videos still open their branded course modal (own pricing/checkout), but a
+  // plain premium video goes straight to the membership page, which shows the
+  // upfront + monthly pricing immediately (one click, no middle screen).
   if (locked) {
     const course = lockedByCourse ? courseForVideo(v.id) : null;
-    const open = (e) => { e.preventDefault(); if (course) openCourseModal(course, v); else openPremiumModal(v); };
+    const open = (e) => {
+      e.preventDefault();
+      if (course) { openCourseModal(course, v); return; }
+      const videoUrl = `/watch?v=${encodeURIComponent(v.id)}`;
+      window.location.href = `/membership.html?next=${encodeURIComponent(videoUrl)}`;
+    };
     a.addEventListener('click', open);
     a.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') open(e); });
   }
@@ -248,57 +247,6 @@ function render() {
 
 const sortTs = (v) => (typeof v.uploadedAt === 'number' ? v.uploadedAt
   : (Date.parse(v.uploaded) || 0));
-
-// --- Premium subscribe modal -------------------------------------------------
-
-function openPremiumModal(v) {
-  let modal = document.getElementById('premium-modal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'premium-modal';
-    modal.className = 'pm-overlay';
-    modal.innerHTML = `
-      <div class="pm-card" role="dialog" aria-modal="true" aria-labelledby="pm-title">
-        <button class="pm-close" aria-label="Close">×</button>
-        <span class="pm-badge"></span>
-        <div class="pm-lock">${PREMIUM_LOCK('pm')}</div>
-        <h2 id="pm-title"></h2>
-        <p class="pm-body"></p>
-        <button class="pm-sub gold-cta"></button>
-        <a class="pm-alt" href="#">Already a member? Sign in</a>
-      </div>`;
-    document.body.appendChild(modal);
-    const close = () => modal.classList.remove('show');
-    modal.querySelector('.pm-close').addEventListener('click', close);
-    // Logged-in → membership offer; logged-out → sign up first, then back to the
-    // offer (which carries `next` to the original video). Stash for the onboarding
-    // chain so email-verify / profile-setup return here too.
-    modal.querySelector('.pm-sub').addEventListener('click', () => {
-      const dest = modal._membershipUrl;
-      if (state.loggedIn) { window.location.href = dest; return; }
-      try { localStorage.setItem('dbtv_after_auth', dest); } catch { /* ignore */ }
-      window.location.href = `/signup.html?next=${encodeURIComponent(dest)}`;
-    });
-    modal.querySelector('.pm-alt').addEventListener('click', (e) => {
-      e.preventDefault();
-      window.location.href = `/login.html?next=${encodeURIComponent(modal._membershipUrl)}`;
-    });
-    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && modal.classList.contains('show')) close();
-    });
-  }
-  const videoUrl = `/watch?v=${encodeURIComponent(v.id)}`;
-  modal._membershipUrl = `/membership.html?next=${encodeURIComponent(videoUrl)}`;
-  // Fill the admin-editable offer copy (shared with the watch-page gate).
-  getOfferCopy().then((o) => {
-    modal.querySelector('.pm-badge').textContent = o.badge;
-    modal.querySelector('#pm-title').textContent = o.headline;
-    modal.querySelector('.pm-body').textContent = o.body;
-    modal.querySelector('.pm-sub').textContent = o.ctaLabel;
-  });
-  modal.classList.add('show');
-}
 
 // --- course landing banner + branded unlock modal ---------------------------
 
