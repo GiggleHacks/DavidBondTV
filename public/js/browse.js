@@ -38,7 +38,8 @@ function hydrateStateFromUrl() {
   const section = params.get('section') || '';
   state.section = section === 'exclusive' ? 'exclusive' : section === 'courses' ? 'courses' : 'all';
   state.category = params.get('category') || '';
-  state.sort = params.get('sort') === 'all' ? 'all' : 'recent';
+  state.sort = ['recent', 'popular', 'oldest'].includes(params.get('sort'))
+    ? params.get('sort') : 'recent';
 }
 
 /** Published product ids this video is assigned to (for the access gate). */
@@ -263,9 +264,12 @@ function render() {
     const ids = activeCourse ? activeCourse.videoIds : [];
     list = ids.map((id) => list.find((v) => v.id === id)).filter(Boolean);
   } else if (state.category) list = list.filter((v) => v.category === state.category);
-  if (state.sort === 'recent') {
-    // Newest first, keyed on uploadedAt (falls back to the parsed `uploaded`
-    // date). Ties keep manifest order via the engine's stable sort.
+  if (state.sort === 'popular') {
+    list = list.slice().sort((a, b) => (state.views[b.id] || 0) - (state.views[a.id] || 0));
+  } else if (state.sort === 'oldest') {
+    list = list.slice().sort((a, b) => sortTs(a) - sortTs(b));
+  } else {
+    // 'recent' — newest first (default)
     list = list.slice().sort((a, b) => sortTs(b) - sortTs(a));
   }
   grid.replaceChildren();
@@ -379,15 +383,30 @@ function openCourseModal(product, v) {
 
 // --- chips + sidebar wiring --------------------------------------------------
 
-function wireChips() {
-  const chips = [...document.querySelectorAll('.browse-chips .chip')];
-  const sync = () => chips.forEach((c) => c.classList.toggle('active', c.dataset.sort === state.sort));
-  chips.forEach((c) => c.addEventListener('click', () => {
-    state.sort = c.dataset.sort || 'recent';
-    sync();
+function wireSortDropdown() {
+  const LABELS = { recent: 'Latest', popular: 'Most Viewed', oldest: 'Oldest' };
+  const wrap = document.getElementById('sort-wrap');
+  const btn = document.getElementById('sort-btn');
+  const menu = document.getElementById('sort-menu');
+  const label = document.getElementById('sort-label');
+  if (!wrap) return;
+
+  function open() { menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); }
+  function close() { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+  function syncLabel() { label.textContent = LABELS[state.sort] || 'Latest'; }
+
+  btn.addEventListener('click', () => (menu.hidden ? open() : close()));
+  menu.addEventListener('click', (e) => {
+    const opt = e.target.closest('button[data-sort]');
+    if (!opt) return;
+    state.sort = opt.dataset.sort;
+    syncLabel();
+    close();
     render();
-  }));
-  sync();
+  });
+  document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  syncLabel();
 }
 
 // The sidebar (sidebar.js) emits this when a nav item (All / Exclusive / a
@@ -404,7 +423,7 @@ window.addEventListener('dbtv:nav', (e) => {
 async function init() {
   const grid = document.getElementById('grid');
   hydrateStateFromUrl();
-  wireChips();
+  wireSortDropdown();
   // Know whether the viewer can see premium (admin or active member) + which
   // one-time products they own, and the published product catalog (for courses).
   try {

@@ -1110,6 +1110,33 @@ html.privacy-blur .bell-premium-locked .bell-thumb { filter: blur(12px) brightne
   filter: brightness(1.08);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
 }
+/* ---------- Browse sort bar ---------- */
+.browse-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+.sort-wrap { position: relative; }
+.sort-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 999px; padding: 7px 14px; font-size: 13px; font-weight: 600;
+  cursor: pointer; white-space: nowrap; font-family: inherit;
+}
+.sort-btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface-2)); }
+.sort-btn[aria-expanded="true"] { border-color: var(--accent); }
+.sort-chevron { transition: transform .18s; flex-shrink: 0; }
+.sort-btn[aria-expanded="true"] .sort-chevron { transform: rotate(180deg); }
+.sort-menu {
+  position: absolute; top: calc(100% + 6px); left: 0;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 4px; list-style: none; margin: 0;
+  min-width: 148px; z-index: 200; box-shadow: 0 8px 24px var(--shadow);
+}
+.sort-menu li { margin: 0; }
+.sort-menu button {
+  width: 100%; text-align: left; padding: 9px 14px; border-radius: 7px;
+  background: none; border: none; color: var(--text); font-size: 13px;
+  font-weight: 500; cursor: pointer; font-family: inherit;
+}
+.sort-menu button:hover { background: var(--surface-3, var(--surface)); }
+
 .share-btn:focus-visible, .hdr-upload:focus-visible, .chip:focus-visible {
   outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent);
 }

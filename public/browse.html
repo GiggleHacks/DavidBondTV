@@ -19,6 +19,19 @@
   </header>
 
   <main class="browse">
+    <div class="browse-bar">
+      <div class="sort-wrap" id="sort-wrap">
+        <button class="sort-btn" id="sort-btn" type="button" aria-haspopup="listbox" aria-expanded="false">
+          <span id="sort-label">Latest</span>
+          <svg class="sort-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 6 8 10 12 6"/></svg>
+        </button>
+        <ul class="sort-menu" id="sort-menu" role="listbox" hidden>
+          <li><button type="button" data-sort="recent"  role="option">Latest</button></li>
+          <li><button type="button" data-sort="popular" role="option">Most Viewed</button></li>
+          <li><button type="button" data-sort="oldest"  role="option">Oldest</button></li>
+        </ul>
+      </div>
+    </div>
     <div class="browse-grid" id="grid"></div>
   </main>
 
