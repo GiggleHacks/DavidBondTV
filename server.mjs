@@ -398,6 +398,8 @@ function resolveFile(urlPath) {
   if (pathname === '/') pathname = '/browse.html'; // homepage = the video grid
   if (pathname === '/videos') pathname = '/browse.html'; // canonical feed URL (post-login landing)
   if (pathname === '/watch') pathname = '/index.html'; // per-video watch page (?v=<id>)
+  if (pathname === '/products' || pathname === '/store') pathname = '/products.html'; // course storefront
+  if (pathname === '/course') pathname = '/course.html'; // course sales page (?slug=<slug>)
   const adminFile = resolveAdminFilePath(pathname);
   if (adminFile) pathname = adminFile;
   // Pretty URLs for the legal / policy pages (linked from the site footer).

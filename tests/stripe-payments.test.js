@@ -93,6 +93,17 @@ function fakeStore(initial = {}) {
       return u ? JSON.parse(JSON.stringify(u)) : null;
     },
     updateUser: async (id, patch) => { users[id] = { ...(users[id] || { id }), ...patch }; return { ok: true, user: users[id] }; },
+    // Mirrors the real store's atomic, deduped append (lib/users-store.js).
+    addProductEntitlement: async (id, entry) => {
+      const u = users[id];
+      if (!u) return { ok: false, error: 'not_found', added: false };
+      if (!Array.isArray(u.products)) u.products = [];
+      const dup = (entry && entry.stripeSessionId && u.products.some((p) => p && p.stripeSessionId === entry.stripeSessionId))
+        || (entry && u.products.some((p) => p && p.productId === entry.productId));
+      if (dup) return { ok: true, user: JSON.parse(JSON.stringify(u)), added: false };
+      u.products.push(entry);
+      return { ok: true, user: JSON.parse(JSON.stringify(u)), added: true };
+    },
     _users: users,
   };
 }

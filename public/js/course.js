@@ -31,6 +31,14 @@ function paintBranding(product) {
   const b = product.branding || {};
   root.style.setProperty('--course-primary', b.primary || '#7c3aed');
   root.style.setProperty('--course-accent', b.accent || '#22d3ee');
+  // When the course ships a hero background image, paint it behind the hero so a
+  // branded (e.g. black "hacker") backdrop replaces the default colour gradient.
+  if (b.bgImage) {
+    const hero = document.getElementById('hero');
+    hero.style.backgroundImage = `linear-gradient(180deg, rgba(0,0,0,.35), rgba(0,0,0,.7)), url('${b.bgImage}')`;
+    hero.style.backgroundSize = 'cover';
+    hero.style.backgroundPosition = 'center';
+  }
   if (b.logo) { $('cl-logo').src = b.logo; $('cl-logo').hidden = false; }
   $('cl-name').textContent = product.name || 'Course';
   const sales = product.sales || {};
@@ -50,6 +58,32 @@ function showOwned() {
   $('owned-view').hidden = false;
 }
 
+// Load the course trailer (a free, published video) into the hero player. Pulls
+// the playback manifest for the trailer id and points a native <video> at the
+// best available mp4 rendition. Best-effort: any failure just leaves it hidden.
+async function loadTrailer(product) {
+  const trailerId = product && product.trailer;
+  if (!trailerId) return;
+  try {
+    const res = await fetch(`/api/videos/${encodeURIComponent(trailerId)}/playback`);
+    if (!res.ok) return;
+    const { video } = await res.json();
+    const levels = (video && Array.isArray(video.qualityLevels)) ? video.qualityLevels : [];
+    if (!levels.length) return;
+    // Highest-resolution rendition first (native <video> can't adapt; just pick best).
+    const best = levels.slice().sort((a, b) => (b.height || 0) - (a.height || 0))[0];
+    if (!best || !best.url) return;
+    const el = document.getElementById('cl-trailer-video');
+    const bg = product.branding && product.branding.bgImage;
+    if (bg) el.poster = bg;
+    el.muted = true;       // muted autoplay is allowed by browsers
+    el.autoplay = true;
+    el.src = best.url;
+    document.getElementById('cl-trailer').hidden = false;
+    el.play().catch(() => { /* autoplay blocked → controls stay, viewer can press play */ });
+  } catch { /* no trailer → hero just shows logo + copy */ }
+}
+
 async function render() {
   if (!slug) { $('notfound').hidden = false; return; }
   let product = null;
@@ -57,6 +91,10 @@ async function render() {
   if (!product) { $('notfound').hidden = false; return; }
 
   paintBranding(product);
+  loadTrailer(product);
+  // The owned-state "Browse the course" link must land on THIS course's lesson
+  // grid, not the generic homepage.
+  $('watch-link').href = `/videos?section=courses&category=${encodeURIComponent(product.slug)}`;
   $('content').hidden = false;
   document.title = `${product.name} — David Bond TV`;
 

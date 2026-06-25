@@ -15,16 +15,15 @@ const ymd = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 const fmtTime = (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const fmtDay = (d) => d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 
-// A scheduled video = published:false + approved + ready + a future publishAt.
-// (Unapproved/encoding drafts with a publishAt aren't live-bound yet, so they're
-// excluded — they'd never auto-release in their current state.)
+// A scheduled video = published:false + a future publishAt. All pending slots
+// are shown regardless of approval/encoding state so the calendar reflects the
+// full planned schedule. (releaseScheduled() still guards approval+ready before
+// actually publishing.)
 export function scheduledVideos(videos) {
   const now = Date.now();
   return (videos || [])
     .filter((v) => typeof v.publishAt === 'number' && v.publishAt > now
-      && v.published === false
-      && (v.approval || 'approved') === 'approved'
-      && (v.status || 'ready') === 'ready')
+      && v.published === false)
     .sort((a, b) => a.publishAt - b.publishAt);
 }
 
@@ -60,11 +59,16 @@ export function createCalendar(container, { onSelect } = {}) {
       const key = ymd(date);
       const items = map.get(key) || [];
       const isToday = key === todayKey;
-      const chips = items.map((v) => `
-        <button type="button" class="cal-chip" data-vid="${esc(v.id)}" title="${esc(v.title || v.id)} — ${esc(fmtTime(new Date(v.publishAt)))}">
+      const chips = items.map((v) => {
+        const isReady = (v.approval || 'approved') === 'approved' && (v.status || 'ready') === 'ready';
+        const badgeLabel = !isReady ? ((v.approval || 'approved') !== 'approved' ? 'review' : 'encoding') : null;
+        return `
+        <button type="button" class="cal-chip${isReady ? '' : ' cal-chip--pending'}" data-vid="${esc(v.id)}" title="${esc(v.title || v.id)} — ${esc(fmtTime(new Date(v.publishAt)))}">
           <span class="cal-chip-time">${esc(fmtTime(new Date(v.publishAt)))}</span>
           <span class="cal-chip-title">${esc(v.title || v.id)}</span>
-        </button>`).join('');
+          ${badgeLabel ? `<span class="cal-chip-badge">${badgeLabel}</span>` : ''}
+        </button>`;
+      }).join('');
       cells.push(`<div class="cal-cell${isToday ? ' is-today' : ''}${items.length ? ' has-items' : ''}">
         <span class="cal-daynum">${day}</span>
         <div class="cal-chips">${chips}</div>
@@ -78,9 +82,12 @@ export function createCalendar(container, { onSelect } = {}) {
     const upcoming = sched.length
       ? sched.map((v) => {
         const d = new Date(v.publishAt);
-        return `<li class="cal-up-item" data-vid="${esc(v.id)}" role="button" tabindex="0">
+        const isReady = (v.approval || 'approved') === 'approved' && (v.status || 'ready') === 'ready';
+        const badgeLabel = !isReady ? ((v.approval || 'approved') !== 'approved' ? 'review' : 'encoding') : null;
+        return `<li class="cal-up-item${isReady ? '' : ' cal-up-item--pending'}" data-vid="${esc(v.id)}" role="button" tabindex="0">
           <span class="cal-up-when">${esc(fmtDay(d))} · ${esc(fmtTime(d))}</span>
           <span class="cal-up-title">${esc(v.title || v.id)}</span>
+          ${badgeLabel ? `<span class="cal-chip-badge">${badgeLabel}</span>` : ''}
           ${v.visibility === 'premium' ? '<span class="vb vb-prem">Premium</span>' : ''}
         </li>`;
       }).join('')

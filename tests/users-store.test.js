@@ -23,6 +23,33 @@ describe('users-store', () => {
     expect(store.getByEmail('person@example.com').id).toBe(r.user.id);
   });
 
+  it('addProductEntitlement appends once and dedups by session id and product id', async () => {
+    const store = createUsersStore(file);
+    const { user } = await store.createUser({ email: 'buyer@x.com', passwordHash: 'h' });
+    const entry = { productId: 'prod_dp', provider: 'stripe', stripeSessionId: 'cs_1', amount: 29900, currency: 'usd' };
+
+    const first = await store.addProductEntitlement(user.id, entry);
+    expect(first.added).toBe(true);
+    expect(store.getById(user.id).products).toHaveLength(1);
+
+    // Same session id (webhook + reconcile race) → no second grant.
+    const sameSession = await store.addProductEntitlement(user.id, { ...entry, amount: 0 });
+    expect(sameSession.added).toBe(false);
+    expect(store.getById(user.id).products).toHaveLength(1);
+
+    // Same product, different session → still deduped (already owns it).
+    const sameProduct = await store.addProductEntitlement(user.id, { ...entry, stripeSessionId: 'cs_2' });
+    expect(sameProduct.added).toBe(false);
+    expect(store.getById(user.id).products).toHaveLength(1);
+
+    // A different product grants a NEW entry without dropping the first.
+    const other = await store.addProductEntitlement(user.id, { productId: 'prod_other', stripeSessionId: 'cs_3' });
+    expect(other.added).toBe(true);
+    expect(store.getById(user.id).products.map((p) => p.productId).sort()).toEqual(['prod_dp', 'prod_other']);
+
+    expect((await store.addProductEntitlement('nope', entry)).ok).toBe(false);
+  });
+
   it('rejects a duplicate email', async () => {
     const store = createUsersStore(file);
     await store.createUser({ email: 'a@b.com', passwordHash: 'h' });

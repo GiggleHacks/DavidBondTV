@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Products — David Bond TV</title>
+  <meta name="description" content="Courses and digital products from David Bond TV." />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/account.css" />
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="/" aria-label="David Bond TV — home" style="text-decoration:none">
+      <span class="logo-wm"><span class="wm-pre">David Bond</span><span class="wm-box">TV</span></span>
+    </a>
+    <nav class="store-topnav">
+      <a href="/">Videos</a>
+      <a href="/products" aria-current="page">Products</a>
+    </nav>
+    <div class="auth-widget" id="auth-widget"></div>
+  </header>
+
+  <main class="store">
+    <section class="store-hero" aria-label="Products">
+      <div class="store-hero-inner">
+        <img class="store-hero-logo" src="/brand/products-logo.png" alt="Products — David Bond TV" />
+        <p class="store-hero-tag">Courses and digital products — buy once, unlock for life.</p>
+      </div>
+    </section>
+
+    <div class="store-body" id="store-body">
+      <p class="store-loading" id="store-loading">Loading products…</p>
+      <p class="store-empty" id="store-empty" hidden>No products are available yet — check back soon.</p>
+      <div id="store-cats"></div>
+    </div>
+  </main>
+
+  <script type="module" src="/js/products.js"></script>
+  <script type="module" src="/js/auth-widget.js"></script>
+  <script src="/js/footer.js"></script>
+</body>
+</html>

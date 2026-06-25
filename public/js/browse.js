@@ -256,6 +256,10 @@ function render() {
   // or `failed` are kept in the manifest (visible/deletable in admin) but must
   // never appear in the public grid. Missing status = legacy `ready`.
   let list = state.videos.filter((v) => v.published !== false && (v.status || 'ready') === 'ready');
+  // Course content is sold + watched under its course (the Courses section + the
+  // sales page), so keep course-assigned videos out of the general "All Videos"
+  // library and category views. They still surface under section === 'courses'.
+  if (state.section === 'all') list = list.filter((v) => courseIdsFor(v.id).length === 0);
   const activeCourse = state.section === 'courses' ? state.products.find((p) => p.slug === state.category) : null;
   renderCourseHeader(activeCourse);
   if (state.section === 'exclusive') list = list.filter((v) => v.visibility === 'premium');
@@ -264,13 +268,17 @@ function render() {
     const ids = activeCourse ? activeCourse.videoIds : [];
     list = ids.map((id) => list.find((v) => v.id === id)).filter(Boolean);
   } else if (state.category) list = list.filter((v) => v.category === state.category);
-  if (state.sort === 'popular') {
-    list = list.slice().sort((a, b) => (state.views[b.id] || 0) - (state.views[a.id] || 0));
-  } else if (state.sort === 'oldest') {
-    list = list.slice().sort((a, b) => sortTs(a) - sortTs(b));
-  } else {
-    // 'recent' — newest first (default)
-    list = list.slice().sort((a, b) => sortTs(b) - sortTs(a));
+  // A course is a curriculum: keep its configured lesson order (Chapter 1 → N) and
+  // never re-sort by recency/popularity. Other sections honor the sort dropdown.
+  if (state.section !== 'courses') {
+    if (state.sort === 'popular') {
+      list = list.slice().sort((a, b) => (state.views[b.id] || 0) - (state.views[a.id] || 0));
+    } else if (state.sort === 'oldest') {
+      list = list.slice().sort((a, b) => sortTs(a) - sortTs(b));
+    } else {
+      // 'recent' — newest first (default)
+      list = list.slice().sort((a, b) => sortTs(b) - sortTs(a));
+    }
   }
   grid.replaceChildren();
   if (!list.length) {
@@ -297,6 +305,32 @@ const sortTs = (v) => (typeof v.uploadedAt === 'number' ? v.uploadedAt
 
 const ownsCourse = (p) => !!(p && state.me && Array.isArray(state.me.ownedProductIds) && state.me.ownedProductIds.includes(p.id));
 
+/** Load the course trailer (a free, published video) into the banner player and
+ *  autoplay it muted. Mirrors the sales-page trailer (course.js). Best-effort. */
+async function loadCourseTrailer(banner, product) {
+  const trailerId = product && product.trailer;
+  if (!trailerId) return;
+  try {
+    const res = await fetch(`/api/videos/${encodeURIComponent(trailerId)}/playback`);
+    if (!res.ok) return;
+    const { video } = await res.json();
+    const levels = (video && Array.isArray(video.qualityLevels)) ? video.qualityLevels : [];
+    if (!levels.length) return;
+    const best = levels.slice().sort((a, b) => (b.height || 0) - (a.height || 0))[0];
+    if (!best || !best.url) return;
+    // Bail if the viewer already navigated to a different course while we fetched.
+    if (banner.dataset.slug !== product.slug) return;
+    const wrap = banner.querySelector('.cb-trailer');
+    const el = banner.querySelector('.cb-trailer-video');
+    if (!wrap || !el) return;
+    if (product.branding && product.branding.bgImage) el.poster = product.branding.bgImage;
+    el.muted = true;
+    el.src = best.url;
+    wrap.hidden = false;
+    el.play().catch(() => { /* autoplay blocked → controls stay, viewer can press play */ });
+  } catch { /* no trailer → banner just shows logo + copy */ }
+}
+
 /** Branded header above the grid when viewing a course; removed otherwise. */
 function renderCourseHeader(product) {
   const grid = document.getElementById('grid');
@@ -312,20 +346,35 @@ function renderCourseHeader(product) {
   const owned = ownsCourse(product) || state.isAdmin;
   banner.style.setProperty('--course-primary', b.primary || '#7c3aed');
   banner.style.setProperty('--course-accent', b.accent || '#22d3ee');
-  banner.innerHTML = `
-    <div class="cb-inner">
-      ${b.logo ? `<img class="cb-logo" src="${b.logo}" alt="" />` : ''}
-      <div class="cb-text">
-        <h2 class="cb-name"></h2>
-        <p class="cb-headline"></p>
-        <p class="cb-body"></p>
-      </div>
-      <div class="cb-cta"></div>
-    </div>`;
+  // A branded hero image (e.g. the black "hacker" backdrop) replaces the default
+  // colour gradient behind the banner.
+  banner.style.backgroundImage = b.bgImage
+    ? `linear-gradient(180deg, rgba(0,0,0,.45), rgba(0,0,0,.78)), url('${b.bgImage}')`
+    : '';
+  banner.style.backgroundSize = b.bgImage ? 'cover' : '';
+  banner.style.backgroundPosition = b.bgImage ? 'center' : '';
+  // Build the shell once per course so the autoplaying trailer isn't restarted on
+  // unrelated re-renders (a sort change while staying in the same course view).
+  if (banner.dataset.slug !== product.slug) {
+    banner.dataset.slug = product.slug;
+    banner.innerHTML = `
+      <div class="cb-trailer" hidden><video class="cb-trailer-video" muted autoplay playsinline controls preload="metadata"></video></div>
+      <div class="cb-inner">
+        ${b.logo ? `<img class="cb-logo" src="${b.logo}" alt="" />` : ''}
+        <div class="cb-text">
+          <h2 class="cb-name"></h2>
+          <p class="cb-headline"></p>
+          <p class="cb-body"></p>
+        </div>
+        <div class="cb-cta"></div>
+      </div>`;
+    loadCourseTrailer(banner, product);
+  }
   banner.querySelector('.cb-name').textContent = product.name || '';
   banner.querySelector('.cb-headline').textContent = (product.sales && product.sales.headline) || '';
   banner.querySelector('.cb-body').textContent = (product.sales && product.sales.body) || product.description || '';
   const cta = banner.querySelector('.cb-cta');
+  cta.replaceChildren();
   if (owned) {
     cta.innerHTML = '<span class="cb-owned">✓ You own this course</span>';
   } else {

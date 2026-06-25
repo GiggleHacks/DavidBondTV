@@ -974,6 +974,9 @@ a.tr:hover .name { color: var(--accent); }
 .cal-chip:hover { background: color-mix(in srgb, var(--section-accent) 40%, transparent); }
 .cal-chip-time { font-size: 10px; font-weight: 700; opacity: .85; }
 .cal-chip-title { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-chip--pending { opacity: .55; outline: 1px dashed currentColor; outline-offset: -1px; }
+.cal-chip-badge { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; background: color-mix(in srgb, var(--text-dim) 20%, transparent); border-radius: 3px; padding: 1px 4px; line-height: 1.4; }
+.cal-up-item--pending { opacity: .6; }
 
 .cal-side { border: 1px solid var(--border); border-radius: 11px; background: var(--surface); padding: 12px 14px; }
 .cal-side-title { margin: 0 0 10px; font-size: 14px; }

@@ -75,6 +75,30 @@ describe('products store', () => {
     expect(products.remove('nope').ok).toBe(false);
   });
 
+  it('defaults category to "" and trailer to null, and round-trips both', () => {
+    const p = products.add({ name: 'Cat Course', price: 100 }).product;
+    expect(p.category).toBe('');
+    expect(p.trailer).toBe(null);
+    // category is stored as a free-text slug (decoupled from the video registry).
+    const u = products.update(p.id, { category: 'Meeting Women', trailer: 'vid-123' }).product;
+    expect(u.category).toBe('meeting-women');
+    expect(u.trailer).toBe('vid-123');
+    // empty/whitespace clears them
+    expect(products.update(p.id, { category: '', trailer: '' }).product.category).toBe('');
+    expect(products.update(p.id, { trailer: '' }).product.trailer).toBe(null);
+    // accepted at creation time too
+    const c = products.add({ name: 'Seeded', price: 200, category: 'dating', trailer: 't1' }).product;
+    expect(c.category).toBe('dating');
+    expect(c.trailer).toBe('t1');
+  });
+
+  it('publicView carries category + trailer for the storefront', () => {
+    const p = products.add({ name: 'Store Course', price: 2500, category: 'meeting-women', trailer: 'tv9' }).product;
+    const view = products.publicView(p);
+    expect(view.category).toBe('meeting-women');
+    expect(view.trailer).toBe('tv9');
+  });
+
   it('publicView omits nothing secret but carries branding + price', () => {
     const p = products.add({ name: 'C', price: 2500, sales: { headline: 'Hi' } }).product;
     const view = products.publicView(p);

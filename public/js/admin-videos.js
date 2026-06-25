@@ -57,14 +57,13 @@ let encByManifest = {}; // manifestId → encoding % (live, from /api/admin/stat
 let encPoll = null;     // interval handle while any video is encoding
 let calendar = null;    // lazy-built publishing calendar (Calendar tab)
 
-// Map the live job registry to { manifestId: percent } for encoding jobs.
+// Map the live job registry to job records for encoding jobs.
 function buildEncMap(jobs) {
   const m = {};
   for (const j of (jobs || [])) {
     if (!j || !j.manifestId) continue;
     if (j.status === 'encoding' || j.status === 'processing') {
-      const p = Number(j.pct);
-      m[j.manifestId] = Number.isFinite(p) ? Math.max(0, Math.min(100, Math.round(p))) : null;
+      m[j.manifestId] = j;
     }
   }
   return m;
@@ -205,7 +204,10 @@ function badges(v) {
   if (st === 'uploaded') out.push('<span class="vb vb-upload">In review</span>');
   else if (st === 'encoding') out.push(encodingBadge(v));
   else if (st === 'rejected') out.push('<span class="vb vb-rej">Rejected</span>');
-  else if (st === 'failed') out.push('<span class="vb vb-fail">Failed</span>');
+  else if (st === 'failed') {
+    const errTitle = v.error ? ` title="${esc(v.error)}"` : '';
+    out.push(`<span class="vb vb-fail"${errTitle}>Failed</span>`);
+  }
   else if (st === 'published') out.push('<span class="vb vb-live">Live</span>');
   else if (st === 'draft-approved') out.push('<span class="vb vb-appr">Approved</span>');
   else out.push('<span class="vb vb-draft">Draft · Unapproved</span>');
@@ -221,12 +223,32 @@ function badges(v) {
 // pct comes from the live job registry; null (e.g. after a server restart loses
 // the in-memory job) falls back to an indeterminate bar.
 function encodingBadge(v) {
-  const p = encByManifest[v.id];
+  const job = encByManifest[v.id];
+  const p = job ? job.pct : null;
   const fill = p == null
     ? '<span class="enc-fill enc-indet"></span>'
     : `<span class="enc-fill" style="width:${p}%"></span>`;
-  const label = p == null ? 'Encoding…' : `${p}%`;
-  return `<span class="vb vb-proc enc-badge" data-enc="${esc(v.id)}">`
+  
+  let label = 'Encoding…';
+  let detailTitle = '';
+  if (job) {
+    label = `${job.pct || 0}%`;
+    const parts = [];
+    if (job.speedMbps) parts.push(`${Number(job.speedMbps).toFixed(1)} MB/s`);
+    if (job.speed) parts.push(`${Number(job.speed).toFixed(1)}x`);
+    if (job.etaSec != null) {
+      if (job.etaSec === 0) parts.push('done');
+      else parts.push(`${job.etaSec}s left`);
+    }
+    if (parts.length) {
+      label += ` (${parts.join(', ')})`;
+    }
+    if (job.label) {
+      detailTitle = `${job.label}${job.detail ? ` - ${job.detail}` : ''}`;
+    }
+  }
+
+  return `<span class="vb vb-proc enc-badge" data-enc="${esc(v.id)}"${detailTitle ? ` title="${esc(detailTitle)}"` : ''}>`
     + `<span class="enc-track">${fill}</span><span class="enc-pct">${label}</span></span>`;
 }
 
@@ -235,12 +257,40 @@ const encodingIdSet = (list) => list.filter((v) => stateOf(v) === 'encoding').ma
 // Update the progress bars in place (no full re-render) so they animate smoothly.
 function updateEncBars() {
   document.querySelectorAll('.enc-badge[data-enc]').forEach((el) => {
-    const p = encByManifest[el.getAttribute('data-enc')];
+    const manifestId = el.getAttribute('data-enc');
+    const job = encByManifest[manifestId];
     const fill = el.querySelector('.enc-fill');
     const lbl = el.querySelector('.enc-pct');
-    if (p == null) { if (fill) fill.classList.add('enc-indet'); if (lbl) lbl.textContent = 'Encoding…'; return; }
-    if (fill) { fill.classList.remove('enc-indet'); fill.style.width = `${p}%`; }
-    if (lbl) lbl.textContent = `${p}%`;
+    if (!job) {
+      if (fill) fill.classList.add('enc-indet');
+      if (lbl) lbl.textContent = 'Encoding…';
+      el.removeAttribute('title');
+      return;
+    }
+    const p = job.pct;
+    if (fill) {
+      fill.classList.remove('enc-indet');
+      fill.style.width = p != null ? `${p}%` : '0%';
+    }
+
+    let label = p != null ? `${p}%` : 'Encoding…';
+    const parts = [];
+    if (job.speedMbps) parts.push(`${Number(job.speedMbps).toFixed(1)} MB/s`);
+    if (job.speed) parts.push(`${Number(job.speed).toFixed(1)}x`);
+    if (job.etaSec != null) {
+      if (job.etaSec === 0) parts.push('done');
+      else parts.push(`${job.etaSec}s left`);
+    }
+    if (parts.length) {
+      label += ` (${parts.join(', ')})`;
+    }
+    if (lbl) lbl.textContent = label;
+
+    if (job.label) {
+      el.setAttribute('title', `${job.label}${job.detail ? ` - ${job.detail}` : ''}`);
+    } else {
+      el.removeAttribute('title');
+    }
   });
 }
 
@@ -348,6 +398,7 @@ function libRow(v) {
         <button class="row-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="More actions">⋯</button>
         <div class="row-menu-panel" hidden>
           <button class="menu-item row-quick" type="button">Quick edit</button>
+          ${stateOf(v) === 'failed' ? '<button class="menu-item row-retry" type="button">Retry encode</button>' : ''}
           <button class="menu-item row-del" type="button">Delete</button>
         </div>
       </div>
@@ -367,6 +418,28 @@ function libRow(v) {
     const rmBtn = row.querySelector('.row-menu-btn');
     rmBtn.addEventListener('click', () => togglePanel(rmBtn, row.querySelector('.row-menu-panel'), closeAllPopovers));
     row.querySelector('.row-quick').addEventListener('click', () => { closeAllPopovers(); startQuickEdit(row, v); });
+    const retryBtn = row.querySelector('.row-retry');
+    if (retryBtn) {
+      retryBtn.addEventListener('click', async () => {
+        closeAllPopovers();
+        try {
+          const res = await fetch('/api/admin/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: [v.id], action: 'approve' })
+          });
+          if (res.status === 401) { location.reload(); return; }
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.ok) {
+            await load();
+          } else {
+            alert(data.error || 'Retry failed.');
+          }
+        } catch (e) {
+          alert(e.message || 'Retry failed.');
+        }
+      });
+    }
   }
 
   const check = row.querySelector('.row-check');
@@ -391,6 +464,14 @@ function updateSel() {
   sa.checked = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
   const bar = $('selection-bar');
   if (bar) bar.hidden = selected.size === 0;
+
+  // Show retry button if any selected video is failed
+  const bulkRetry = $('bulk-retry');
+  if (bulkRetry) {
+    const selectedVids = all.filter((v) => selected.has(v.id));
+    const hasFailed = selectedVids.some((v) => stateOf(v) === 'failed');
+    bulkRetry.hidden = !hasFailed;
+  }
 }
 
 // Apply a bulk action to ids in ≤500-id batches (the /api/admin/bulk route caps

@@ -16,10 +16,12 @@ describe('hmsToSec', () => {
 describe('makeProgressScanner', () => {
   it('emits one snapshot per progress block, using out_time_us', () => {
     const sc = makeProgressScanner();
-    const evs = sc.push('frame=10\nout_time_us=2000000\nspeed=1.5x\nprogress=continue\n');
+    const evs = sc.push('frame=10\nfps=60.5\ntotal_size=1048576\nout_time_us=2000000\nspeed=1.5x\nprogress=continue\n');
     expect(evs).toHaveLength(1);
     expect(evs[0].outSec).toBeCloseTo(2, 6);
     expect(evs[0].speed).toBeCloseTo(1.5, 6);
+    expect(evs[0].fps).toBeCloseTo(60.5, 2);
+    expect(evs[0].totalSize).toBe(1048576);
     expect(evs[0].done).toBe(false);
   });
 
