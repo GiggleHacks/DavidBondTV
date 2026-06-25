@@ -2,6 +2,7 @@ export const ADMIN_ROUTE_PREFIX = '/gigglehacksclicking85hgfd7845789drghudr789rd
 
 export const ADMIN_PATHS = {
   dashboard: ADMIN_ROUTE_PREFIX,
+  dashboard2: `${ADMIN_ROUTE_PREFIX}-dashboard2.html`,
   upload: `${ADMIN_ROUTE_PREFIX}-upload.html`,
   videos: `${ADMIN_ROUTE_PREFIX}-videos.html`,
   users: `${ADMIN_ROUTE_PREFIX}-users.html`,
