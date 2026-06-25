@@ -16,7 +16,7 @@ const helpQ = (t) => `<span class="q" title="${t}">?</span>`;
 // off-screen in a hidden div.
 const HIDDEN_IDS = [
   'upd-1', 'upd-2', 'upd-3', 'upd-4',
-  'vit-build', 'q-videos',
+  'vit-build',
 ];
 const hiddenBin = () => `<div style="display:none">${HIDDEN_IDS.map((id) => `<span id="${id}"></span>`).join('')}</div>`;
 
@@ -52,43 +52,42 @@ export function setGauge(id, fraction) {
 // =========================================================================
 
 function buildCommandCenter() {
+  // Compact text metric — label, big value, tiny sub/trend. No graphs.
+  const metric = (emoji, label, valId, subId, subText) => `
+    <div class="ovm">
+      <div class="ovm-top"><span class="ovm-emoji">${emoji}</span><span class="ovm-label">${label}</span></div>
+      <div class="ovm-val" id="${valId}">—</div>
+      ${subId ? `<div class="ktrend flat ovm-sub" id="${subId}">${subText || '· · ·'}</div>` : (subText ? `<div class="ovm-sub muted">${subText}</div>` : '')}
+    </div>`;
   return `
     ${hiddenBin()}
-    <div class="grid g-kpi">
-      <div class="dpanel kpi">
-        <div class="klabel"><span class="kemoji">👁️</span> TOTAL VIEWS</div>
-        <div class="kv glow" id="kpi-views">—</div>
-        <div class="ktrend flat" id="trend-views">· · ·</div>
-        <svg class="kspark" id="spark-views" viewBox="0 0 120 28" preserveAspectRatio="none"></svg>
-        <div class="dsrc">SOURCE: <b>analytics/raw event log</b><br>distinct viewId · 1st heartbeat · <span id="upd-1">—</span></div>
+    <!-- Hidden elements kept so the data updaters never error on removed graphs. -->
+    <div style="display:none">
+      <span id="kpi-hours"></span><span id="trend-hours"></span>
+      <svg id="spark-views"></svg><svg id="spark-hours"></svg>
+      <svg id="spark-users"></svg><svg id="spark-blocked"></svg>
+    </div>
+
+    <!-- Compact metrics: audience on the left, money on the right. -->
+    <div class="dpanel ov-metrics">
+      <div class="ovm-group">
+        ${metric('👁️', 'TOTAL VIEWS', 'kpi-views', 'trend-views')}
+        ${metric('👥', 'REGISTERED', 'kpi-users', 'trend-users', 'verified accounts')}
+        ${metric('🛡️', 'BLOCKED HITS', 'kpi-blocked', 'trend-blocked')}
       </div>
-      <div class="dpanel kpi amber">
-        <div class="klabel"><span class="kemoji">⏱️</span> WATCH HOURS</div>
-        <div class="kv glow" id="kpi-hours">—</div>
-        <div class="ktrend flat" id="trend-hours">· · ·</div>
-        <svg class="kspark" id="spark-hours" viewBox="0 0 120 28" preserveAspectRatio="none"></svg>
-        <div class="dsrc">SOURCE: <b>Σ heartbeat seconds</b> ÷ 3600<br>clamped 300s/beat · <span id="upd-2">—</span></div>
-      </div>
-      <div class="dpanel kpi cyan">
-        <div class="klabel"><span class="kemoji">👥</span> REGISTERED</div>
-        <div class="kv glow" id="kpi-users">—</div>
-        <div class="ktrend flat" id="trend-users">verified accounts</div>
-        <svg class="kspark" id="spark-users" viewBox="0 0 120 28" preserveAspectRatio="none"></svg>
-        <div class="dsrc">SOURCE: <b>data/users.json</b><br>email-verified only · <span id="upd-3">—</span></div>
-      </div>
-      <div class="dpanel kpi magenta">
-        <div class="klabel"><span class="kemoji">🛡️</span> BLOCKED HITS</div>
-        <div class="kv glow" id="kpi-blocked">—</div>
-        <div class="ktrend flat" id="trend-blocked">· · ·</div>
-        <svg class="kspark" id="spark-blocked" viewBox="0 0 120 28" preserveAspectRatio="none"></svg>
-        <div class="dsrc">SOURCE: <b>geo-gate recordBlocked()</b><br>country / IP / user rules · <span id="upd-4">—</span></div>
+      <div class="ovm-divider"></div>
+      <div class="ovm-group ovm-money">
+        ${metric('💵', 'REVENUE', 'ov-revenue', '', '')}
+        ${metric('🧾', 'SALES', 'ov-sales', '', '')}
+        ${metric('⭐', 'ACTIVE SUBS', 'ov-subs', '', '')}
       </div>
     </div>
+
     <div class="grid g-2 row-gap">
       <div class="dpanel">
-        <div class="dp-title"><span class="dico">📈</span> VIEWS &amp; WATCH-TIME — LAST 30 DAYS ${helpQ('Daily rollups summed across every video. Times in server UTC.')}</div>
-        <div class="dlegend"><span><i style="background:#818cf8"></i>Views</span><span><i style="background:#f59e0b"></i>Watch hrs</span></div>
-        <svg class="dchart" id="trend-chart" viewBox="0 0 640 200" preserveAspectRatio="none" role="img" aria-label="Views and watch-time trend"></svg>
+        <div class="dp-title"><span class="dico">📈</span> VIEWS — LAST 30 DAYS ${helpQ('Daily view rollups summed across every video. Times in server UTC.')}</div>
+        <div class="dlegend"><span><i style="background:#818cf8"></i>Views</span></div>
+        <svg class="dchart" id="trend-chart" viewBox="0 0 640 200" preserveAspectRatio="none" role="img" aria-label="Views trend"></svg>
         ${srcLine('SOURCE: <b>analytics rollups</b> · 90-day retention · TZ server UTC')}
       </div>
       <div class="dpanel">
@@ -98,8 +97,27 @@ function buildCommandCenter() {
         ${srcLine('SOURCE: <b>GeoIP via Cloudflare</b> CF-IPCountry header')}
       </div>
     </div>
+
     <div class="grid g-3 row-gap">
-      <div class="dpanel span3 mon-strip">
+      <div class="dpanel span3">
+        <div class="dp-title"><span class="dico">🖥️</span> LIVE VISITOR FEED
+          <span class="feed-live"><span class="deck-dot"></span> LIVE · updates every 10s</span></div>
+        <div class="dfeed dfeed-tall" id="visitors"></div>
+        ${srcLine('SOURCE: <b>raw/*.jsonl</b> · IP + GeoIP + watch event · bots excluded · 7-day retention')}
+      </div>
+    </div>
+
+    <!-- Quick actions: small, just links. -->
+    <div class="ov-quick">
+      <a class="dmini" href="${ADMIN_PATHS.upload}">⬆ Upload video <span class="e">— add new clips</span></a>
+      <a class="dmini" href="${ADMIN_PATHS.videos}">🎬 Manage videos <span class="e" id="q-videos">—</span></a>
+      <a class="dmini" href="${ADMIN_PATHS.pricing}">💲 Pricing <span class="e">— subscription &amp; intro</span></a>
+    </div>
+
+    <!-- ===== Server stats: compact, at the very bottom ===== -->
+    <div class="dpanel ov-server">
+      <div class="dp-title"><span class="dico">🖥️</span> SERVER STATS <span class="feed-live"><span class="deck-dot"></span> LIVE</span></div>
+      <div class="mon-strip mon-strip-compact">
         <div class="mon-cell" style="--mc:#a3e635">
           <div class="mon-head"><span class="mon-name">CPU</span><span class="mon-val" id="mon-cpu-val">—</span></div>
           <svg class="mon-spark" id="graph-cpu" viewBox="0 0 200 44" preserveAspectRatio="none" aria-hidden="true"></svg>
@@ -121,39 +139,14 @@ function buildCommandCenter() {
           <div class="mon-sub" id="mon-net-sub">—</div>
         </div>
       </div>
-    </div>
-    <div class="grid g-2 row-gap">
-      <div class="dpanel">
-        <div class="dp-title"><span class="dico">⏱️</span> SERVER</div>
-        <div class="dvit dvit-wide" id="met-server">
-          <div><span class="k">UPTIME</span><span class="g" id="met-uptime">—</span></div>
-          <div><span class="k">PLATFORM</span><span class="c" id="met-platform">—</span></div>
-          <div><span class="k">NODE</span><span class="a" id="met-node">—</span></div>
-          <div><span class="k">PROCESSING</span><span class="c" id="met-proccount">—</span></div>
-          <div><span class="k">TOTAL DISK</span><span class="g" id="met-total">—</span></div>
-        </div>
-      </div>
-      <div class="dpanel">
-        <div class="dp-title"><span class="dico">⚙️</span> SYSTEM</div>
-        <div class="dvit">
-          <div><span class="k">VIDEOS</span><span class="g" id="vit-videos">—</span></div>
-          <div><span class="k">LIBRARY</span><span class="g">● intact</span></div>
-          <div><span class="k">BUILD</span><span class="c" id="vit-build">—</span></div>
-          <div><span class="k">FFMPEG</span><span class="a" id="vit-ffmpeg">—</span></div>
-        </div>
-        <div style="margin-top:10px">
-          <a class="dmini" href="${ADMIN_PATHS.upload}">⬆ Upload video <span class="e">— add new clips</span></a>
-          <a class="dmini" href="${ADMIN_PATHS.videos}">🎬 Manage videos <span class="e" id="q-videos">—</span></a>
-          <a class="dmini" href="${ADMIN_PATHS.pricing}">💲 Pricing <span class="e">— subscription &amp; intro</span></a>
-        </div>
-      </div>
-    </div>
-    <div class="grid g-3 row-gap">
-      <div class="dpanel span3">
-        <div class="dp-title"><span class="dico">🖥️</span> LIVE VISITOR FEED
-          <span class="feed-live"><span class="deck-dot"></span> LIVE · updates every 10s</span></div>
-        <div class="dfeed dfeed-tall" id="visitors"></div>
-        ${srcLine('SOURCE: <b>raw/*.jsonl</b> · IP + GeoIP + watch event · bots excluded · 7-day retention')}
+      <div class="ov-server-facts">
+        <span>Uptime <b id="met-uptime">—</b></span>
+        <span>Platform <b id="met-platform">—</b></span>
+        <span>Node <b id="met-node">—</b></span>
+        <span>Videos <b id="vit-videos">—</b></span>
+        <span>FFmpeg <b id="vit-ffmpeg">—</b></span>
+        <span>Processing <b id="met-proccount">—</b></span>
+        <span>Total disk <b id="met-total">—</b></span>
       </div>
     </div>`;
 }

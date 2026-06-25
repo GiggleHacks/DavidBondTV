@@ -1449,6 +1449,9 @@ async function handleApi(req, res, ctx) {
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '200', 10) || 200, 1), 1000);
     const titles = manifestTitleMap();
     const names = userNameMap();
+    // Current subscriber set (authoritative live membership) so the feed can badge
+    // subscriber usernames without trusting possibly-stale per-event flags.
+    const subscriberIds = new Set(accounts.store.listAll().filter((u) => hasActiveMembership(u)).map((u) => u.id));
     const events = analytics.getRecentEvents(limit)
       .filter((raw) => !isBotUa(raw.device && raw.device.ua))
       .map((raw) => {
@@ -1462,6 +1465,7 @@ async function handleApi(req, res, ctx) {
       region: e.region,
       user: e.username || null,
       userId: e.userId,
+      subscriber: !!(e.userId && subscriberIds.has(e.userId)),
       video: e.videoTitle || null,
       videoId: e.videoId,
       seconds: e.seconds || e.dt,

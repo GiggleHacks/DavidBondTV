@@ -109,7 +109,7 @@ function drawTrend(svg, series) {
   };
   let grid = '';
   for (let i = 1; i < 4; i++) grid += `<line x1="0" y1="${(H / 4) * i}" x2="${W}" y2="${(H / 4) * i}" stroke="#1e2030" stroke-width="0.5"/>`;
-  svg.innerHTML = grid + line('views', '#818cf8', false, true) + line('minutes', '#f59e0b', true, false);
+  svg.innerHTML = grid + line('views', '#818cf8', false, true);
 }
 function drawDonut(svg, legendEl, countries) {
   const entries = Object.entries(countries || {})
@@ -377,6 +377,20 @@ function drawRevenueChart(svg, series, currency) {
   }).join('');
 }
 
+// Compact money summary surfaced in the Overview metrics strip (revenue, sales,
+// active subscribers) — reuses the financial endpoint without its charts.
+async function loadOverviewFinance() {
+  let d;
+  try { d = await api('/api/admin/financial'); } catch { return; }
+  if (!d || !d.revenue) return;
+  const cur = d.currency || 'usd';
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  set('ov-revenue', fmtMoney(d.revenue.total, cur));
+  set('ov-sales', nf(d.sales.total));
+  const s = d.subscriptions;
+  set('ov-subs', nf(s.active + s.trialing + s.comp + s.pastDue));
+}
+
 async function loadFinancial() {
   let d;
   try { d = await api('/api/admin/financial'); } catch { return; }
@@ -423,23 +437,27 @@ async function loadVisitors() {
   if (!box) return;
   const d = await api('/api/admin/analytics/visitors?limit=400');
   const events = d.events || [];
-  const head = `<div class="h"><span>When</span><span>IP</span><span>Country</span><span>User · video</span><span><a href="${ADMIN_PATHS.logs}">Logs →</a></span></div>`;
+  const head = `<div class="h"><span>When</span><span>IP</span><span>Country</span><span>User</span><span>Video</span><span class="sec"><a href="${ADMIN_PATHS.logs}">Logs →</a></span></div>`;
   if (!events.length) {
-    if (!box.innerHTML.includes('No visitor activity')) box.innerHTML = head + '<div class="row"><span class="ts">—</span><span></span><span></span><span class="who">No visitor activity recorded yet.</span><span></span></div>';
+    if (!box.innerHTML.includes('No visitor activity')) box.innerHTML = head + '<div class="row"><span class="ts">—</span><span></span><span></span><span class="who">No visitor activity recorded yet.</span><span></span><span></span></div>';
     return;
   }
+  // Small gold star badge next to subscriber usernames.
+  const SUB_BADGE = '<span class="sub-badge" title="Active subscriber">★</span>';
   const newHTML = head + events.map((e) => {
     const cname = e.country || COUNTRY_NAME[e.cc] || e.cc || '';
     const flag = e.cc ? `<span class="cflag" title="${esc(cname || e.cc)}">${flagIcon(e.cc)}</span>` : '';
-    const who = e.blocked ? '<span class="blk">⛔ blocked</span>' : (e.user ? esc(e.user) : 'guest');
+    const who = e.blocked
+      ? '<span class="blk">⛔ blocked</span>'
+      : (e.user ? `${esc(e.user)}${e.subscriber ? SUB_BADGE : ''}` : 'guest');
     // Server resolves videoTitle (null when unknown) — never shows the raw UUID.
-    const vidLabel = e.video ? esc(e.video) : (e.videoId ? '(removed video)' : '');
-    const vid = vidLabel ? ' · ' + vidLabel : (e.reason ? ' · ' + esc(e.reason) : '');
+    const vidLabel = e.video ? esc(e.video) : (e.videoId ? '(removed video)' : (e.reason ? esc(e.reason) : '—'));
     return `<div class="row">
       <span class="ts" title="${new Date(e.t).toLocaleString()}">${fmtAgo(e.t)}</span>
       <span class="ip">${esc(e.ip || '—')}</span>
       <span class="cc">${flag}<span class="cn">${esc(cname || '—')}</span></span>
-      <span class="who">${who}${vid}</span>
+      <span class="who${e.subscriber ? ' is-sub' : ''}">${who}</span>
+      <span class="vid">${vidLabel}</span>
       <span class="sec">${e.seconds ? e.seconds + 's' : '—'}</span>
     </div>`;
   }).join('');
@@ -706,6 +724,7 @@ async function main() {
   wireTabs(); wireMapModes(); wireGeo();
   tickClock(); setInterval(tickClock, 1000);
   setInterval(() => { loadOverview().catch(() => {}); }, 10000);
+  setInterval(() => { loadOverviewFinance().catch(() => {}); }, 30000);
   setInterval(() => { loadVisitors().catch(() => {}); }, 10000);
   setInterval(() => { loadMetrics().catch(() => {}); }, 10000);
   setInterval(() => { loadLive().catch(() => {}); }, 2500); // live CPU/memory graphs
@@ -715,7 +734,7 @@ async function main() {
     if (p && p.classList.contains('on')) loadFinancial().catch(() => {});
   }, 20000); // auto-refresh financial while its tab is open
   try {
-    await Promise.all([loadOverview(), loadCountries('viewers'), loadGeo(), loadExtras(), loadVisitors(), loadMetrics(), loadLive()]);
+    await Promise.all([loadOverview(), loadOverviewFinance(), loadCountries('viewers'), loadGeo(), loadExtras(), loadVisitors(), loadMetrics(), loadLive()]);
   } catch { /* a 401 mid-flight reloads into the gate */ }
 }
 main();

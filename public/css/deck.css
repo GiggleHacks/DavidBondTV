@@ -95,17 +95,23 @@
 /* live visitor feed */
 .dfeed { font-size: 12px; line-height: 1.9; max-height: 240px; overflow: hidden; }
 .dfeed.dfeed-tall { max-height: 620px; overflow-y: auto; padding-right: 6px; }
-.dfeed .h, .dfeed .row { display: grid; grid-template-columns: 70px 140px 150px 1fr 56px; gap: 10px; white-space: nowrap; padding: 3px 0; overflow: hidden; }
+/* When · IP · Country · User · Video · secs — User and Video are separate
+   columns with a wide gap between them for readability. */
+.dfeed .h, .dfeed .row { display: grid; grid-template-columns: 66px 132px 140px minmax(120px, 0.85fr) minmax(0, 1.5fr) 52px; gap: 10px; white-space: nowrap; padding: 3px 0; overflow: hidden; }
 .dfeed .h { color: var(--d-dim); border-bottom: 1px solid var(--d-edge); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; position: sticky; top: 0; background: var(--d-panel); z-index: 1; }
 .dfeed .row { border-bottom: 1px solid rgba(30,32,48,.6); }
 .dfeed .ts { color: var(--d-dim); }
 .dfeed .ip { color: var(--d-cyan); overflow: hidden; text-overflow: ellipsis; }
 .dfeed .cc { color: var(--d-text); overflow: hidden; text-overflow: ellipsis; }
 .dfeed .cc .cn { margin-left: 2px; color: var(--d-dim); }
-.dfeed .who { color: var(--d-text); overflow: hidden; text-overflow: ellipsis; }
+/* Extra breathing room between the User and Video columns. */
+.dfeed .who { color: var(--d-text); overflow: hidden; text-overflow: ellipsis; padding-right: 18px; }
+.dfeed .who.is-sub { color: #fcd34d; }
+.dfeed .vid { color: var(--d-dim); overflow: hidden; text-overflow: ellipsis; padding-left: 4px; }
 .dfeed .sec { color: var(--d-amber); text-align: right; }
 .dfeed .cflag { margin-right: 4px; }
 .dfeed .blk { color: var(--d-rose); }
+.dfeed .sub-badge { color: #f5b50a; margin-left: 5px; font-size: 11px; }
 .feed-live { margin-left: 8px; font-size: 10px; letter-spacing: .5px; color: var(--d-emerald, #34d399); text-transform: uppercase; vertical-align: middle; }
 .feed-live .deck-dot { margin-right: 4px; }
 
@@ -191,6 +197,34 @@
 .mon-meta span { font-size: 9px; color: var(--d-dim); letter-spacing: .5px; text-transform: uppercase; }
 .dvit-wide { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px 18px; }
 .dvit-wide .k { display: block; width: auto; }
+
+/* ===== Cleaned-up overview: compact text metrics + finance ===== */
+.ov-metrics { display: flex; align-items: stretch; flex-wrap: wrap; gap: 10px 6px; padding: 16px 18px; }
+.ov-metrics .ovm-group { display: flex; flex: 1 1 auto; gap: 28px; min-width: 0; flex-wrap: wrap; }
+.ov-metrics .ovm-divider { width: 1px; background: var(--d-edge); margin: 2px 6px; flex: none; }
+.ovm { min-width: 0; }
+.ovm-top { display: flex; align-items: center; gap: 6px; color: var(--d-dim); font-size: 10.5px; letter-spacing: 1px; }
+.ovm-emoji { font-size: 13px; }
+.ovm-val { font-family: var(--pixel); font-size: 26px; font-weight: 800; line-height: 1.1; color: var(--d-text); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.ovm-money .ovm-val { color: #4ade80; }
+.ovm-sub { font-size: 11px; margin-top: 2px; }
+.ovm-sub.up { color: #4ade80; } .ovm-sub.down { color: var(--d-rose); } .ovm-sub.flat { color: var(--d-dim); }
+@media (max-width: 720px) {
+  .ov-metrics .ovm-divider { display: none; }
+  .ov-metrics .ovm-group { gap: 20px; }
+}
+
+/* Quick action links row */
+.ov-quick { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 2px 4px 4px; }
+.ov-quick .dmini { flex: 1 1 200px; }
+
+/* Compact server-stats panel pinned to the bottom */
+.ov-server .mon-strip-compact { padding: 10px 2px 4px; gap: 10px; }
+.ov-server .mon-strip-compact .mon-spark { height: 30px; }
+.ov-server .mon-strip-compact .mon-cell { padding: 8px 10px; }
+.ov-server .mon-strip-compact .mon-val { font-size: 15px; }
+.ov-server-facts { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 10px; font-size: 12px; color: var(--d-dim); }
+.ov-server-facts b { color: var(--d-text); font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .mon-live { animation: none; } .gauge-arc { transition: none !important; } }
 
 /* MC status grid */
