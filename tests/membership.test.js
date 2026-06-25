@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hasActiveMembership, stripeActive, adminActive, membershipSummary } from '../lib/membership.js';
+import { hasActiveMembership, stripeActive, adminActive, membershipSummary, cryptoActive } from '../lib/membership.js';
 
 const NOW = 1_000_000;
 const mk = (membership) => ({ membership });
@@ -82,5 +82,27 @@ describe('membershipSummary', () => {
     expect(membershipSummary(mk(null), NOW)).toEqual({
       active: false, provider: null, status: null, interval: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, since: null,
     });
+  });
+});
+
+const now = 1_000_000;
+
+describe('cryptoActive', () => {
+  it('is active when provider=crypto, status=active, and time remains', () => {
+    const u = { membership: { provider: 'crypto', status: 'active', currentPeriodEnd: now + 1000 } };
+    expect(cryptoActive(u, now)).toBe(true);
+    expect(hasActiveMembership(u, now)).toBe(true);
+  });
+  it('is inactive once the paid period has ended', () => {
+    const u = { membership: { provider: 'crypto', status: 'active', currentPeriodEnd: now - 1 } };
+    expect(cryptoActive(u, now)).toBe(false);
+    expect(hasActiveMembership(u, now)).toBe(false);
+  });
+  it('summary reports the crypto provider', () => {
+    const u = { membership: { provider: 'crypto', status: 'active', interval: 'year', currentPeriodEnd: now + 1000, since: now } };
+    const s = membershipSummary(u, now);
+    expect(s.active).toBe(true);
+    expect(s.provider).toBe('crypto');
+    expect(s.interval).toBe('year');
   });
 });
