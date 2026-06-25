@@ -111,4 +111,15 @@ describe('crypto webhook', () => {
     expect(store._users.u1.membership.interval).toBe('3mo');
     expect(store._users.u1.membership.currentPeriodEnd).toBeGreaterThan(Date.now());
   });
+
+  it('membership grant is idempotent for the same order (no double-stack)', async () => {
+    const { cp, store, orders } = make();
+    await orders.create({ id: 'm2', userId: 'u1', kind: 'membership', termMonths: 3, coin: 'LTC', amount: '1.0', status: 'waiting', confirmations: 6 });
+    const order = orders.get('m2');
+    await cp._test.grantMembership(order);
+    const end1 = store._users.u1.membership.currentPeriodEnd;
+    await cp._test.grantMembership(order); // same order again — must NOT stack
+    const end2 = store._users.u1.membership.currentPeriodEnd;
+    expect(end2).toBe(end1);
+  });
 });
