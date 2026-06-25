@@ -181,6 +181,14 @@ describe('crypto checkout', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('config reports enabled coins', async () => {
+    const { cp } = makeWithWatcher({ id: 'u1', profileComplete: true, products: [] });
+    const res = fakeRes();
+    await cp._test.config({ method: 'GET', headers: {} }, res);
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ enabled: true, coins: ['ETH'] });
+  });
+
   it('reports order status', async () => {
     const { cp, orders } = makeWithWatcher({ id: 'u1', profileComplete: true, products: [] });
     await orders.create({ id: 'o9', userId: 'u1', kind: 'product', productId: 'p1', coin: 'ETH', amount: '0.1', address: '0xabc', status: 'waiting', expiresAt: 2_000_000 });

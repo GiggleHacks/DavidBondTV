@@ -10,6 +10,7 @@
 // re-shows the sales offer — at worst it shows a "finalizing" state with a
 // "Check again" button.
 import { fetchMe, postJSON } from '/js/account.js';
+import { startCryptoCheckout, cryptoCoinOptions } from '/js/crypto-checkout.js';
 import { deriveBillingView } from '/js/billing-view.js';
 import { initTheme } from '/js/theme.js';
 import { ADMIN_PATHS } from '/js/admin-paths.js';
@@ -245,6 +246,24 @@ async function recheck(btn) {
   }
 }
 
+// Reveal the crypto purchase block only when the server has coins enabled.
+// Crypto membership is a single prepaid 3-month block (no month/year toggle).
+async function setupCrypto() {
+  const box = $('crypto-box');
+  const sel = $('crypto-coin');
+  const btn = $('crypto-btn');
+  const mount = $('crypto-mount');
+  if (!box || !sel || !btn || !mount) return;
+  const coins = await cryptoCoinOptions();
+  if (!coins.length) return;
+  sel.innerHTML = coins.map((c) => `<option value="${c}">${c}</option>`).join('');
+  box.hidden = false;
+  btn.addEventListener('click', () => {
+    btn.disabled = true;
+    startCryptoCheckout({ kind: 'membership', coin: sel.value }, mount);
+  });
+}
+
 async function render() {
   $('pay-card').addEventListener('click', (e) => startCheckout(primaryInterval, e.currentTarget));
   const payYear = $('pay-year');
@@ -288,6 +307,7 @@ async function render() {
     return;
   }
   showPlans();
+  setupCrypto();
 }
 
 render();

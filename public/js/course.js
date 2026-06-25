@@ -5,6 +5,7 @@
 // (the video they wanted) or into the course view.
 import { fetchMe } from '/js/account.js';
 import { startPurchase, pollOwnership, fmtMoney } from '/js/course-buy.js';
+import { startCryptoCheckout, cryptoCoinOptions } from '/js/crypto-checkout.js';
 import { initTheme } from '/js/theme.js';
 
 initTheme();
@@ -55,7 +56,26 @@ function paintBranding(product) {
 
 function showOwned() {
   $('buy-btn').hidden = true;
+  const box = $('crypto-box');
+  if (box) box.hidden = true;
   $('owned-view').hidden = false;
+}
+
+// Reveal the "Pay with crypto" picker only when the server has coins enabled.
+async function setupCrypto(product) {
+  const box = $('crypto-box');
+  const sel = $('crypto-coin');
+  const btn = $('crypto-btn');
+  const mount = $('crypto-mount');
+  if (!box || !sel || !btn || !mount) return;
+  const coins = await cryptoCoinOptions();
+  if (!coins.length) return;
+  sel.innerHTML = coins.map((c) => `<option value="${c}">${c}</option>`).join('');
+  box.hidden = false;
+  btn.addEventListener('click', () => {
+    btn.disabled = true;
+    startCryptoCheckout({ kind: 'product', productId: product.id, coin: sel.value }, mount);
+  });
 }
 
 // Load the course trailer (a free, published video) into the hero player. Pulls
@@ -101,6 +121,7 @@ async function render() {
   const buy = $('buy-btn');
   buy.textContent = (product.sales && product.sales.ctaLabel) || `Purchase ${fmtMoney(product.price, product.currency)}`;
   buy.addEventListener('click', () => startPurchase(product, next, buy));
+  setupCrypto(product);
 
   if (status === 'cancel') banner('Checkout canceled — no charge was made.', 'warn');
 
