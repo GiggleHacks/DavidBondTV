@@ -123,3 +123,70 @@ describe('crypto webhook', () => {
     expect(end2).toBe(end1);
   });
 });
+
+function jsonReq(bodyObj, user) {
+  const raw = JSON.stringify(bodyObj);
+  const req = Readable.from([Buffer.from(raw)]);
+  req.method = 'POST'; req.headers = {}; req._user = user;
+  return req;
+}
+
+describe('crypto checkout', () => {
+  function makeWithWatcher(user) {
+    const store = fakeStore({ u1: { id: 'u1', email: 'a@b.c', username: 'amy', profileComplete: true, products: [] } });
+    const orders = fakeOrders();
+    const watchCalls = [];
+    const cp = createCryptoPayments({
+      store, ordersStore: orders, currentUser: () => user,
+      baseUrl: 'http://localhost', webhookSecret: SECRET,
+      watcherUrl: 'http://watcher', watcherToken: 'wtok',
+      cryptoConfig: { enabledCoins: ['ETH'], coins: { ETH: { address: '0xabc', decimals: 6, confirmations: 6 } }, orderTtlMs: 1200000, jitterMax: 100, membership: { termMonths: 3, priceUsd: 47 }, productDiscountPercent: 10 },
+      products: { getById: (id) => (id === 'p1' ? { id: 'p1', name: 'Course', slug: 'course', price: 29900, currency: 'usd', published: true } : null) },
+      pricing: { getConfig: () => ({ currency: 'usd', monthly: { amount: 1700 }, yearly: { enabled: true, amount: 12000 } }) },
+      fetchImpl: async (u2, opts) => {
+        if (String(u2).includes('/quote')) return { ok: true, json: async () => ({ coin: 'ETH', usd: 299, amount: '0.1495', rate: 2000, ts: 1 }) };
+        if (String(u2).includes('/watch')) { watchCalls.push(JSON.parse(opts.body)); return { ok: true, json: async () => ({ ok: true }) }; }
+        return { ok: false, json: async () => ({}) };
+      },
+      rng: () => 0.5, now: () => 1_000_000,
+    });
+    return { cp, store, orders, watchCalls };
+  }
+
+  it('creates a product order and registers a watch', async () => {
+    const { cp, orders, watchCalls } = makeWithWatcher({ id: 'u1', profileComplete: true, products: [] });
+    const res = fakeRes();
+    await cp._test.checkout(jsonReq({ kind: 'product', productId: 'p1', coin: 'ETH' }), res);
+    expect(res.statusCode).toBe(200);
+    const out = JSON.parse(res.body);
+    expect(out.coin).toBe('ETH');
+    expect(out.address).toBe('0xabc');
+    expect(out.amount).toMatch(/^0\.1346/); // $299 − 10% = $269.10 ÷ $2000/ETH ≈ 0.1346
+    expect(Object.keys(orders._orders)).toHaveLength(1);
+    expect(watchCalls).toHaveLength(1);
+    expect(watchCalls[0].expectedAmount).toBe(out.amount);
+  });
+
+  it('rejects an unsupported coin', async () => {
+    const { cp } = makeWithWatcher({ id: 'u1', profileComplete: true, products: [] });
+    const res = fakeRes();
+    await cp._test.checkout(jsonReq({ kind: 'product', productId: 'p1', coin: 'DOGE' }), res);
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('401s when signed out', async () => {
+    const { cp } = makeWithWatcher(null);
+    const res = fakeRes();
+    await cp._test.checkout(jsonReq({ kind: 'product', productId: 'p1', coin: 'ETH' }), res);
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('reports order status', async () => {
+    const { cp, orders } = makeWithWatcher({ id: 'u1', profileComplete: true, products: [] });
+    await orders.create({ id: 'o9', userId: 'u1', kind: 'product', productId: 'p1', coin: 'ETH', amount: '0.1', address: '0xabc', status: 'waiting', expiresAt: 2_000_000 });
+    const res = fakeRes();
+    await cp._test.orderStatus({ method: 'GET', headers: {} }, res, 'o9', { id: 'u1' });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).status).toBe('waiting');
+  });
+});
