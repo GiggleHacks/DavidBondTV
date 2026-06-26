@@ -74,7 +74,7 @@ async function setupCrypto(product) {
   box.hidden = false;
   btn.addEventListener('click', () => {
     btn.disabled = true;
-    startCryptoCheckout({ kind: 'product', productId: product.id, coin: sel.value }, mount, btn);
+    startCryptoCheckout({ kind: 'product', productId: product.id, coin: sel.value }, mount);
   });
 }
 
