@@ -1,14 +1,17 @@
 // Paid-membership page (membership.html): shows the premium offer to non-members
-// (→ Stripe Checkout) and a "Manage billing" button to members (→ Stripe Customer
-// Portal).
+// and a "Manage billing" button to members.
+//
+// The "Card" method points at WHOP (the card rail that replaced suspended Stripe):
+// clicking it creates a WHOP checkout server-side and redirects to WHOP's hosted
+// page. "Ethereum" is the self-hosted crypto rail. Either may be hidden if the
+// server reports it disabled.
 //
 // Flow: the page may carry ?next=<video> so that after a successful checkout we
-// send the user straight back to the content they wanted. Stripe redirects to
-// ?status=success&session_id=<cs_…>&next=…. We activate SYNCHRONOUSLY by posting
-// that session id to /api/pay/stripe/reconcile (so activation never depends on
-// the webhook), then fall back to a short poll. A successful payment NEVER
-// re-shows the sales offer — at worst it shows a "finalizing" state with a
-// "Check again" button.
+// send the user straight back to the content they wanted. WHOP redirects to
+// ?status=success&next=…. We activate SYNCHRONOUSLY by posting to
+// /api/pay/whop/reconcile (so activation never depends on the webhook), then fall
+// back to a short poll. A successful payment NEVER re-shows the sales offer — at
+// worst it shows a "finalizing" state with a "Check again" button.
 import { fetchMe, postJSON } from '/js/account.js';
 import { startCryptoCheckout, cryptoConfig } from '/js/crypto-checkout.js';
 import { deriveBillingView } from '/js/billing-view.js';
@@ -22,7 +25,6 @@ const params = new URLSearchParams(location.search);
 const rawNext = params.get('next');
 const next = (rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')) ? rawNext : '';
 const sessionId = params.get('session_id') || '';
-let primaryInterval = 'month';
 // Card rail availability (server may hard-disable it, e.g. Stripe suspended). When
 // false the Card option is hidden and Ethereum becomes the sole payment method.
 let cardEnabled = true;
@@ -105,6 +107,38 @@ async function reconcileSession() {
   return r && r.ok ? r.data : null;
 }
 
+/**
+ * WHOP redirect carries no session id, so on return we ask the server to pull the
+ * buyer's membership straight from WHOP and grant it — the webhook's safety net.
+ */
+async function reconcileWhop() {
+  const r = await postJSON('/api/pay/whop/reconcile', {});
+  return r && r.ok ? r.data : null;
+}
+
+/** Start a WHOP checkout for the membership plan and redirect to the hosted page. */
+async function startWhopCheckout(btn) {
+  setMsg('');
+  btn.disabled = true;
+  const r = await postJSON('/api/pay/whop/checkout', { next });
+  if (r.ok && r.data.url) { location.href = r.data.url; return; }
+  if (r.status === 401) {
+    // Not signed in → sign up/in first, then return to this offer (with next intact).
+    const here = location.pathname + location.search;
+    try { localStorage.setItem('dbtv_after_auth', here); } catch { /* ignore */ }
+    location.href = `/signup.html?next=${encodeURIComponent(here)}`;
+    return;
+  }
+  if (r.status === 403) { location.href = `/profile-setup.html`; return; }
+  if (r.status === 409) {
+    setMsg('You already have an active membership.', 'ok');
+    btn.disabled = false;
+    return;
+  }
+  setMsg((r.data && r.data.error) || 'Could not start checkout. Please try again.', 'error');
+  btn.disabled = false;
+}
+
 /** Surface the VIP Telegram join button for eligible members (auto-prompt). */
 async function maybeShowTelegram() {
   const btn = $('tg-join');
@@ -129,27 +163,6 @@ function enterMember(me, { celebrate } = {}) {
   if (celebrate) showBanner('You’re all set — welcome to David Bond TV membership! 🎉', 'ok');
   showMember(me);
   maybeShowTelegram();
-}
-
-async function startCheckout(interval, btn) {
-  setMsg('');
-  btn.disabled = true;
-  const couponCode = $('coupon-code') ? $('coupon-code').value.trim() : '';
-  const r = await postJSON('/api/pay/stripe/checkout', { interval, next, couponCode });
-  if (r.ok && r.data.url) { location.href = r.data.url; return; }
-  if (r.status === 401) {
-    // Not signed in → sign up/in first, then return to this offer (with next intact).
-    const here = location.pathname + location.search;
-    try { localStorage.setItem('dbtv_after_auth', here); } catch { /* ignore */ }
-    location.href = `/signup.html?next=${encodeURIComponent(here)}`;
-    return;
-  }
-  if (r.status === 403) {
-    location.href = `/profile-setup.html`;
-    return;
-  }
-  setMsg(r.data.error || 'Could not start checkout. Please try again.', 'error');
-  btn.disabled = false;
 }
 
 async function openPortal(btn) {
@@ -217,24 +230,19 @@ function setYearly(year, month) {
 
 async function applyConfig() {
   let cfg = null;
-  try { cfg = await (await fetch('/api/pay/stripe/config')).json(); } catch { /* default below */ }
+  try { cfg = await (await fetch('/api/pay/whop/config')).json(); } catch { /* default below */ }
   // cardEnabled is the explicit card-rail flag; fall back to legacy `enabled`.
   cardEnabled = !!(cfg && (cfg.cardEnabled !== undefined ? cfg.cardEnabled : cfg.enabled));
   // Card off: don't paint card pricing or show a discouraging banner here — ETH
   // may still be available; setupPaymentMethods() decides the final layout.
   if (!cardEnabled) return;
-  const prices = cfg.prices || {};
-  // Headline price: prefer monthly (with optional intro); fall back to yearly.
-  if (cfg.intervals.month && prices.month) {
-    primaryInterval = 'month';
-    setCardPricing(prices.month, cfg.intro);
-    setYearly(cfg.intervals.year ? prices.year : null, prices.month);
-  } else if (cfg.intervals.year && prices.year) {
-    primaryInterval = 'year';
-    $('price-amount').textContent = fmtMoney(prices.year.amount, prices.year.currency);
-    $('price-per').textContent = '/ yr';
-    setYearly(null, null);
+  // WHOP exposes a single recurring price (USD dollars). Show it as the monthly
+  // card headline; the plan is monthly, so the yearly option is hidden.
+  const price = cfg && typeof cfg.price === 'number' ? cfg.price : null;
+  if (price !== null) {
+    setCardPricing({ amount: Math.round(price * 100), currency: cfg.currency || 'usd' }, null);
   }
+  setYearly(null, null);
 }
 
 async function recheck(btn) {
@@ -370,9 +378,9 @@ async function setupPaymentMethods() {
 }
 
 async function render() {
-  $('pay-card').addEventListener('click', (e) => startCheckout(primaryInterval, e.currentTarget));
-  const payYear = $('pay-year');
-  if (payYear) payYear.addEventListener('click', (e) => startCheckout('year', e.currentTarget));
+  // The Card button now starts a WHOP checkout (Stripe is suspended). WHOP's plan
+  // is monthly-only, so the yearly button isn't shown.
+  $('pay-card').addEventListener('click', (e) => startWhopCheckout(e.currentTarget));
   $('manage-btn').addEventListener('click', (e) => openPortal(e.currentTarget));
   $('recheck-btn')?.addEventListener('click', (e) => recheck(e.currentTarget));
 
@@ -384,8 +392,10 @@ async function render() {
 
   if (status === 'success' && !isActive(me)) {
     showBanner('Payment received — activating your membership…', 'ok');
-    // 1) Synchronous activation tied to THIS user's checkout session (no webhook
-    //    dependency). 2) Re-read. 3) Short poll as a backstop.
+    // 1) Synchronous activation, no webhook dependency: WHOP first (its redirect
+    //    carries no session id), then the legacy Stripe session if one is present.
+    //    2) Re-read. 3) Short poll as a backstop while the webhook catches up.
+    await reconcileWhop();
     await reconcileSession();
     me = await fetchMe();
     if (!isActive(me)) me = await pollUntilActive(4);

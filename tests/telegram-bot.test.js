@@ -118,6 +118,26 @@ describe('formatMessage', () => {
     expect(msg).not.toContain('—');
   });
 
+  it('formats whop_membership with who / plan / charged amount', () => {
+    const msg = n._test.formatMessage('whop_membership', {
+      username: 'Eve', email: 'eve@x.com', interval: 'month', amount: 100, currency: 'usd',
+    });
+    expect(msg).toContain('WHOP');
+    expect(msg).toContain('Eve');
+    expect(msg).toContain('eve@x.com');
+    expect(msg).toContain('month membership');
+    expect(msg).toContain('$1.00');         // charged amount (cents → dollars)
+    expect(msg).not.toMatch(/stripe/i);     // WHOP sale must NOT mention Stripe
+  });
+
+  it('whop_membership tolerates a missing amount', () => {
+    const msg = n._test.formatMessage('whop_membership', {
+      username: 'Eve', email: 'eve@x.com', interval: 'month', amount: null, currency: 'usd',
+    });
+    expect(msg).toContain('WHOP');
+    expect(msg).toContain('Eve');
+  });
+
   it('handles unknown event type gracefully', () => {
     const msg = n._test.formatMessage('unknown_event', { foo: 'bar' });
     expect(msg).toContain('unknown_event');

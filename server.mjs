@@ -24,6 +24,7 @@ import { createPaymentsStore } from './lib/payments-store.js';
 import { createStripePayments } from './lib/stripe-payments.js';
 import { createCryptoOrdersStore } from './lib/crypto-orders-store.js';
 import { createCryptoPayments } from './lib/crypto-payments.js';
+import { createWhopPayments } from './lib/whop-payments.js';
 import { loadCryptoConfig } from './lib/crypto-config.js';
 import { createTelegramNotifier, createTelegramGroupGate } from './lib/telegram-bot.js';
 import { announceBoot } from './lib/deploy-notify.mjs';
@@ -257,6 +258,26 @@ const cryptoPayments = createCryptoPayments({
   telegramNotifier,
 });
 console.log(`[crypto] enabled coins: ${cryptoConfig.enabledCoins.join(', ') || '(none)'}`);
+
+// --- WHOP card rail (replaces suspended Stripe) ---
+// Third payment provider beside 'stripe' and 'crypto'. Writes the same
+// user.membership shape, so every membership gate already understands it. Ships
+// dark unless WHOP_API_KEY + WHOP_PLAN_ID are set (config reports disabled →
+// frontend hides the Card option). The webhook still verifies when its secret is set.
+const whopPayments = createWhopPayments({
+  store: accounts.store,
+  currentUser: accounts.currentUser,
+  paymentsStore,
+  baseUrl: BASE_URL,
+  apiKey: process.env.WHOP_API_KEY,
+  webhookSecret: process.env.WHOP_WEBHOOK_SECRET,
+  planId: process.env.WHOP_PLAN_ID,
+  companyId: process.env.WHOP_COMPANY_ID || null,
+  // Fallback price (USD dollars) for the Card headline if the live plan lookup fails.
+  priceUsd: process.env.WHOP_PRICE_USD ? Number(process.env.WHOP_PRICE_USD) : null,
+  telegramNotifier,
+});
+console.log(`[whop] card rail: ${whopPayments.configured ? 'ENABLED' : 'disabled (no WHOP_API_KEY/WHOP_PLAN_ID)'}`);
 
 // --- Private Telegram group access gate ---
 // Paid users get a one-time, single-use invite to a private Telegram group; the
@@ -2340,6 +2361,10 @@ async function handleApi(req, res, ctx) {
   // Self-hosted crypto payments (/api/pay/crypto/*). Public webhook (HMAC-signed
   // by the watcher) shares the pre-accounts slot like the Stripe webhook.
   if (await cryptoPayments.handle(req, res, url)) return true;
+
+  // WHOP card payments (/api/pay/whop/*). Public webhook (Standard-Webhooks signed)
+  // shares the pre-accounts slot like the Stripe/crypto webhooks.
+  if (await whopPayments.handle(req, res, url)) return true;
 
   // Private Telegram group gate (/api/telegram/*). The bot webhook is session-less
   // (authenticated by ?token=), so it shares the pre-accounts slot; the link/status
