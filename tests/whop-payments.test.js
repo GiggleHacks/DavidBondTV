@@ -70,8 +70,8 @@ function make(overrides = {}) {
   const tg = []; const mails = []; const fetchCalls = [];
   const fetchImpl = overrides.fetchImpl || (async (url, opts) => {
     fetchCalls.push({ url: String(url), opts });
-    if (String(url).includes('/checkout-configurations')) {
-      return { ok: true, json: async () => ({ purchase_url: 'https://whop.com/checkout/plan_x/sess', id: 'ch_1' }) };
+    if (String(url).includes('/checkout_sessions')) {
+      return { ok: true, json: async () => ({ purchase_url: 'https://whop.com/checkout/plan_x/?session=ch_1', id: 'ch_1', redirect_url: JSON.parse(opts.body).redirect_url, metadata: JSON.parse(opts.body).metadata }) };
     }
     if (String(url).includes('/plans/')) {
       return { ok: true, json: async () => ({ initial_price: 1, base_currency: 'usd', billing_period: 30 }) };
@@ -239,9 +239,10 @@ describe('whop checkout', () => {
     const res = fakeRes();
     await wp._test.checkout(jsonReq({ next: '/videos' }), res);
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).url).toBe('https://whop.com/checkout/plan_x/sess');
-    const call = fetchCalls.find((c) => c.url.includes('/checkout-configurations'));
+    expect(JSON.parse(res.body).url).toBe('https://whop.com/checkout/plan_x/?session=ch_1');
+    const call = fetchCalls.find((c) => c.url.includes('/checkout_sessions'));
     expect(call).toBeTruthy();
+    expect(call.url).toContain('/api/v2/checkout_sessions'); // v2 endpoint, not v1
     const sent = JSON.parse(call.opts.body);
     expect(sent.plan_id).toBe('plan_x');
     expect(sent.metadata.userId).toBe('u1');
@@ -268,7 +269,7 @@ describe('whop checkout', () => {
     const user = { id: 'u1', email: 'a@b.c', profileComplete: true };
     const { wp } = make({
       user,
-      fetchImpl: async (url) => { if (String(url).includes('/checkout-configurations')) throw new Error('boom'); return { ok: false, json: async () => ({}) }; },
+      fetchImpl: async (url) => { if (String(url).includes('/checkout_sessions')) throw new Error('boom'); return { ok: false, json: async () => ({}) }; },
     });
     const res = fakeRes();
     await wp._test.checkout(jsonReq({}), res);
