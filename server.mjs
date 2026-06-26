@@ -229,6 +229,8 @@ const stripePayments = createStripePayments({
   pricing,
   coupons,
   telegramNotifier,
+  // Maintenance kill-switch for NEW charges (existing members keep access).
+  paymentsFrozen: process.env.PAYMENTS_FROZEN === '1',
 });
 
 // --- Private Telegram group access gate ---

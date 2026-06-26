@@ -210,9 +210,20 @@ function setYearly(year, month) {
   }
 }
 
+/** Disable both CTAs and label them as under maintenance (payments frozen). */
+function showMaintenance() {
+  const card = $('pay-card');
+  card.disabled = true;
+  card.textContent = 'Payments Under Maintenance';
+  const year = $('pay-year');
+  if (year) year.disabled = true;
+  showBanner('Payments are temporarily under maintenance. Existing members keep full access — new sign-ups are paused for a short while. Please check back soon.', 'warn');
+}
+
 async function applyConfig() {
   let cfg = null;
   try { cfg = await (await fetch('/api/pay/stripe/config')).json(); } catch { /* default below */ }
+  if (cfg && cfg.maintenance) { showMaintenance(); return; }
   if (!cfg || !cfg.enabled) {
     $('pay-card').disabled = true;
     showBanner('Memberships aren’t available just yet — check back soon.', 'warn');

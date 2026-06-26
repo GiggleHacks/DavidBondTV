@@ -422,6 +422,47 @@ describe('checkout → dynamic subscription pricing', () => {
   });
 });
 
+describe('payments frozen (maintenance kill-switch)', () => {
+  const fakeRes = () => ({
+    statusCode: null, body: null,
+    writeHead(s) { this.statusCode = s; },
+    end(p) { this.body = p; },
+  });
+
+  it('checkout refuses new charges with 503 + maintenance flag and never calls Stripe', async () => {
+    let stripeCalled = false;
+    const user = { id: 'u1', profileComplete: true, stripeCustomerId: 'cus_1', email: 'a@b.com' };
+    const sp = createStripePayments({
+      store: fakeStore({ u1: user }), paymentsStore: fakePayments(),
+      currentUser: () => user, baseUrl: 'http://x', secretKey: 'sk_test', webhookSecret: SECRET,
+      pricing: { getConfig: () => ({ currency: 'usd', monthly: { amount: 1700, introAmount: 0 }, yearly: { enabled: true, amount: 12000 } }) },
+      paymentsFrozen: true,
+      fetchImpl: async () => { stripeCalled = true; return { ok: true, json: async () => ({}) }; },
+    });
+    const req = Readable.from([Buffer.from(JSON.stringify({ interval: 'month' }))]);
+    const res = fakeRes();
+    await sp._test.checkout(req, res);
+    expect(res.statusCode).toBe(503);
+    expect(JSON.parse(res.body)).toMatchObject({ maintenance: true });
+    expect(stripeCalled).toBe(false);
+  });
+
+  it('config reports enabled:false + maintenance:true when frozen', async () => {
+    const sp = createStripePayments({
+      store: fakeStore(), paymentsStore: fakePayments(), currentUser: () => null,
+      baseUrl: 'http://x', secretKey: 'sk_test', webhookSecret: SECRET,
+      priceMonthly: 'price_m', priceYearly: 'price_y',
+      pricing: { publicConfig: () => ({ currency: 'usd', intervals: { month: true, year: true }, prices: { month: { amount: 1700, currency: 'usd' }, year: null }, intro: null }) },
+      paymentsFrozen: true,
+    });
+    const res = fakeRes();
+    await sp._test.config({}, res);
+    const body = JSON.parse(res.body);
+    expect(body.enabled).toBe(false);
+    expect(body.maintenance).toBe(true);
+  });
+});
+
 describe('configured flag', () => {
   it('is false without keys/prices', () => {
     const sp = createStripePayments({
