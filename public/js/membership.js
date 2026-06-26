@@ -10,7 +10,7 @@
 // re-shows the sales offer — at worst it shows a "finalizing" state with a
 // "Check again" button.
 import { fetchMe, postJSON } from '/js/account.js';
-import { startCryptoCheckout, cryptoCoinOptions } from '/js/crypto-checkout.js';
+import { startCryptoCheckout, cryptoConfig } from '/js/crypto-checkout.js';
 import { deriveBillingView } from '/js/billing-view.js';
 import { initTheme } from '/js/theme.js';
 import { ADMIN_PATHS } from '/js/admin-paths.js';
@@ -168,13 +168,10 @@ async function pollUntilActive(tries = 6) {
   return fetchMe();
 }
 
-// Crypto is priced 20% below the card price (paid direct, no processor fees).
-const CRYPTO_DISCOUNT = 0.20;
-
 /**
  * Render the monthly card headline from live config. With an intro price we show
  * "<intro> first month" + a "then <recurring>/mo" note; otherwise the flat
- * monthly price. The crypto card always reflects the recurring monthly price.
+ * monthly price.
  */
 function setCardPricing(month, intro) {
   const recurring = month.amount;
@@ -189,9 +186,6 @@ function setCardPricing(month, intro) {
     $('price-per').textContent = '/ mo';
     if (sub) { sub.textContent = ''; sub.hidden = true; }
   }
-  const cryptoAmt = Math.round(recurring * (1 - CRYPTO_DISCOUNT));
-  const cryptoPrice = $('crypto-price');
-  if (cryptoPrice) cryptoPrice.textContent = fmtMoney(cryptoAmt, cur);
 }
 
 /** Show/populate the yearly option (with its discount vs 12× monthly), or hide it. */
@@ -203,8 +197,15 @@ function setYearly(year, month) {
   $('year-amount').textContent = fmtMoney(year.amount, year.currency);
   const saveEl = $('year-save');
   if (saveEl && month && month.amount > 0 && year.amount < month.amount * 12) {
-    const pct = Math.round((1 - year.amount / (month.amount * 12)) * 100);
-    saveEl.textContent = `save ${pct}%`;
+    // Express the discount as "N months free" when it lands within ~half a month
+    // of a whole-month saving (the usual framing); otherwise fall back to a %.
+    const monthsFree = (month.amount * 12 - year.amount) / month.amount;
+    const rounded = Math.round(monthsFree);
+    if (rounded >= 1 && Math.abs(monthsFree - rounded) <= 0.5) {
+      saveEl.textContent = `${rounded} month${rounded === 1 ? '' : 's'} free`;
+    } else {
+      saveEl.textContent = `save ${Math.round((1 - year.amount / (month.amount * 12)) * 100)}%`;
+    }
     saveEl.hidden = false;
   } else if (saveEl) {
     saveEl.hidden = true;
@@ -246,22 +247,101 @@ async function recheck(btn) {
   }
 }
 
-// Reveal the crypto purchase block only when the server has coins enabled.
-// Crypto membership is a single prepaid 3-month block (no month/year toggle).
-async function setupCrypto() {
-  const box = $('crypto-box');
-  const sel = $('crypto-coin');
-  const btn = $('crypto-btn');
+// USD formatter for crypto prepay plans (priceUsd comes as a plain number).
+function fmtUsd(n) {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency', currency: 'USD',
+      minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
+    }).format(n);
+  } catch { return `$${Number(n).toFixed(2)}`; }
+}
+
+/** Per-plan framing copy ("$19.69 × 3", "2 months free") — display only. */
+function ethPlanFraming(plan) {
+  if (plan.key === '3mo') {
+    const per = plan.priceUsd / (plan.months || 3);
+    return { meta: `${fmtUsd(Number(per.toFixed(2)))} × ${plan.months || 3} months · prepaid`, save: '' };
+  }
+  if (plan.key === 'year') {
+    return { meta: 'Prepaid for 12 months', save: '2 months free' };
+  }
+  return { meta: `Prepaid for ${plan.months} months`, save: '' };
+}
+
+/**
+ * Switch the active payment method tile + reveal its flow panel. `which` is
+ * 'card' | 'eth'. The non-selected flow is hidden so only one is ever live.
+ */
+function selectMethod(which) {
+  const cardTile = $('method-card');
+  const ethTile = $('method-eth');
+  const cardFlow = $('flow-card');
+  const ethFlow = $('flow-eth');
+  const on = (tile, sel) => { if (tile) { tile.classList.toggle('selected', sel); tile.setAttribute('aria-checked', sel ? 'true' : 'false'); } };
+  on(cardTile, which === 'card');
+  on(ethTile, which === 'eth');
+  if (cardFlow) { cardFlow.hidden = which !== 'card'; if (which === 'card') cardFlow.classList.add('mb-flow-in'); }
+  if (ethFlow) { ethFlow.hidden = which !== 'eth'; if (which === 'eth') ethFlow.classList.add('mb-flow-in'); }
+}
+
+/**
+ * Build the ETH plan chooser from /api/pay/crypto/config and wire each plan to
+ * start a crypto order. Only reveals the Ethereum method tile when the server
+ * has crypto enabled with ETH in its coin list.
+ */
+async function setupPaymentMethods() {
+  // Card is always available (Stripe gates itself in applyConfig); wire its tile.
+  $('method-card')?.addEventListener('click', () => selectMethod('card'));
+  // Default-select Card so a flow is visible on load.
+  selectMethod('card');
+
+  const cfg = await cryptoConfig();
+  const ethEnabled = cfg && Array.isArray(cfg.coins) && cfg.coins.includes('ETH');
+  if (!ethEnabled) return;
+
+  const ethTile = $('method-eth');
+  const plansEl = $('eth-plans');
   const mount = $('crypto-mount');
-  if (!box || !sel || !btn || !mount) return;
-  const coins = await cryptoCoinOptions();
-  if (!coins.length) return;
-  sel.innerHTML = coins.map((c) => `<option value="${c}">${c}</option>`).join('');
-  box.hidden = false;
-  btn.addEventListener('click', () => {
-    btn.disabled = true;
-    startCryptoCheckout({ kind: 'membership', coin: sel.value }, mount, btn);
-  });
+  if (!ethTile || !plansEl || !mount) return;
+
+  const plans = Array.isArray(cfg.membershipPlans) ? cfg.membershipPlans : [];
+  if (!plans.length) return;
+
+  const couponVal = () => ($('coupon-code') ? $('coupon-code').value.trim() : '');
+
+  // Re-open the plan choice (clears the invoice) — used by the panel's "Start over".
+  const showPlanChoice = () => { mount.textContent = ''; plansEl.hidden = false; };
+
+  const startOrder = (plan) => {
+    plansEl.hidden = true;
+    startCryptoCheckout(
+      { kind: 'membership', membershipPlan: plan.key, coin: 'ETH', couponCode: couponVal() },
+      mount,
+      showPlanChoice,
+    );
+  };
+
+  plansEl.textContent = '';
+  for (const plan of plans) {
+    const { meta, save } = ethPlanFraming(plan);
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'mb-eth-plan';
+    const left = document.createElement('span'); left.className = 'mb-eth-plan-l';
+    const name = document.createElement('span'); name.className = 'mb-eth-plan-name'; name.textContent = plan.label || `${plan.months} months`;
+    const sub = document.createElement('span'); sub.className = 'mb-eth-plan-meta'; sub.textContent = meta;
+    left.append(name, sub);
+    const right = document.createElement('span'); right.className = 'mb-eth-plan-r';
+    if (save) { const tag = document.createElement('span'); tag.className = 'mb-eth-plan-save'; tag.textContent = save; right.append(tag); }
+    const price = document.createElement('span'); price.className = 'mb-eth-plan-price'; price.textContent = fmtUsd(plan.priceUsd);
+    right.append(price);
+    btn.append(left, right);
+    btn.addEventListener('click', () => startOrder(plan));
+    plansEl.append(btn);
+  }
+
+  ethTile.hidden = false;
+  ethTile.addEventListener('click', () => { selectMethod('eth'); showPlanChoice(); });
 }
 
 async function render() {
@@ -307,7 +387,7 @@ async function render() {
     return;
   }
   showPlans();
-  setupCrypto();
+  setupPaymentMethods();
 }
 
 render();
