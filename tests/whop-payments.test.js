@@ -74,7 +74,7 @@ function make(overrides = {}) {
       return { ok: true, json: async () => ({ purchase_url: 'https://whop.com/checkout/plan_x/?session=ch_1', id: 'ch_1', redirect_url: JSON.parse(opts.body).redirect_url, metadata: JSON.parse(opts.body).metadata }) };
     }
     if (String(url).includes('/plans/')) {
-      return { ok: true, json: async () => ({ initial_price: 1, base_currency: 'usd', billing_period: 30 }) };
+      return { ok: true, json: async () => ({ initial_price: 28, renewal_price: 19.69, base_currency: 'usd', billing_period: 30 }) };
     }
     if (String(url).includes('/memberships')) {
       return { ok: true, json: async () => ({ data: overrides.memberships || [] }) };
@@ -321,7 +321,8 @@ describe('whop config', () => {
     const cfg = JSON.parse(res.body);
     expect(cfg.enabled).toBe(true);
     expect(cfg.cardEnabled).toBe(true);
-    expect(cfg.price).toBe(1);          // initial_price from the plan lookup
+    expect(cfg.price).toBe(28);            // initial_price (first charge / signup)
+    expect(cfg.renewalPrice).toBe(19.69);  // ongoing monthly
     expect(cfg.currency).toBe('usd');
     expect(cfg.interval).toBe('month');
   });

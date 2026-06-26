@@ -193,14 +193,17 @@ function setCardPricing(month, intro) {
   const recurring = month.amount;
   const cur = month.currency;
   const sub = $('price-sub');
-  if (intro && intro.amount > 0) {
-    $('price-amount').textContent = fmtMoney(intro.amount, cur);
-    $('price-per').textContent = (intro.label || 'first month').toLowerCase();
-    if (sub) { sub.textContent = `then ${fmtMoney(recurring, cur)}/mo`; sub.hidden = false; }
+  // Lead with the ongoing monthly price; when the first charge differs (WHOP bills a
+  // higher first month), note it accurately underneath instead of mislabeling it /mo.
+  $('price-amount').textContent = fmtMoney(recurring, cur);
+  $('price-per').textContent = '/ mo';
+  if (!sub) return;
+  if (intro && intro.amount > 0 && intro.amount !== recurring) {
+    sub.textContent = `${fmtMoney(intro.amount, cur)} for your first month, then ${fmtMoney(recurring, cur)}/mo`;
+    sub.hidden = false;
   } else {
-    $('price-amount').textContent = fmtMoney(recurring, cur);
-    $('price-per').textContent = '/ mo';
-    if (sub) { sub.textContent = ''; sub.hidden = true; }
+    sub.textContent = '';
+    sub.hidden = true;
   }
 }
 
@@ -236,11 +239,17 @@ async function applyConfig() {
   // Card off: don't paint card pricing or show a discouraging banner here — ETH
   // may still be available; setupPaymentMethods() decides the final layout.
   if (!cardEnabled) return;
-  // WHOP exposes a single recurring price (USD dollars). Show it as the monthly
-  // card headline; the plan is monthly, so the yearly option is hidden.
-  const price = cfg && typeof cfg.price === 'number' ? cfg.price : null;
-  if (price !== null) {
-    setCardPricing({ amount: Math.round(price * 100), currency: cfg.currency || 'usd' }, null);
+  // WHOP bills a higher first charge ($28) then the recurring monthly ($19.69). Lead
+  // with the recurring price; pass the first charge as the "intro" so the sub-line
+  // reads "$28 for your first month, then $19.69/mo". The plan is monthly → no yearly.
+  const cur = cfg.currency || 'usd';
+  const first = cfg && typeof cfg.price === 'number' ? cfg.price : null;          // first charge
+  const recurring = cfg && typeof cfg.renewalPrice === 'number' ? cfg.renewalPrice : first; // ongoing
+  if (recurring !== null) {
+    setCardPricing(
+      { amount: Math.round(recurring * 100), currency: cur },
+      (first !== null && first !== recurring) ? { amount: Math.round(first * 100) } : null,
+    );
   }
   setYearly(null, null);
 }
@@ -268,16 +277,25 @@ function fmtUsd(n) {
   } catch { return `$${Number(n).toFixed(2)}`; }
 }
 
-/** Per-plan framing copy ("$19.69 × 3", "2 months free") — display only. */
-function ethPlanFraming(plan) {
-  if (plan.key === '3mo') {
-    const per = plan.priceUsd / (plan.months || 3);
-    return { meta: `${fmtUsd(Number(per.toFixed(2)))} × ${plan.months || 3} months · prepaid`, save: '' };
+/**
+ * Per-plan marketing framing (display only). `baseMonthly` is the cheapest per-month
+ * rate across plans (the 3-month); the annual's "N months free" + dollar saving are
+ * derived from it so the numbers are always honest and self-consistent.
+ */
+function ethPlanFraming(plan, baseMonthly) {
+  const months = plan.months || 1;
+  const perMo = fmtUsd(Number((plan.priceUsd / months).toFixed(2)));
+  if (months >= 12) {
+    const saved = Math.max(0, Math.round(baseMonthly * months - plan.priceUsd));
+    const monthsFree = baseMonthly > 0 ? Math.round((baseMonthly * months - plan.priceUsd) / baseMonthly) : 0;
+    return {
+      best: true,
+      ribbon: 'Best value',
+      pill: monthsFree > 0 ? `${monthsFree} months free` : 'Best deal',
+      meta: saved > 0 ? `Just ${perMo}/mo · save $${saved}/yr` : `Just ${perMo}/mo`,
+    };
   }
-  if (plan.key === 'year') {
-    return { meta: 'Prepaid for 12 months', save: '2 months free' };
-  }
-  return { meta: `Prepaid for ${plan.months} months`, save: '' };
+  return { best: false, tag: months <= 3 ? 'Minimum' : '', meta: `${perMo}/mo · no signup fee` };
 }
 
 /**
@@ -332,31 +350,43 @@ async function setupPaymentMethods() {
   const plans = Array.isArray(cfg.membershipPlans) ? cfg.membershipPlans : [];
   if (!plans.length) return;
 
-  const couponVal = () => ($('coupon-code') ? $('coupon-code').value.trim() : '');
-
   // Re-open the plan choice (clears the invoice) — used by the panel's "Start over".
   const showPlanChoice = () => { mount.textContent = ''; plansEl.hidden = false; };
 
   const startOrder = (plan) => {
     plansEl.hidden = true;
     startCryptoCheckout(
-      { kind: 'membership', membershipPlan: plan.key, coin: 'ETH', couponCode: couponVal() },
+      { kind: 'membership', membershipPlan: plan.key, coin: 'ETH' },
       mount,
       showPlanChoice,
     );
   };
 
   plansEl.textContent = '';
-  for (const plan of plans) {
-    const { meta, save } = ethPlanFraming(plan);
+  // Standard (undiscounted) monthly rate = the HIGHEST per-month across plans, i.e. the
+  // short 3-month plan's rate. The annual is cheaper per month, so its savings are
+  // measured against this — not against itself (Math.min would zero the discount out).
+  const baseMonthly = Math.max(...plans.map((p) => p.priceUsd / (p.months || 1)));
+  // Best value (most months) first so the annual anchors the choice.
+  const ordered = plans.slice().sort((a, b) => (b.months || 0) - (a.months || 0));
+  for (const plan of ordered) {
+    const f = ethPlanFraming(plan, baseMonthly);
     const btn = document.createElement('button');
-    btn.type = 'button'; btn.className = 'mb-eth-plan';
+    btn.type = 'button';
+    btn.className = f.best ? 'mb-eth-plan mb-eth-plan--best' : 'mb-eth-plan';
+    if (f.ribbon) {
+      const ribbon = document.createElement('span');
+      ribbon.className = 'mb-eth-ribbon'; ribbon.textContent = f.ribbon;
+      btn.append(ribbon);
+    }
     const left = document.createElement('span'); left.className = 'mb-eth-plan-l';
-    const name = document.createElement('span'); name.className = 'mb-eth-plan-name'; name.textContent = plan.label || `${plan.months} months`;
-    const sub = document.createElement('span'); sub.className = 'mb-eth-plan-meta'; sub.textContent = meta;
-    left.append(name, sub);
+    const name = document.createElement('span'); name.className = 'mb-eth-plan-name';
+    name.textContent = plan.label || `${plan.months} months`;
+    const meta = document.createElement('span'); meta.className = 'mb-eth-plan-meta'; meta.textContent = f.meta;
+    left.append(name, meta);
     const right = document.createElement('span'); right.className = 'mb-eth-plan-r';
-    if (save) { const tag = document.createElement('span'); tag.className = 'mb-eth-plan-save'; tag.textContent = save; right.append(tag); }
+    if (f.pill) { const pill = document.createElement('span'); pill.className = 'mb-eth-plan-save'; pill.textContent = f.pill; right.append(pill); }
+    else if (f.tag) { const tag = document.createElement('span'); tag.className = 'mb-eth-plan-min'; tag.textContent = f.tag; right.append(tag); }
     const price = document.createElement('span'); price.className = 'mb-eth-plan-price'; price.textContent = fmtUsd(plan.priceUsd);
     right.append(price);
     btn.append(left, right);
