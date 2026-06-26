@@ -216,6 +216,39 @@ describe('handleEvent → applySubscription', () => {
     expect(payments._txns.u1[0]).toMatchObject({ kind: 'stripe.invoice.paid', amount: 500, invoiceId: 'in_1' });
   });
 
+  it('Telegram "charged today" uses the real invoice amount, not the recurring price', async () => {
+    // Regression: a $47 first charge was mis-reported as the $19.69 plan price
+    // because latest_invoice (an id string on an unexpanded sub) was ignored.
+    const store = fakeStore({ u1: { id: 'u1', email: 'r@x.com', username: 'RyanD' } });
+    const sent = [];
+    const calls = [];
+    const fetchImpl = async (url) => {
+      calls.push(url);
+      // The notifier resolves latest_invoice → real invoice (amount_paid = $47.00).
+      if (/\/invoices\/in_99$/.test(url)) {
+        return { ok: true, json: async () => ({ id: 'in_99', amount_paid: 4700, total: 4700, currency: 'usd', status: 'paid' }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    };
+    const sp = createStripePayments({
+      store, paymentsStore: fakePayments(), currentUser: () => null,
+      baseUrl: 'http://localhost', secretKey: 'sk_test', webhookSecret: SECRET,
+      priceMonthly: 'price_m', fetchImpl,
+      telegramNotifier: { notify: (type, data) => sent.push({ type, data }) },
+      mailer: { sendMembershipGrantedEmail: async () => {}, sendProductGrantedEmail: async () => {}, mailerConfigured: () => false },
+    });
+    const sub = subObject({
+      latest_invoice: 'in_99', // id string (unexpanded) — must be resolved
+      items: { data: [{ price: { id: 'price_m', recurring: { interval: 'month' }, unit_amount: 1969, currency: 'usd' } }] },
+    });
+    await sp._test.applySubscription('u1', sub);
+    const msg = sent.find((s) => s.type === 'new_subscription');
+    expect(msg).toBeTruthy();
+    expect(msg.data.chargedToday).toBe(4700);   // the real $47 paid today
+    expect(msg.data.recurringAmount).toBe(1969); // the ongoing plan price
+    expect(calls.some((u) => /\/invoices\/in_99/.test(u))).toBe(true);
+  });
+
   it('resolveUid prefers metadata, then customer lookup', () => {
     const store = fakeStore({ u1: { id: 'u1', stripeCustomerId: 'cus_9' } });
     const sp = makeSP(store, fakePayments());

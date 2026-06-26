@@ -302,32 +302,32 @@ function drawMap(mode) {
     if (mapCtl && mapCtlView !== mapView) { try { mapCtl.dispose(); } catch { /* ignore */ } mapCtl = null; }
     if (!mapCtl) {
       mapCtl = factory($('map'), markers, {
-        onHover: (m) => { $('map-hover').innerHTML = m ? trafficLabel(m) : ''; },
+        counts, mode,
+        onHover: (m) => { const h = $('map-hover'); if (h) h.innerHTML = m ? trafficLabel(m) : ''; },
         onSelect: renderTrafficDetail,
       });
       mapCtlView = mapView;
     } else {
-      mapCtl.update(markers);
+      mapCtl.update(markers, { counts, mode });
     }
   } else {
     const map = $('map');
     if (map) map.innerHTML = '<div class="globe-fallback"><p class="muted">Traffic map is unavailable. Marker details remain available below.</p></div>';
   }
-  const markerCounts = {};
-  for (const m of markers) {
-    const key = m.city ? `${m.city}, ${m.region || m.cc || ''}` : (m.cc || 'Unknown');
-    markerCounts[key] = (markerCounts[key] || 0) + 1;
-  }
-  const rows = Object.entries(markerCounts).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  // Country-level ranking: flag + full country name + count, sorted desc. Built
+  // from the per-cc rollup for the active mode (not per-marker), so it reads as a
+  // clean list of countries rather than bare codes.
+  const rows = Object.entries(counts).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
   const max = rows.length ? rows[0][1] : 1;
+  const accent = { viewers: '#38bdf8', subscribers: '#fbbf24', blocked: '#fb7185' }[mode] || '#38bdf8';
   $('country-rank').innerHTML = rows.length
-    ? rows.map(([label, n]) => `
+    ? rows.map(([cc, n]) => `
       <div class="rank-row">
-        <span>${esc(label)}</span>
-        <span class="bar"><i style="width:${Math.round((n / max) * 100)}%"></i></span>
+        <span class="rk-name">${flagIcon(cc)}<span>${esc(COUNTRY_NAME[cc] || cc)}</span></span>
+        <span class="bar"><i style="width:${Math.round((n / max) * 100)}%;background:${accent}"></i></span>
         <span class="n">${nf(n)}</span>
       </div>`).join('')
-    : '<p class="muted">No precise marker data yet for this view.</p>';
+    : '<p class="muted">No country traffic yet for this view.</p>';
   if (!markers.includes(selectedTrafficMarker)) renderTrafficDetail(markers[0] || null);
 }
 async function loadCountries(mode) {

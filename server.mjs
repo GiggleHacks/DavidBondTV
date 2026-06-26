@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { contentType, parseRange, sendJson, readBody, readRawBody, clientIp, withSecurityHeaders } from './lib/http-util.js';
 import { createChallenge, verifyChallenge } from './lib/challenge.js';
 import { createRateLimiter } from './lib/rate-limit.js';
-import { validateComment, addComment, listComments, deleteComment, readAllComments } from './lib/comments-store.js';
+import { validateComment, addComment, listComments, deleteComment, readAllComments, threadComments } from './lib/comments-store.js';
 import { getCounts, getUserVote, setVote } from './lib/reactions-store.js';
 import { adminConfigured, verifyBearerSecret } from './lib/admin-auth.js';
 import { createAdminAccount } from './lib/admin-account.js';
@@ -31,7 +31,7 @@ import {
   enqueue, getJob, listJobs, newUploadTarget, acceptableUpload, bootSweep, deleteVideo,
   editVideo, thumbTarget, setThumb, isKnownVideo, bulkAction, videoVisibility,
   releaseScheduled, sweepRejected, videoPublic, listManifest, checkDuplicate, getSystemMetrics,
-  mergeManifestEntry, backfillNotifications, reviewSource,
+  mergeManifestEntry, backfillNotifications, reviewSource, setPinned,
 } from './lib/ingest.mjs';
 import {
   listForUser as listNotifications, markSeen as markNotificationsSeen,
@@ -632,7 +632,7 @@ async function handleApi(req, res, ctx) {
       // overriding whatever was stored at post time — so a member badge appears
       // the moment they subscribe and disappears when they cancel/lapse, and an
       // ex-admin's old badge clears too.
-      const comments = listComments(COMMENTS_FILE, video)
+      const flat = listComments(COMMENTS_FILE, video)
         .filter((c) => !(c.userId && blockedIds.has(c.userId)))
         .map((c) => {
           if (!c.username) return c;
@@ -641,7 +641,10 @@ async function handleApi(req, res, ctx) {
           const member = !!(u && hasActiveMembership(u));
           return { ...c, admin, member };
         });
-      sendJson(res, 200, { comments });
+      // Group into single-level threads: roots newest-first, each with its replies
+      // (oldest-first) + replyCount. `total` counts roots AND replies for the header.
+      const comments = threadComments(flat);
+      sendJson(res, 200, { comments, total: flat.length });
     } catch {
       sendJson(res, 500, { error: 'Server error' });
     }
@@ -685,6 +688,12 @@ async function handleApi(req, res, ctx) {
       const country = geoip.lookup(ip) || undefined;
       // Optional GIF: only embed if it's a valid Tenor URL (and gifs are enabled).
       const gifUrl = (tenor.enabled && isTenorGifUrl(body.gif)) ? body.gif : undefined;
+      // Optional reply: parentId must reference a real comment on this video.
+      const parentId = typeof body.parentId === 'string' && body.parentId ? body.parentId : undefined;
+      if (parentId && !listComments(COMMENTS_FILE, video || 'bikinis').some((c) => c.id === parentId)) {
+        sendJson(res, 400, { error: 'That comment no longer exists.' });
+        return true;
+      }
 
       // Anti-spam: link/banned-word/duplicate/per-account checks (admins bypass).
       const guard = commentGuard.check({ user, ip, text });
@@ -710,6 +719,7 @@ async function handleApi(req, res, ctx) {
           avatar: avatarUrl(user.avatar, user.username),
           gifUrl,
           country,
+          parentId,
         });
       } else {
         // Anonymous: require the math challenge; give a varied generic avatar.
@@ -728,6 +738,7 @@ async function handleApi(req, res, ctx) {
           avatarSeed: crypto.randomBytes(4).toString('hex'),
           gifUrl,
           country,
+          parentId,
         });
       }
       // Ping the owner's bell about the new comment (skip the admin's own posts).
@@ -737,7 +748,7 @@ async function handleApi(req, res, ctx) {
         const snippet = String(stored.text || '').replace(/\s+/g, ' ').trim().slice(0, 120);
         notifyAdmins({
           kind: 'comment',
-          title: `New comment from ${who}`,
+          title: `New ${parentId ? 'reply' : 'comment'} from ${who}`,
           body: snippet,
           link: `/watch?v=${encodeURIComponent(video || 'bikinis')}`,
         });
@@ -1159,6 +1170,22 @@ async function handleApi(req, res, ctx) {
     return true;
   }
 
+  // POST /api/admin/pin  { id, pinned } → pin/unpin a video to the top of the grid.
+  if (req.method === 'POST' && url.pathname === '/api/admin/pin') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    try {
+      const raw = await readBody(req, 4096);
+      let body;
+      try { body = JSON.parse(raw); } catch { body = null; }
+      if (!body || typeof body.id !== 'string') { sendJson(res, 400, { error: 'Invalid request' }); return true; }
+      const result = await setPinned(body.id, !!body.pinned);
+      sendJson(res, result.ok ? 200 : (result.error === 'Not found' ? 404 : 400), result);
+    } catch {
+      sendJson(res, 500, { error: 'Server error' });
+    }
+    return true;
+  }
+
   // POST /api/admin/thumb?id=<id>  (raw image body) → { ok, thumb }
   if (req.method === 'POST' && url.pathname === '/api/admin/thumb') {
     if (!isAdminReq(req)) {
@@ -1385,8 +1412,17 @@ async function handleApi(req, res, ctx) {
       .filter((m) => !isBotUa(m.device && m.device.ua))
       .map((m) => decorateLogEvent(m, titles, names));
     const preciseKeys = new Set(markers.map((m) => `${m.t}|${m.ip || ''}|${m.videoId || ''}|${m.type || ''}`));
+    // An event has a usable precise coordinate only if it's a finite, in-range,
+    // non-Null-Island lat/lon (mirrors getTrafficMarkers). Everything else falls
+    // back to the country centroid so it lands on the right country, not the ocean.
+    const validCoord = (e) => {
+      const la = Number(e.lat), lo = Number(e.lon);
+      return Number.isFinite(la) && Number.isFinite(lo)
+        && !(Math.abs(la) < 0.01 && Math.abs(lo) < 0.01)
+        && Math.abs(la) <= 90 && Math.abs(lo) <= 180;
+    };
     const approximate = analytics.queryLogs({ ...filters, limit: 5000 }).events
-      .filter((e) => (e.type === 'watch' || e.type === 'blocked') && (e.lat == null || e.lon == null))
+      .filter((e) => (e.type === 'watch' || e.type === 'blocked') && !validCoord(e))
       .map((e, i) => {
         const key = `${e.t}|${e.ip || ''}|${e.videoId || ''}|${e.type || ''}`;
         if (preciseKeys.has(key)) return null;

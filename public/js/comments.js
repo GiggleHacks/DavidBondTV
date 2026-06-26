@@ -120,9 +120,111 @@ export function initComments(videoId) {
     tick();
   }
 
-  function makeCommentEl(c) {
+  // Shared POST path for both the top-level form and inline reply boxes — keeps
+  // auth, anti-spam, and challenge handling in one place. Returns { res, data }.
+  async function postComment({ text, gif, parentId, name, anonymous, answer, token: tok, hp }) {
+    const res = await fetch('/api/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        video: VIDEO,
+        name: name || '',
+        anonymous: !!anonymous,
+        text,
+        gif,
+        answer: answer || '',
+        token: tok || token,
+        parentId,
+        hp: hp || '',
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { res, data };
+  }
+
+  // Build an inline reply composer. `rootId` is the thread root the reply attaches
+  // to; `mentionName` pre-fills an @mention when replying to another reply. Anon
+  // viewers get their own name field + a freshly fetched math challenge. On a
+  // successful post `onPosted(comment)` runs so the caller can nest the new reply.
+  function buildReplyBox(rootId, mentionName, onPosted) {
+    const box = document.createElement('div');
+    box.className = 'comment-reply-box';
+    const authed = me && me.profileComplete;
+
+    const ta = document.createElement('textarea');
+    ta.className = 'cf-text'; ta.rows = 2; ta.maxLength = 1000;
+    ta.placeholder = 'Add a reply…';
+    if (mentionName) ta.value = `@${mentionName} `;
+    box.append(ta);
+
+    let nameInputR = null; let answerInputR = null; let boxToken = null;
+    if (!authed) {
+      const row = document.createElement('div');
+      row.className = 'crb-row';
+      nameInputR = document.createElement('input');
+      nameInputR.type = 'text'; nameInputR.className = 'cf-input'; nameInputR.placeholder = 'Your name'; nameInputR.maxLength = 60;
+      const challenge = document.createElement('span');
+      challenge.className = 'cf-challenge';
+      const q = document.createElement('label'); q.className = 'crb-q'; q.textContent = '…';
+      answerInputR = document.createElement('input');
+      answerInputR.type = 'text'; answerInputR.className = 'cf-answer'; answerInputR.inputMode = 'numeric'; answerInputR.placeholder = '?'; answerInputR.maxLength = 4;
+      challenge.append(q, answerInputR);
+      row.append(nameInputR, challenge);
+      box.append(row);
+      // Fetch a dedicated single-use challenge for this reply box.
+      fetch('/api/challenge').then((r) => r.json()).then((d) => { boxToken = d.token; q.textContent = d.question; }).catch(() => { q.textContent = 'Verification unavailable'; });
+    }
+
+    const msg = document.createElement('p'); msg.className = 'cf-msg'; msg.hidden = true;
+    const actions = document.createElement('div');
+    actions.className = 'crb-actions';
+    const cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.className = 'crb-cancel'; cancel.textContent = 'Cancel';
+    const submit = document.createElement('button');
+    submit.type = 'button'; submit.className = 'cf-submit sm'; submit.textContent = 'Reply';
+    actions.append(cancel, submit);
+    box.append(msg, actions);
+
+    const setBoxMsg = (t, kind) => { if (!t) { msg.hidden = true; return; } msg.hidden = false; msg.textContent = t; msg.className = `cf-msg ${kind || ''}`.trim(); };
+    cancel.addEventListener('click', () => box.remove());
+
+    submit.addEventListener('click', async () => {
+      const text = ta.value.trim();
+      if (!text) { setBoxMsg('Please write a reply.', 'error'); return; }
+      if (!authed && !(answerInputR && answerInputR.value.trim())) { setBoxMsg('Please answer the verification question.', 'error'); return; }
+      submit.disabled = true; setBoxMsg('');
+      try {
+        const { res, data } = await postComment({
+          text,
+          parentId: rootId,
+          name: nameInputR ? nameInputR.value : '',
+          answer: answerInputR ? answerInputR.value : '',
+          token: boxToken,
+        });
+        if (res.ok && data.ok && data.comment) {
+          onPosted(data.comment);
+          box.remove();
+        } else if (res.status === 429) {
+          setBoxMsg(data.error || "You're posting too fast. Please wait a moment.", 'error');
+          submit.disabled = false;
+        } else {
+          setBoxMsg(data.error || 'Could not post your reply.', 'error');
+          submit.disabled = false;
+        }
+      } catch {
+        setBoxMsg('Network error — please try again.', 'error');
+        submit.disabled = false;
+      }
+    });
+
+    setTimeout(() => ta.focus(), 0);
+    return box;
+  }
+
+  function makeCommentEl(c, opts = {}) {
+    const isReply = !!opts.isReply;
     const li = document.createElement('li');
-    li.className = 'comment';
+    li.className = isReply ? 'comment is-reply' : 'comment';
     if (c.userId) li.dataset.uid = c.userId;
 
     const avatar = document.createElement('div');
@@ -197,25 +299,69 @@ export function initComments(videoId) {
       body.append(gif);
     }
 
-    // Admin-only moderation controls.
+    // Action row: Reply (everyone) + admin moderation buttons.
+    const actions = document.createElement('div');
+    actions.className = 'comment-actions';
+    const replyBtn = document.createElement('button');
+    replyBtn.type = 'button';
+    replyBtn.className = 'comment-reply-btn';
+    replyBtn.textContent = 'Reply';
+    actions.append(replyBtn);
     if (amAdmin()) {
-      const mod = document.createElement('div');
-      mod.className = 'comment-mod';
       const del = document.createElement('button');
-      del.type = 'button';
-      del.className = 'cmod-btn';
-      del.textContent = 'Delete';
+      del.type = 'button'; del.className = 'cmod-btn'; del.textContent = 'Delete';
       del.addEventListener('click', () => removeComment(c, li));
-      mod.append(del);
+      actions.append(del);
       if (c.userId && !c.admin) {
         const ban = document.createElement('button');
-        ban.type = 'button';
-        ban.className = 'cmod-btn danger';
-        ban.textContent = 'Ban author';
+        ban.type = 'button'; ban.className = 'cmod-btn danger'; ban.textContent = 'Ban author';
         ban.addEventListener('click', () => banAuthor(c));
-        mod.append(ban);
+        actions.append(ban);
       }
-      body.append(mod);
+    }
+    body.append(actions);
+
+    if (isReply) {
+      // Replying to a reply re-targets the thread root and @mentions the author.
+      replyBtn.addEventListener('click', () => opts.onReply && opts.onReply(c));
+    } else {
+      // Thread root: a collapsible replies list + a show/hide toggle.
+      const toggle = document.createElement('button');
+      toggle.type = 'button'; toggle.className = 'comment-replies-toggle'; toggle.hidden = true;
+      const repliesUl = document.createElement('ul');
+      repliesUl.className = 'comment-replies'; repliesUl.hidden = true;
+      body.append(toggle, repliesUl);
+
+      let open = false;
+      const setToggleLabel = () => {
+        const n = repliesUl.querySelectorAll('.comment').length;
+        if (n === 0) { toggle.hidden = true; repliesUl.hidden = true; return; }
+        toggle.hidden = false;
+        toggle.classList.toggle('open', open);
+        const chev = document.createElement('span'); chev.className = 'chev'; chev.setAttribute('aria-hidden', 'true'); chev.textContent = '▾';
+        const lab = document.createElement('span');
+        lab.textContent = `${open ? 'Hide' : 'View'} ${n} ${n === 1 ? 'reply' : 'replies'}`;
+        toggle.replaceChildren(chev, lab);
+      };
+      toggle.addEventListener('click', () => { open = !open; repliesUl.hidden = !open; setToggleLabel(); });
+
+      const openReplyBox = (mentionName) => {
+        const existing = body.querySelector('.comment-reply-box');
+        if (existing) { existing.remove(); }
+        const box = buildReplyBox(c.id, mentionName, (reply) => {
+          repliesUl.append(makeCommentEl(reply, { isReply: true, onReply: (rc) => openReplyBox(rc.name) }));
+          open = true; repliesUl.hidden = false;
+          setToggleLabel();
+          updateCount();
+        });
+        actions.after(box);
+      };
+      replyBtn.addEventListener('click', () => openReplyBox());
+
+      for (const r of (c.replies || [])) {
+        repliesUl.append(makeCommentEl(r, { isReply: true, onReply: (rc) => openReplyBox(rc.name) }));
+      }
+      setToggleLabel();
     }
 
     li.append(avatar, body);
@@ -247,7 +393,7 @@ export function initComments(videoId) {
       const data = await res.json();
       const comments = data.comments || [];
       if (comments.length === 0) renderEmpty();
-      else listEl.replaceChildren(...comments.map(makeCommentEl));
+      else listEl.replaceChildren(...comments.map((c) => makeCommentEl(c)));
       updateCount();
     } catch {
       renderEmpty();
@@ -354,21 +500,15 @@ export function initComments(videoId) {
     submitBtn.disabled = true;
     setMsg('');
     try {
-      const res = await fetch('/api/comments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          video: VIDEO,
-          name: nameInput ? nameInput.value : '',
-          anonymous: anonInput ? anonInput.checked : false,
-          text,
-          gif: pendingGif ? pendingGif.url : undefined,
-          answer: answerInput.value,
-          token,
-          hp: (document.getElementById('cf-hp') || {}).value || '',
-        }),
+      const { res, data } = await postComment({
+        name: nameInput ? nameInput.value : '',
+        anonymous: anonInput ? anonInput.checked : false,
+        text,
+        gif: pendingGif ? pendingGif.url : undefined,
+        answer: answerInput.value,
+        token,
+        hp: (document.getElementById('cf-hp') || {}).value || '',
       });
-      const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.ok) {
         if (data.comment) {

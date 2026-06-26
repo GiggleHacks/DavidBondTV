@@ -9,6 +9,7 @@ import { categoryDisplayName, categoryVisualMarkup, resolveCategoryVisual } from
 import { renderThumbProgress } from '/js/watch-progress.js';
 const PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
 const LOCK = '<svg viewBox="0 0 24 24"><path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2v-9a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm3 8H9V6a3 3 0 016 0v3z"/></svg>';
+const PIN = '<svg viewBox="0 0 24 24"><path d="M16 3l5 5-3 1-3 3-1 5-2-2-3 3-4 1 1-4 3-3-2-2 5-1 3-3 1-3z"/></svg>';
 
 // Only do video previews on devices with a real hovering pointer (skip touch).
 const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
@@ -155,7 +156,7 @@ function card(v) {
   const a = document.createElement('a');
   a.className = `vcard${status !== 'ready' ? ` is-${status}` : ''}`
     + `${isPremium || locked ? ` blur-${blur}` : ''}`
-    + `${isPremium ? ' is-premium' : ''}${locked ? ' is-locked' : ''}`;
+    + `${isPremium ? ' is-premium' : ''}${locked ? ' is-locked' : ''}${v.pinned ? ' is-pinned' : ''}`;
   // Locked cards get NO real href, so middle-click / ctrl-click can't open the
   // watch page in a new tab and skip the lock; they act as a button instead.
   if (locked) { a.setAttribute('role', 'button'); a.tabIndex = 0; }
@@ -169,6 +170,7 @@ function card(v) {
       ${status === 'ready' && isNew(v) ? '<span class="vnew">NEW</span>' : ''}
       ${status === 'processing' ? '<span class="vstate">Processing…</span>' : ''}
       ${status === 'failed' ? '<span class="vstate vstate-err">Failed</span>' : ''}
+      ${v.pinned ? `<span class="vpin">${PIN}Pinned</span>` : ''}
     </div>
     <div class="vinfo">
       <div class="vavatar">${PLAY}</div>
@@ -203,6 +205,11 @@ function card(v) {
     };
     a.addEventListener('click', open);
     a.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') open(e); });
+  }
+
+  // Owner-only: right-click a card for a custom menu (Pin / Unpin first).
+  if (state.isAdmin) {
+    a.addEventListener('contextmenu', (e) => { e.preventDefault(); openVideoMenu(e.clientX, e.clientY, v); });
   }
 
   // Only wire hover previews for ready, unlocked cards that have a baked montage.
@@ -279,6 +286,10 @@ function render() {
       // 'recent' — newest first (default)
       list = list.slice().sort((a, b) => sortTs(b) - sortTs(a));
     }
+    // Pinned videos always lead the grid, regardless of the active sort. Their
+    // relative order follows the same sort; non-pinned keep their sorted order.
+    const pinned = list.filter((v) => v.pinned);
+    if (pinned.length) list = [...pinned, ...list.filter((v) => !v.pinned)];
   }
   grid.replaceChildren();
   if (!list.length) {
@@ -300,6 +311,70 @@ function render() {
 
 const sortTs = (v) => (typeof v.uploadedAt === 'number' ? v.uploadedAt
   : (Date.parse(v.uploaded) || 0));
+
+// --- owner context menu (Pin / Unpin) ---------------------------------------
+let vmenu = null;
+
+function closeVideoMenu() {
+  if (vmenu) { vmenu.remove(); vmenu = null; }
+  document.removeEventListener('click', closeVideoMenu);
+  document.removeEventListener('scroll', closeVideoMenu, true);
+  window.removeEventListener('resize', closeVideoMenu);
+  document.removeEventListener('keydown', onMenuKey);
+}
+function onMenuKey(e) { if (e.key === 'Escape') closeVideoMenu(); }
+
+function toast(msg, kind) {
+  const t = document.createElement('div');
+  t.className = `browse-toast${kind ? ` ${kind}` : ''}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 250); }, 2600);
+}
+
+async function togglePin(v) {
+  const next = !v.pinned;
+  try {
+    const res = await fetch('/api/admin/pin', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: v.id, pinned: next }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) { toast(data.error || 'Could not update pin.', 'err'); return; }
+    // Sync every card's pinned flag to the server's authoritative list, then repaint.
+    const pinned = new Set(data.pinnedIds || []);
+    for (const item of state.videos) item.pinned = pinned.has(item.id);
+    render();
+    toast(next ? 'Pinned to top' : 'Unpinned');
+  } catch { toast('Network error — please try again.', 'err'); }
+}
+
+function openVideoMenu(x, y, v) {
+  closeVideoMenu();
+  vmenu = document.createElement('div');
+  vmenu.className = 'vmenu';
+  const pinBtn = document.createElement('button');
+  pinBtn.type = 'button';
+  pinBtn.className = 'vmenu-item';
+  pinBtn.innerHTML = `${PIN}<span>${v.pinned ? 'Unpin' : 'Pin'}</span>`;
+  pinBtn.addEventListener('click', (e) => { e.stopPropagation(); closeVideoMenu(); togglePin(v); });
+  vmenu.appendChild(pinBtn);
+  document.body.appendChild(vmenu);
+  // Clamp into the viewport (open up/left near the edges).
+  const r = vmenu.getBoundingClientRect();
+  const px = Math.min(x, window.innerWidth - r.width - 8);
+  const py = Math.min(y, window.innerHeight - r.height - 8);
+  vmenu.style.left = `${Math.max(8, px)}px`;
+  vmenu.style.top = `${Math.max(8, py)}px`;
+  // Defer so this same right-click doesn't immediately close it.
+  setTimeout(() => {
+    document.addEventListener('click', closeVideoMenu);
+    document.addEventListener('scroll', closeVideoMenu, true);
+    window.addEventListener('resize', closeVideoMenu);
+    document.addEventListener('keydown', onMenuKey);
+  }, 0);
+}
 
 // --- course landing banner + branded unlock modal ---------------------------
 
