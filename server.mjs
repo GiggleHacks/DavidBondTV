@@ -232,6 +232,9 @@ const stripePayments = createStripePayments({
   pricing,
   coupons,
   telegramNotifier,
+  // Stripe account suspended → hard-disable the card rail until WHOP replaces it.
+  // Hides the Card option in the UI and refuses any stale/direct Stripe checkout.
+  cardDisabled: process.env.STRIPE_DISABLED === '1',
 });
 
 const CRYPTO_ORDERS_FILE = path.join(__dirname, 'data', 'crypto-orders.json');

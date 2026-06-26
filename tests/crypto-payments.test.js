@@ -83,7 +83,7 @@ describe('crypto webhook', () => {
 
   it('grants a product on a confirmed callback and fires email + telegram once', async () => {
     const { cp, store, orders, tg, mails } = make();
-    await orders.create({ id: 'o1', userId: 'u1', kind: 'product', productId: 'p1', coin: 'ETH', amount: '0.05', status: 'waiting', confirmations: 6 });
+    await orders.create({ id: 'o1', userId: 'u1', kind: 'product', productId: 'p1', coin: 'ETH', amount: '0.05', expectedFiat: 269.1, status: 'waiting', confirmations: 6 });
     const body = { orderId: 'o1', coin: 'ETH', txid: '0xabc', amount: '0.05', confirmations: 6 };
     const res1 = fakeRes();
     await cp._test.webhook(webhookReq(body), res1);
@@ -91,7 +91,11 @@ describe('crypto webhook', () => {
     expect(store._users.u1.products).toHaveLength(1);
     expect(orders._orders.o1.status).toBe('granted');
     expect(mails).toEqual(['product']);
-    expect(tg.filter((x) => x.t === 'course_purchase')).toHaveLength(1);
+    // The crypto sale must use the crypto-specific template carrying the COIN
+    // amount + USD value (not the Stripe new_subscription/course_purchase shape).
+    const courseTg = tg.filter((x) => x.t === 'crypto_course');
+    expect(courseTg).toHaveLength(1);
+    expect(courseTg[0].p).toMatchObject({ coinAmount: '0.05', coin: 'ETH', usd: 269.1 });
 
     const res2 = fakeRes();
     await cp._test.webhook(webhookReq(body), res2);
@@ -113,15 +117,19 @@ describe('crypto webhook', () => {
   });
 
   it('grants fixed-term membership on a confirmed callback', async () => {
-    const { cp, store, orders } = make();
-    await orders.create({ id: 'm1', userId: 'u1', kind: 'membership', termMonths: 3, coin: 'LTC', amount: '1.0', status: 'waiting', confirmations: 6 });
+    const { cp, store, orders, tg } = make();
+    await orders.create({ id: 'm1', userId: 'u1', kind: 'membership', termMonths: 3, coin: 'ETH', amount: '0.0834', expectedFiat: 59.07, status: 'waiting', confirmations: 6 });
     const res = fakeRes();
-    await cp._test.webhook(webhookReq({ orderId: 'm1', coin: 'LTC', txid: 't', amount: '1.0', confirmations: 6 }), res);
+    await cp._test.webhook(webhookReq({ orderId: 'm1', coin: 'ETH', txid: 't', amount: '0.0834', confirmations: 6 }), res);
     expect(res.statusCode).toBe(200);
     expect(store._users.u1.membership.provider).toBe('crypto');
     expect(store._users.u1.membership.status).toBe('active');
     expect(store._users.u1.membership.interval).toBe('3mo');
     expect(store._users.u1.membership.currentPeriodEnd).toBeGreaterThan(Date.now());
+    // Telegram sale alert uses the crypto template with coin amount + USD value.
+    const saleTg = tg.filter((x) => x.t === 'crypto_membership');
+    expect(saleTg).toHaveLength(1);
+    expect(saleTg[0].p).toMatchObject({ coinAmount: '0.0834', coin: 'ETH', usd: 59.07, interval: '3mo' });
   });
 
   it('membership grant is idempotent for the same order (no double-stack)', async () => {

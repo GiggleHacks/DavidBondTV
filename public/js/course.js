@@ -123,6 +123,14 @@ async function render() {
   buy.addEventListener('click', () => startPurchase(product, next, buy));
   setupCrypto(product);
 
+  // Card rail may be hard-disabled (e.g. Stripe suspended) — hide the card buy
+  // button so buyers use the crypto option instead of a dead processor.
+  try {
+    const cfg = await (await fetch('/api/pay/stripe/config')).json();
+    const cardOn = cfg && (cfg.cardEnabled !== undefined ? cfg.cardEnabled : cfg.enabled);
+    if (!cardOn) buy.hidden = true;
+  } catch { /* leave the button as-is on a config fetch error */ }
+
   if (status === 'cancel') banner('Checkout canceled — no charge was made.', 'warn');
 
   let me = await fetchMe();

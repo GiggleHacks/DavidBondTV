@@ -23,6 +23,9 @@ const rawNext = params.get('next');
 const next = (rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')) ? rawNext : '';
 const sessionId = params.get('session_id') || '';
 let primaryInterval = 'month';
+// Card rail availability (server may hard-disable it, e.g. Stripe suspended). When
+// false the Card option is hidden and Ethereum becomes the sole payment method.
+let cardEnabled = true;
 
 const isActive = (me) => !!(me && me.membership && me.membership.active);
 const hasAccessFor = (me) => {
@@ -215,11 +218,11 @@ function setYearly(year, month) {
 async function applyConfig() {
   let cfg = null;
   try { cfg = await (await fetch('/api/pay/stripe/config')).json(); } catch { /* default below */ }
-  if (!cfg || !cfg.enabled) {
-    $('pay-card').disabled = true;
-    showBanner('Memberships aren’t available just yet — check back soon.', 'warn');
-    return;
-  }
+  // cardEnabled is the explicit card-rail flag; fall back to legacy `enabled`.
+  cardEnabled = !!(cfg && (cfg.cardEnabled !== undefined ? cfg.cardEnabled : cfg.enabled));
+  // Card off: don't paint card pricing or show a discouraging banner here — ETH
+  // may still be available; setupPaymentMethods() decides the final layout.
+  if (!cardEnabled) return;
   const prices = cfg.prices || {};
   // Headline price: prefer monthly (with optional intro); fall back to yearly.
   if (cfg.intervals.month && prices.month) {
@@ -291,14 +294,27 @@ function selectMethod(which) {
  * has crypto enabled with ETH in its coin list.
  */
 async function setupPaymentMethods() {
-  // Card is always available (Stripe gates itself in applyConfig); wire its tile.
-  $('method-card')?.addEventListener('click', () => selectMethod('card'));
-  // Default-select Card so a flow is visible on load.
-  selectMethod('card');
+  if (cardEnabled) {
+    // Wire the Card tile and default-select it so a flow is visible on load.
+    $('method-card')?.addEventListener('click', () => selectMethod('card'));
+    selectMethod('card');
+  } else {
+    // Card rail is off (e.g. Stripe suspended) — hide all card chrome so nobody is
+    // funnelled toward a dead processor. Also hide the card-specific price headline
+    // and the auto-renew consent copy (ETH is a one-time prepay, no renewal).
+    const hide = (el) => { if (el) el.hidden = true; };
+    hide($('method-card')); hide($('flow-card'));
+    hide(document.querySelector('#plans-view .mb-pricing'));
+    hide(document.querySelector('#plans-view .mb-consent'));
+  }
 
   const cfg = await cryptoConfig();
   const ethEnabled = cfg && Array.isArray(cfg.coins) && cfg.coins.includes('ETH');
-  if (!ethEnabled) return;
+  if (!ethEnabled) {
+    // Nothing left to offer if the card rail is also off.
+    if (!cardEnabled) showBanner('Payments are temporarily unavailable — please check back soon.', 'warn');
+    return;
+  }
 
   const ethTile = $('method-eth');
   const plansEl = $('eth-plans');
@@ -342,6 +358,15 @@ async function setupPaymentMethods() {
 
   ethTile.hidden = false;
   ethTile.addEventListener('click', () => { selectMethod('eth'); showPlanChoice(); });
+
+  // Card off → Ethereum is the only rail: drop the now-pointless one-option picker
+  // and open the ETH plan chooser straight away.
+  if (!cardEnabled) {
+    const picker = document.querySelector('#plans-view .mb-pay');
+    if (picker) picker.hidden = true;
+    selectMethod('eth');
+    showPlanChoice();
+  }
 }
 
 async function render() {

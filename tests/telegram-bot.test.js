@@ -92,6 +92,32 @@ describe('formatMessage', () => {
     expect(msg).toContain('$49.99');
   });
 
+  it('formats crypto_membership with coin amount + USD value, no Stripe-fee language', () => {
+    const msg = n._test.formatMessage('crypto_membership', {
+      username: 'Cara', email: 'cara@x.com', interval: '3mo', coinAmount: '0.0834', coin: 'ETH', usd: 59.07,
+    });
+    expect(msg).toContain('Cara');
+    expect(msg).toContain('cara@x.com');
+    expect(msg).toContain('0.0834 ETH');   // the actual coin amount paid
+    expect(msg).toContain('$59.07');        // the USD value
+    expect(msg).toContain('3mo');           // the prepaid term
+    expect(msg).not.toMatch(/stripe/i);     // crypto sale must NOT mention Stripe
+    expect(msg).not.toMatch(/fee/i);        // no processor fee on a direct-to-wallet payment
+    expect(msg).not.toContain('—');         // never a blank amount
+  });
+
+  it('formats crypto_course with coin amount + USD value', () => {
+    const msg = n._test.formatMessage('crypto_course', {
+      username: 'Dan', product: 'Digital Pickup 2.0', coinAmount: '0.1346', coin: 'ETH', usd: 269.1,
+    });
+    expect(msg).toContain('Dan');
+    expect(msg).toContain('Digital Pickup 2.0');
+    expect(msg).toContain('0.1346 ETH');
+    expect(msg).toContain('$269.10');
+    expect(msg).not.toMatch(/stripe/i);
+    expect(msg).not.toContain('—');
+  });
+
   it('handles unknown event type gracefully', () => {
     const msg = n._test.formatMessage('unknown_event', { foo: 'bar' });
     expect(msg).toContain('unknown_event');
