@@ -134,6 +134,21 @@ describe('crypto webhook', () => {
     const end2 = store._users.u1.membership.currentPeriodEnd;
     expect(end2).toBe(end1);
   });
+
+  it('marks detected on a broadcast callback without granting, then grants on confirm', async () => {
+    const { cp, store, orders } = make();
+    await orders.create({ id: 'd1', userId: 'u1', kind: 'product', productId: 'p1', coin: 'ETH', amount: '0.05', status: 'waiting', confirmations: 1 });
+    const det = fakeRes();
+    await cp._test.webhook(webhookReq({ orderId: 'd1', coin: 'ETH', outcome: 'detected', txid: '0xaa', amount: '0.05', confirmations: 0 }), det);
+    expect(det.statusCode).toBe(200);
+    expect(orders._orders.d1.status).toBe('detected');
+    expect(store._users.u1.products).toHaveLength(0); // not granted yet
+    const con = fakeRes();
+    await cp._test.webhook(webhookReq({ orderId: 'd1', coin: 'ETH', txid: '0xaa', amount: '0.05', confirmations: 1 }), con);
+    expect(con.statusCode).toBe(200);
+    expect(orders._orders.d1.status).toBe('granted');
+    expect(store._users.u1.products).toHaveLength(1);
+  });
 });
 
 function jsonReq(bodyObj, user) {
@@ -152,7 +167,7 @@ describe('crypto checkout', () => {
       store, ordersStore: orders, currentUser: () => user,
       baseUrl: 'http://localhost', webhookSecret: SECRET,
       watcherUrl: 'http://watcher', watcherToken: 'wtok',
-      cryptoConfig: { enabledCoins: ['ETH'], coins: { ETH: { address: '0xabc', decimals: 6, confirmations: 6 } }, orderTtlMs: 1200000, jitterMax: 100, membership: { termMonths: 3, priceUsd: 47 }, productDiscountPercent: 10 },
+      cryptoConfig: { enabledCoins: ['ETH'], coins: { ETH: { address: '0xabc', decimals: 6, confirmations: 6 } }, orderTtlMs: 1200000, jitterMax: 100, membership: { plans: { '3mo': { months: 3, priceUsd: 59.07, label: '3 months' }, year: { months: 12, priceUsd: 197, label: '1 year' } } }, productDiscountPercent: 10 },
       products: { getById: (id) => (id === 'p1' ? { id: 'p1', name: 'Course', slug: 'course', price: 29900, currency: 'usd', published: true } : null) },
       pricing: { getConfig: () => ({ currency: 'usd', monthly: { amount: 1700 }, yearly: { enabled: true, amount: 12000 } }) },
       fetchImpl: async (u2, opts) => {
@@ -198,7 +213,10 @@ describe('crypto checkout', () => {
     const res = fakeRes();
     await cp._test.config({ method: 'GET', headers: {} }, res);
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ enabled: true, coins: ['ETH'] });
+    const cfg = JSON.parse(res.body);
+    expect(cfg.enabled).toBe(true);
+    expect(cfg.coins).toEqual(['ETH']);
+    expect(cfg.membershipPlans).toContainEqual({ key: '3mo', months: 3, priceUsd: 59.07, label: '3 months' });
   });
 
   it('reports order status', async () => {
