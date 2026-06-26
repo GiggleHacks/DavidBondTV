@@ -70,17 +70,36 @@ export function makeLtcEsploraAdapter({ baseUrl = 'https://litecoinspace.org/api
   };
 }
 
-export function makeEthAdapter({ rpcUrl }) {
-  const decimals = 18; // wei; matcher works in wei, main app quotes to 6 display decimals
+export function makeEthAdapter({ rpcUrl, fetchImpl = fetch }) {
+  const decimals = 18; // wei
+  async function call(method, params) {
+    const r = await fetchImpl(rpcUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+    const j = await r.json();
+    if (j.error) throw new Error(`${method}: ${j.error.message || JSON.stringify(j.error)}`);
+    return j.result;
+  }
   return {
     decimals,
-    async _blockNumber() { return BigInt(await rpc(rpcUrl, 'eth_blockNumber', [])); },
-    async getReceived(address, minconf) {
-      const latest = await this._blockNumber();
-      const at = latest > BigInt(minconf) ? latest - BigInt(minconf) : 0n;
-      const hex = '0x' + at.toString(16);
-      const balWei = BigInt(await rpc(rpcUrl, 'eth_getBalance', [address, hex]));
-      return balWei; // base units = wei
+    async getLatestBlock() { return Number(BigInt(await call('eth_blockNumber', []))); },
+    // tag: a block number (we hex-encode) or a string tag like 'pending'/'latest'
+    async getBlock(tag, withTxs = true) {
+      const t = typeof tag === 'number' ? '0x' + tag.toString(16) : tag;
+      return call('eth_getBlockByNumber', [t, withTxs]);
     },
   };
+}
+
+// Find the first incoming transaction in `block` paying `address`. Returns
+// { txid, valueWei, enough } or null. Works for self-sends (only the recipient
+// + value matter, never the sender), unlike balance-delta detection.
+export function findIncomingTx(block, address, minValueWei) {
+  if (!block || !Array.isArray(block.transactions)) return null;
+  const addr = String(address).toLowerCase();
+  for (const tx of block.transactions) {
+    if (tx && tx.to && String(tx.to).toLowerCase() === addr) {
+      const v = BigInt(tx.value || '0x0');
+      if (v > 0n) return { txid: tx.hash, valueWei: v, enough: v >= minValueWei };
+    }
+  }
+  return null;
 }

@@ -1,7 +1,7 @@
 // Watches David's static receiving addresses for the exact amounts the main app
 // registers, then fires a signed callback. The ONLY component with chain access.
 import http from 'node:http';
-import { makeLtcAdapter, makeLtcEsploraAdapter, makeEthAdapter } from './lib/adapters.mjs';
+import { makeLtcAdapter, makeLtcEsploraAdapter, makeEthAdapter, findIncomingTx } from './lib/adapters.mjs';
 import { matchReceived } from './lib/matcher.mjs';
 import { sendCallback } from './lib/callback.mjs';
 
@@ -73,14 +73,26 @@ const server = http.createServer(async (req, res) => {
       const w = await readJson(req);
       const adapter = adapters[w.coin];
       if (!adapter) { res.writeHead(400); return res.end('coin not supported'); }
-      // Baseline = funds already at the address now; we only credit NEW arrivals.
-      const baseline = await adapter.getReceived(w.address, w.confirmations);
-      watches.set(w.orderId, {
-        coin: w.coin, address: w.address, expectedAmount: w.expectedAmount,
-        expectedBaseUnits: toBaseUnits(w.expectedAmount, adapter.decimals),
-        baselineBaseUnits: baseline, confirmations: w.confirmations,
-        expiresAt: w.expiresAt, callbackUrl: w.callbackUrl,
-      });
+      let watch;
+      if (w.coin === 'ETH') {
+        const sinceBlock = await adapter.getLatestBlock();
+        watch = {
+          coin: 'ETH', address: w.address, expectedAmount: w.expectedAmount,
+          expectedWei: toBaseUnits(w.expectedAmount, adapter.decimals),
+          requiredConfs: w.confirmations || 1, sinceBlock, lastScanned: sinceBlock,
+          hitBlock: null, hitTxid: null, detectedSent: false, alerted: false,
+          expiresAt: w.expiresAt, callbackUrl: w.callbackUrl,
+        };
+      } else {
+        const baseline = await adapter.getReceived(w.address, w.confirmations);
+        watch = {
+          coin: w.coin, address: w.address, expectedAmount: w.expectedAmount,
+          expectedBaseUnits: toBaseUnits(w.expectedAmount, adapter.decimals),
+          baselineBaseUnits: baseline, confirmations: w.confirmations,
+          expiresAt: w.expiresAt, callbackUrl: w.callbackUrl,
+        };
+      }
+      watches.set(w.orderId, watch);
       console.log(`[watcher] watching ${w.orderId} ${w.coin} ${w.expectedAmount}`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ ok: true }));
@@ -94,20 +106,63 @@ async function pollOnce() {
   polling = true;
   try {
     const now = Date.now();
+    // Fetch the ETH chain tip once per tick if we have any ETH watches.
+    let ethLatest = null;
+    const hasEth = [...watches.values()].some((w) => w.coin === 'ETH');
+    if (hasEth && adapters.ETH) { try { ethLatest = await adapters.ETH.getLatestBlock(); } catch (e) { console.error(`[watcher] eth tip: ${e.message}`); } }
+
     for (const [orderId, w] of [...watches]) {
       if (now > w.expiresAt) { watches.delete(orderId); continue; }
       try {
-        const received = await adapters[w.coin].getReceived(w.address, w.confirmations);
-        const r = matchReceived(w, received);
-        if (r.matched) {
-          const ok = await sendCallback(w.callbackUrl, { orderId, coin: w.coin, txid: null, amount: w.expectedAmount, confirmations: w.confirmations }, CALLBACK_SECRET);
-          if (ok) { watches.delete(orderId); console.log(`[watcher] paid ${orderId}`); }
-        } else if (r.status === 'underpaid' && !w.alerted) {
-          // A short deposit arrived. Alert the main app ONCE; keep watching in case
-          // the buyer tops up to the full amount (which would then confirm).
-          console.warn(`[watcher] UNDERPAID ${orderId} ${w.coin} expected ${w.expectedAmount}`);
-          const ok = await sendCallback(w.callbackUrl, { orderId, coin: w.coin, outcome: 'underpaid', amount: w.expectedAmount, confirmations: w.confirmations }, CALLBACK_SECRET);
-          if (ok) w.alerted = true;
+        if (w.coin === 'ETH') {
+          if (ethLatest === null) continue;
+          // 1) Find the incoming tx (scan only new blocks since last tick).
+          if (w.hitBlock === null) {
+            for (let n = w.lastScanned + 1; n <= ethLatest; n += 1) {
+              const blk = await adapters.ETH.getBlock(n, true);
+              const hit = findIncomingTx(blk, w.address, w.expectedWei);
+              if (hit && hit.enough) { w.hitBlock = n; w.hitTxid = hit.txid; break; }
+              if (hit && !hit.enough && !w.alerted) {
+                const ok = await sendCallback(w.callbackUrl, { orderId, coin: 'ETH', outcome: 'underpaid', amount: w.expectedAmount }, CALLBACK_SECRET);
+                if (ok) w.alerted = true;
+              }
+            }
+            w.lastScanned = ethLatest;
+            // 2) Best-effort mempool detection for instant "detected" feedback.
+            if (w.hitBlock === null && !w.detectedSent) {
+              try {
+                const pend = await adapters.ETH.getBlock('pending', true);
+                const ph = findIncomingTx(pend, w.address, w.expectedWei);
+                if (ph && ph.enough) {
+                  const ok = await sendCallback(w.callbackUrl, { orderId, coin: 'ETH', outcome: 'detected', txid: ph.txid, amount: w.expectedAmount, confirmations: 0 }, CALLBACK_SECRET);
+                  if (ok) w.detectedSent = true;
+                }
+              } catch { /* node may not expose pending txs; detection falls to 1st block */ }
+            }
+          }
+          // 3) Confirm flow once the tx is mined.
+          if (w.hitBlock !== null) {
+            const confs = ethLatest - w.hitBlock + 1;
+            if (!w.detectedSent) {
+              const ok = await sendCallback(w.callbackUrl, { orderId, coin: 'ETH', outcome: 'detected', txid: w.hitTxid, amount: w.expectedAmount, confirmations: confs }, CALLBACK_SECRET);
+              if (ok) w.detectedSent = true;
+            }
+            if (confs >= w.requiredConfs) {
+              const ok = await sendCallback(w.callbackUrl, { orderId, coin: 'ETH', txid: w.hitTxid, amount: w.expectedAmount, confirmations: confs }, CALLBACK_SECRET);
+              if (ok) { watches.delete(orderId); console.log(`[watcher] paid ${orderId} (eth, ${confs} conf)`); }
+            }
+          }
+        } else {
+          // Non-ETH (e.g. LTC via Esplora): balance-received + matcher.
+          const received = await adapters[w.coin].getReceived(w.address, w.confirmations);
+          const r = matchReceived(w, received);
+          if (r.matched) {
+            const ok = await sendCallback(w.callbackUrl, { orderId, coin: w.coin, txid: null, amount: w.expectedAmount, confirmations: w.confirmations }, CALLBACK_SECRET);
+            if (ok) { watches.delete(orderId); console.log(`[watcher] paid ${orderId}`); }
+          } else if (r.status === 'underpaid' && !w.alerted) {
+            const ok = await sendCallback(w.callbackUrl, { orderId, coin: w.coin, outcome: 'underpaid', amount: w.expectedAmount }, CALLBACK_SECRET);
+            if (ok) w.alerted = true;
+          }
         }
       } catch (e) { console.error(`[watcher] poll ${orderId}: ${e.message}`); }
     }
