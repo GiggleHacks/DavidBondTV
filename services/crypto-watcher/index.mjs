@@ -1,7 +1,7 @@
 // Watches David's static receiving addresses for the exact amounts the main app
 // registers, then fires a signed callback. The ONLY component with chain access.
 import http from 'node:http';
-import { makeLtcAdapter, makeEthAdapter } from './lib/adapters.mjs';
+import { makeLtcAdapter, makeLtcEsploraAdapter, makeEthAdapter } from './lib/adapters.mjs';
 import { matchReceived } from './lib/matcher.mjs';
 import { sendCallback } from './lib/callback.mjs';
 
@@ -16,7 +16,13 @@ if (!TOKEN || !CALLBACK_SECRET) {
 }
 
 const adapters = {};
-if (process.env.LTC_RPC_URL) adapters.LTC = makeLtcAdapter({ rpcUrl: process.env.LTC_RPC_URL, rpcUser: process.env.LTC_RPC_USER, rpcPass: process.env.LTC_RPC_PASS });
+// LTC: a litecoind node if LTC_RPC_URL is set, otherwise the public Esplora explorer
+// (default — no node, no download). Disable entirely with LTC_DISABLED=1.
+if (!process.env.LTC_DISABLED) {
+  adapters.LTC = process.env.LTC_RPC_URL
+    ? makeLtcAdapter({ rpcUrl: process.env.LTC_RPC_URL, rpcUser: process.env.LTC_RPC_USER, rpcPass: process.env.LTC_RPC_PASS })
+    : makeLtcEsploraAdapter({ baseUrl: process.env.LTC_API_URL || 'https://litecoinspace.org/api' });
+}
 if (process.env.ETH_RPC_URL) adapters.ETH = makeEthAdapter({ rpcUrl: process.env.ETH_RPC_URL });
 
 const COIN_DISPLAY_DECIMALS = { ETH: 6, LTC: 8, XMR: 12 };

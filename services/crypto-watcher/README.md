@@ -17,9 +17,10 @@ It holds **no private keys** — only public receiving addresses (and, in Phase 
 | `PORT` | no | `8745` | Port the service listens on |
 | `POLL_MS` | no | `20000` | How often (ms) to poll the chains |
 | `ETH_RPC_URL` | no | — | A read-only Ethereum JSON-RPC endpoint, e.g. `https://ethereum-rpc.publicnode.com`. ETH watching is disabled if unset |
-| `LTC_RPC_URL` | no | — | litecoind JSON-RPC URL, e.g. `http://litecoind:9332`. LTC watching is disabled if unset |
-| `LTC_RPC_USER` | no | — | litecoind RPC username |
-| `LTC_RPC_PASS` | no | — | litecoind RPC password |
+| `LTC_API_URL` | no | `https://litecoinspace.org/api` | Public Esplora explorer base URL. **LTC watching is ON by default via this public API — no node, no download.** Override only to use a self-hosted Esplora/mempool instance |
+| `LTC_RPC_URL` | no | — | **Optional alternative to the public API:** a litecoind JSON-RPC URL (e.g. `http://litecoind:9332`). If set, the watcher uses the node instead of the public explorer |
+| `LTC_RPC_USER` / `LTC_RPC_PASS` | no | — | litecoind RPC credentials (only when using `LTC_RPC_URL`) |
+| `LTC_DISABLED` | no | — | Set to `1` to turn off LTC watching entirely |
 | `XMR_WALLET_RPC_URL` | no | — | **(Phase 2)** monero-wallet-rpc URL (view-only wallet) |
 
 ---
@@ -34,19 +35,25 @@ docker run -d --name dbtv-crypto-watcher --restart unless-stopped \
   -e CRYPTO_WATCHER_TOKEN=<same as main app> \
   -e CRYPTO_WEBHOOK_SECRET=<same as main app> \
   -e ETH_RPC_URL=https://ethereum-rpc.publicnode.com \
-  -e LTC_RPC_URL=http://litecoind:9332 -e LTC_RPC_USER=<u> -e LTC_RPC_PASS=<p> \
   -p 8745:8745 dbtv-crypto-watcher
 ```
 
+LTC is enabled automatically via the public explorer (`https://litecoinspace.org/api`) — no extra env needed. To use a self-hosted litecoind node instead, add `-e LTC_RPC_URL=http://litecoind:9332 -e LTC_RPC_USER=<u> -e LTC_RPC_PASS=<p>` (see below).
+
 ---
 
-## Litecoind Setup
+## Litecoin: public explorer (default) vs. self-hosted node
 
-Run a litecoind container with RPC enabled and a wallet loaded. The watcher calls `importaddress` (rescan=false) automatically for each receiving address, then reads `getreceivedbyaddress` to detect confirmed deposits.
+**Default (recommended): public Esplora explorer.** With no LTC env vars set, the watcher
+reads the Litecoin chain via `https://litecoinspace.org/api` — no node, no ~150 GB download.
+It only *reads* the chain (sums confirmed outputs to the receiving address); funds always go
+straight to the owner's wallet. Same trust model as the public ETH RPC. Override the endpoint
+with `LTC_API_URL` (e.g. a self-hosted mempool/Esplora instance) if desired.
 
-`txindex` is **not** required.
-
-Example litecoind flags:
+**Optional: self-hosted litecoind.** Set `LTC_RPC_URL` (+ `LTC_RPC_USER`/`LTC_RPC_PASS`) to
+use a node instead — zero external data dependency, but the node downloads/syncs the full
+chain. The watcher calls `importaddress` (rescan=false) per address, then reads
+`getreceivedbyaddress`. `txindex` is not required. Example flags:
 ```
 -server -rpcuser=<u> -rpcpassword=<p> -rpcallowip=0.0.0.0/0 -rpcbind=0.0.0.0
 ```
@@ -87,12 +94,19 @@ CRYPTO_WATCHER_URL=https://crypto.davidbondtv.com
 CRYPTO_WATCHER_TOKEN=<shared token>
 ```
 
-Then fill `data/crypto-config.json` with real ETH and LTC receiving addresses:
+Then fill `data/crypto-config.json` with real ETH and LTC receiving addresses (this is the
+actual schema the main app loads — see `lib/crypto-config.js`):
 
 ```json
 {
-  "eth": { "address": "0x..." },
-  "ltc": { "address": "ltc1..." }
+  "coins": {
+    "ETH": { "address": "0x...", "confirmations": 6, "decimals": 6 },
+    "LTC": { "address": "ltc1...", "confirmations": 6, "decimals": 8 },
+    "XMR": { "address": "", "enabled": false }
+  },
+  "membership": { "termMonths": 3, "priceUsd": 47 },
+  "productDiscountPercent": 10,
+  "orderTtlMs": 1200000
 }
 ```
 

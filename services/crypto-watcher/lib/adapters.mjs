@@ -1,5 +1,6 @@
 // Per-coin "how much has this address received at >= minconf confirmations".
-// LTC: litecoind watch-only wallet (importaddress once), getreceivedbyaddress.
+// LTC: either a litecoind watch-only wallet (makeLtcAdapter) OR a public Esplora
+//   explorer with no local node (makeLtcEsploraAdapter, the default — zero download).
 // ETH: public JSON-RPC, balance-delta (works with unique-amount matching). For ETH,
 // "confirmations" is enforced by reading balance at (latest - confirmations) blocks.
 
@@ -31,6 +32,40 @@ export function makeLtcAdapter({ rpcUrl, rpcUser, rpcPass }) {
       // Convert the decimal LTC number to base units without float drift.
       const [w, f = ''] = String(ltc).split('.');
       return BigInt(w) * E(decimals) + BigInt((f + '0'.repeat(decimals)).slice(0, decimals));
+    },
+  };
+}
+
+// Litecoin via a public Esplora-style explorer (e.g. litecoinspace.org) — no local
+// node, no blockchain download. Reads confirmed outputs to the address and sums the
+// ones with >= minconf confirmations, returning litoshi (base units, 8 decimals).
+// Trust model: the explorer can only READ the chain; funds go straight to the owner's
+// wallet. fetchImpl is injectable for tests.
+export function makeLtcEsploraAdapter({ baseUrl = 'https://litecoinspace.org/api', fetchImpl = fetch } = {}) {
+  const decimals = 8;
+  async function getJson(path) {
+    const r = await fetchImpl(`${baseUrl}${path}`);
+    if (!r.ok) throw new Error(`LTC API ${path}: ${r.status}`);
+    return r.json();
+  }
+  return {
+    decimals,
+    async getReceived(address, minconf) {
+      const tip = Number(await getJson('/blocks/tip/height'));
+      // Esplora returns the address's recent txs (mempool first, then newest confirmed).
+      // For our low-volume, fresh receive addresses this single page covers all
+      // relevant deposits. Sum outputs paying THIS address on txs with >= minconf.
+      const txs = await getJson(`/address/${address}/txs`);
+      let total = 0n;
+      for (const tx of (Array.isArray(txs) ? txs : [])) {
+        const confirmed = tx.status && tx.status.confirmed;
+        const conf = confirmed ? (tip - tx.status.block_height + 1) : 0;
+        if (conf < minconf) continue;
+        for (const vout of (tx.vout || [])) {
+          if (vout.scriptpubkey_address === address) total += BigInt(vout.value);
+        }
+      }
+      return total; // litoshi
     },
   };
 }
