@@ -17,6 +17,7 @@ const helpQ = (t) => `<span class="q" title="${t}">?</span>`;
 const HIDDEN_IDS = [
   'upd-1', 'upd-2', 'upd-3', 'upd-4',
   'vit-build',
+  'kpi-visitors', 'kpi-pageviews', 'top-pages', 'top-videos',
 ];
 const hiddenBin = () => `<div style="display:none">${HIDDEN_IDS.map((id) => `<span id="${id}"></span>`).join('')}</div>`;
 
@@ -72,6 +73,8 @@ function buildCommandCenter() {
     <div class="dpanel ov-metrics">
       <div class="ovm-group">
         ${metric('👁️', 'TOTAL VIEWS', 'kpi-views', 'trend-views')}
+        ${metric('🌐', 'VISITORS', 'kpi-visitors', null, 'unique devices/day')}
+        ${metric('📄', 'PAGE VIEWS', 'kpi-pageviews', null, 'all page loads')}
         ${metric('👥', 'REGISTERED', 'kpi-users', 'trend-users', 'verified accounts')}
         ${metric('🛡️', 'BLOCKED HITS', 'kpi-blocked', 'trend-blocked')}
       </div>
@@ -95,6 +98,19 @@ function buildCommandCenter() {
         <svg class="dchart" id="donut" viewBox="0 0 220 160" role="img" aria-label="Traffic by country"></svg>
         <div class="dlegend" id="donut-legend" style="margin-top:8px"></div>
         ${srcLine('SOURCE: <b>GeoIP via Cloudflare</b> CF-IPCountry header')}
+      </div>
+    </div>
+
+    <div class="grid g-2 row-gap">
+      <div class="dpanel">
+        <div class="dp-title"><span class="dico">🎬</span> TOP VIDEOS</div>
+        <div id="top-videos" class="dpanel-list"></div>
+        ${srcLine('SOURCE: <b>analytics rollups</b> · views by video')}
+      </div>
+      <div class="dpanel">
+        <div class="dp-title"><span class="dico">📄</span> TOP PAGES</div>
+        <div id="top-pages" class="dpanel-list"></div>
+        ${srcLine('SOURCE: <b>visit-tracker beacon</b> · page loads · bots excluded')}
       </div>
     </div>
 

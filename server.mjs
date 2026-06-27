@@ -596,6 +596,35 @@ async function handleApi(req, res, ctx) {
     return true;
   }
 
+  // POST /api/visit — page-visit beacon. Body: { path, ref, did }.
+  // One call per page load; bots silently dropped.
+  if (req.method === 'POST' && url.pathname === '/api/visit') {
+    try {
+      if (ctx.isBot || !trackLimiter.hit(ctx.ip).allowed) { res.writeHead(204); res.end(); return true; }
+      const raw = await readBody(req, 2048);
+      let body; try { body = JSON.parse(raw); } catch { body = null; }
+      const visitPath = typeof body?.path === 'string' && body.path.startsWith('/')
+        ? body.path.slice(0, 200) : '/';
+      if (!isLegacyAdminRoute(visitPath) && !isPrettyAdminRoute(visitPath)) {
+        const u = ctx.user || null;
+        analytics.recordVisit({
+          path: visitPath,
+          referrer: String(body?.ref || '').slice(0, 500),
+          deviceId: String(body?.did || '').slice(0, 64),
+          ip: ctx.ip,
+          cc: ctx.country,
+          country: ctx.geo && ctx.geo.countryName,
+          city: ctx.geo && ctx.geo.city,
+          device: ctx.device || {},
+          userId: u ? u.id : null,
+          username: u ? (u.username || u.email || u.id) : null,
+        });
+      }
+    } catch { /* never surface tracking errors */ }
+    res.writeHead(204); res.end();
+    return true;
+  }
+
   // GET /api/challenge
   if (req.method === 'GET' && url.pathname === '/api/challenge') {
     try {
@@ -1302,9 +1331,11 @@ async function handleApi(req, res, ctx) {
       const topVideos = Object.entries(vidAgg)
         .map(([id, s]) => ({ id, title: titles[id] || id, views: s.views, minutes: Math.round(s.seconds / 60) }))
         .sort((a, b) => b.views - a.views).slice(0, 20);
+      const vs24h = analytics.getVisitorStats(utcDay(since), utcDay(now));
       sendJson(res, 200, {
         range: '24h', granularity: 'hour', countriesAllTime: true,
-        totals: { views: totViews, minutes: Math.round(totSeconds / 60), hours: Math.round(totSeconds / 360) / 10 },
+        totals: { views: totViews, minutes: Math.round(totSeconds / 60), hours: Math.round(totSeconds / 360) / 10,
+          pageViews: vs24h.pageViews, uniqueVisitors: vs24h.uniqueVisitors },
         topVideos, countries,
         blocked: { total: totBlocked, byCountry: analytics.getBlockedStats().byCountry, byDay: {} },
         userCount: verifiedUsers, series, generatedAt: now,
@@ -1352,9 +1383,11 @@ async function handleApi(req, res, ctx) {
     const topVideos = Object.entries(vidAgg)
       .map(([id, s]) => ({ id, title: titles[id] || id, views: s.views, minutes: Math.round(s.seconds / 60) }))
       .sort((a, b) => b.views - a.views).slice(0, 20);
+    const vs = analytics.getVisitorStats(fromDay, toDay);
     sendJson(res, 200, {
       range: rangeParam, granularity: 'day', from: fromDay, to: toDay, countriesAllTime: true,
-      totals: { views: totViews, minutes: totMinutes, hours: Math.round((totMinutes / 60) * 10) / 10 },
+      totals: { views: totViews, minutes: totMinutes, hours: Math.round((totMinutes / 60) * 10) / 10,
+        pageViews: vs.pageViews, uniqueVisitors: vs.uniqueVisitors },
       topVideos, countries,
       blocked: { total: blockedTotal, byCountry: blockedStats.byCountry, byDay: blockedStats.byDay },
       userCount: verifiedUsers, series, generatedAt: now,
@@ -1378,6 +1411,34 @@ async function handleApi(req, res, ctx) {
       views, minutes: Math.round(seconds / 60),
       avgSeconds: views ? Math.round(seconds / views) : 0,
       byDay,
+    });
+    return true;
+  }
+
+  // GET /api/admin/analytics/pages — per-path visit counts for the selected date range.
+  if (req.method === 'GET' && url.pathname === '/api/admin/analytics/pages') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const DAY = 86400000;
+    const now = Date.now();
+    const utcDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+    const rangeParam = (url.searchParams.get('range') || '30d').toLowerCase();
+    let toDay = utcDay(now), fromDay;
+    if (rangeParam === 'custom') {
+      const valid = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+      const f = url.searchParams.get('from'), t = url.searchParams.get('to');
+      fromDay = valid(f) ? f : utcDay(now - 29 * DAY);
+      if (valid(t)) toDay = t;
+      if (fromDay > toDay) { const tmp = fromDay; fromDay = toDay; toDay = tmp; }
+    } else {
+      const days = rangeParam === '7d' ? 7 : rangeParam === '90d' ? 90 : 30;
+      fromDay = utcDay(now - (days - 1) * DAY);
+    }
+    const allPages = analytics.getPageStats(fromDay, toDay)
+      .filter(p => !isLegacyAdminRoute(p.path) && !isPrettyAdminRoute(p.path));
+    sendJson(res, 200, {
+      pages: allPages,
+      totals: analytics.getVisitorStats(fromDay, toDay),
+      generatedAt: now,
     });
     return true;
   }
@@ -2644,6 +2705,11 @@ const server = http.createServer(async (req, res) => {
     if (headers['Content-Type'].startsWith('text/html')) {
       let html = await fsp.readFile(filePath, 'utf8');
       html = injectMetaTags(html, req.url);
+      // Inject visit-tracker on public pages only (not admin pages).
+      const vtPath = new URL(req.url, 'http://x').pathname;
+      if (!isLegacyAdminRoute(vtPath) && !isPrettyAdminRoute(vtPath) && html.includes('</head>')) {
+        html = html.replace('</head>', '<script src="/js/visit-tracker.js" defer></script></head>');
+      }
       // Cache-bust local CSS/JS by stamping the app version onto their URLs, so a
       // deploy can never leave a browser (or the Cloudflare edge) painting with a
       // stale stylesheet/script. Only touches root-relative .css/.js refs that

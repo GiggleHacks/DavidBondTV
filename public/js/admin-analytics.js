@@ -215,12 +215,12 @@ function mountRangeBar() {
     currentRange = btn.dataset.range;
     [...$('range-seg').children].forEach((b) => b.classList.toggle('active', b === btn));
     $('range-custom').hidden = currentRange !== 'custom';
-    if (currentRange !== 'custom' || (customFrom && customTo)) loadOverview().catch(() => {});
+    if (currentRange !== 'custom' || (customFrom && customTo)) { loadOverview().catch(() => {}); loadPages().catch(() => {}); }
   });
   const onCustom = () => {
     customFrom = $('range-from').value || customFrom;
     customTo = $('range-to').value || customTo;
-    if (currentRange === 'custom' && customFrom && customTo) loadOverview().catch(() => {});
+    if (currentRange === 'custom' && customFrom && customTo) { loadOverview().catch(() => {}); loadPages().catch(() => {}); }
   };
   $('range-from').addEventListener('change', onCustom);
   $('range-to').addEventListener('change', onCustom);
@@ -237,6 +237,8 @@ async function loadOverview() {
   }
   updateValue('kpi-views', nf(d.totals.views));
   updateValue('kpi-hours', nf(d.totals.hours));
+  updateValue('kpi-visitors', nf(d.totals.uniqueVisitors || 0));
+  updateValue('kpi-pageviews', nf(d.totals.pageViews || 0));
   updateValue('kpi-users', nf(d.userCount));
   updateValue('kpi-blocked', nf((d.blocked && d.blocked.total) || 0));
   setTrend('trend-views', trendPct(series.map((s) => s.views)));
@@ -255,6 +257,34 @@ async function loadOverview() {
     ? d.topVideos.map((v) => `<div class="b"><div><a href="${ADMIN_PATHS.analytics}?v=${encodeURIComponent(v.id)}"><div class="lab">🎬 ${esc(v.title)}</div><div class="track"><div class="fill" style="width:${Math.max(3, Math.round((v.views / max) * 100))}%"></div></div></a></div><div class="n">${nf(v.views)}</div></div>`).join('')
     : '<p class="muted">No views recorded yet.</p>';
   applyLayoutHook();
+}
+
+const PAGE_LABELS = {
+  '/': 'Home', '/browse': 'Browse', '/browse.html': 'Browse',
+  '/watch': 'Watch', '/index.html': 'Watch',
+  '/products': 'Products', '/products.html': 'Products',
+  '/course': 'Course', '/course.html': 'Course',
+  '/membership': 'Membership', '/membership.html': 'Membership',
+  '/login': 'Login', '/login.html': 'Login',
+  '/signup': 'Sign Up', '/signup.html': 'Sign Up',
+  '/account': 'Account', '/account.html': 'Account',
+  '/profile-setup': 'Profile Setup', '/profile-setup.html': 'Profile Setup',
+  '/terms': 'Terms', '/privacy': 'Privacy', '/refunds': 'Refunds',
+};
+function pageLabel(p) { return PAGE_LABELS[p] || p; }
+
+async function loadPages() {
+  const d = await api('/api/admin/analytics/pages' + rangeQuery());
+  const pages = d.pages || [];
+  const tpEl = $('top-pages');
+  if (!tpEl) return;
+  const total = pages.reduce((a, p) => a + p.visits, 0) || 1;
+  tpEl.innerHTML = pages.length
+    ? pages.slice(0, 20).map((p) => {
+        const pct = Math.max(3, Math.round((p.visits / total) * 100));
+        return `<div class="b"><div><div class="lab">🔗 ${esc(pageLabel(p.path))}</div><div class="track"><div class="fill" style="width:${pct}%"></div></div></div><div class="n">${nf(p.visits)}</div></div>`;
+      }).join('')
+    : '<p class="muted">No page visits recorded yet.</p>';
 }
 
 function mapCounts(mode) {
@@ -723,7 +753,7 @@ async function main() {
   mountRangeBar();
   wireTabs(); wireMapModes(); wireGeo();
   tickClock(); setInterval(tickClock, 1000);
-  setInterval(() => { loadOverview().catch(() => {}); }, 10000);
+  setInterval(() => { loadOverview().catch(() => {}); loadPages().catch(() => {}); }, 10000);
   setInterval(() => { loadOverviewFinance().catch(() => {}); }, 30000);
   setInterval(() => { loadVisitors().catch(() => {}); }, 10000);
   setInterval(() => { loadMetrics().catch(() => {}); }, 10000);
@@ -734,7 +764,7 @@ async function main() {
     if (p && p.classList.contains('on')) loadFinancial().catch(() => {});
   }, 20000); // auto-refresh financial while its tab is open
   try {
-    await Promise.all([loadOverview(), loadOverviewFinance(), loadCountries('viewers'), loadGeo(), loadExtras(), loadVisitors(), loadMetrics(), loadLive()]);
+    await Promise.all([loadOverview(), loadPages(), loadOverviewFinance(), loadCountries('viewers'), loadGeo(), loadExtras(), loadVisitors(), loadMetrics(), loadLive()]);
   } catch { /* a 401 mid-flight reloads into the gate */ }
 }
 main();
