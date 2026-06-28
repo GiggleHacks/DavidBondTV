@@ -171,6 +171,11 @@ const uploadLimiter = createRateLimiter(60_000, 30); // 30 upload starts/min per
 // across restarts; otherwise a fresh random key logs everyone out on restart.
 const AUTH_SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+// GigaBrain analytics sidecar (separate Next.js service / own origin). When set,
+// public pages get the first-party tracker snippet and the "Analytics 2.0" admin
+// tile embeds its dashboard. Leave unset to disable the integration entirely.
+//   dev:  http://localhost:3001     prod: https://analytics.davidbondtv.com
+const GIGABRAIN_PUBLIC_URL = (process.env.GIGABRAIN_PUBLIC_URL || '').replace(/\/+$/, '');
 const USERS_FILE = path.join(__dirname, 'data', 'users.json');
 const GEOIP_FILE = path.join(__dirname, 'data', 'geoip-country.json');
 const geoip = createGeoip(GEOIP_FILE);
@@ -2935,11 +2940,22 @@ const server = http.createServer(async (req, res) => {
     // (pages are small) rather than streaming so we can rewrite the body.
     if (headers['Content-Type'].startsWith('text/html')) {
       let html = await fsp.readFile(filePath, 'utf8');
+      // Stamp the GigaBrain sidecar origin into the Analytics 2.0 embed page.
+      // When unset, the placeholder survives and the page shows a setup notice.
+      if (GIGABRAIN_PUBLIC_URL && html.includes('__GIGABRAIN_URL__')) {
+        html = html.split('__GIGABRAIN_URL__').join(GIGABRAIN_PUBLIC_URL);
+      }
       html = injectMetaTags(html, req.url);
       // Inject visit-tracker on public pages only (not admin pages).
       const vtPath = new URL(req.url, 'http://x').pathname;
       if (!isLegacyAdminRoute(vtPath) && !isPrettyAdminRoute(vtPath) && html.includes('</head>')) {
         html = html.replace('</head>', '<script src="/js/visit-tracker.js" defer></script></head>');
+        // GigaBrain first-party analytics (sidecar). Same public-only gate; loads
+        // only when the sidecar origin is configured. data-base points at the
+        // sidecar; the snippet posts events there as a no-preflight beacon.
+        if (GIGABRAIN_PUBLIC_URL) {
+          html = html.replace('</head>', `<script src="/js/gigabrain-analytics.js" data-base="${escapeHtml(GIGABRAIN_PUBLIC_URL)}" defer></script></head>`);
+        }
       }
       // Cache-bust local CSS/JS by stamping the app version onto their URLs, so a
       // deploy can never leave a browser (or the Cloudflare edge) painting with a

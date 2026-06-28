@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>David Bond TV — Analytics 2.0</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+  <script>document.documentElement.classList.add('admin-auth-pending');</script>
+  <style>
+    /* Full-bleed embed of the GigaBrain dashboard. The admin nav stays on top;
+       the iframe fills the rest of the viewport. */
+    .admin-wrap.gb-wrap { max-width: none; }
+    .gb-stage {
+      position: relative;
+      height: calc(100vh - 64px);
+      min-height: 520px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+    .gb-stage iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
+    .gb-toolbar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+    .gb-toolbar .gb-hint { font-size: 12.5px; color: var(--text-dim); }
+    .gb-toolbar a.gb-ext {
+      margin-left: auto; font-size: 13px; color: var(--text); text-decoration: none;
+      border: 1px solid var(--border); border-radius: 8px; padding: 7px 11px; white-space: nowrap;
+      transition: border-color .15s, color .15s;
+    }
+    .gb-toolbar a.gb-ext:hover { border-color: var(--section-accent, var(--accent)); color: var(--section-accent, var(--accent)); }
+    .gb-missing {
+      display: grid; place-items: center; height: 100%; text-align: center; padding: 24px;
+    }
+    .gb-missing .gb-card { max-width: 520px; }
+    .gb-missing h3 { margin: 0 0 8px; font-size: 16px; }
+    .gb-missing p { margin: 6px 0; color: var(--text-dim); font-size: 13.5px; line-height: 1.55; }
+    .gb-missing code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; font-size: 12.5px; }
+  </style>
+</head>
+<body>
+  <div class="admin-wrap wide admin-app-shell gb-wrap">
+    <header class="admin-bar" id="admin-shell"></header>
+
+    <main id="app">
+      <div class="gb-toolbar">
+        <span class="gb-hint">Live first-party analytics (GigaBrain). Sign in once with the dashboard password.</span>
+        <a class="gb-ext" id="gb-open" href="__GIGABRAIN_URL__/admin" target="_blank" rel="noopener">Open full screen ↗</a>
+      </div>
+      <div class="gb-stage" id="gb-stage">
+        <!-- __GIGABRAIN_URL__ is replaced server-side with GIGABRAIN_PUBLIC_URL.
+             If the sidecar isn't configured, the placeholder remains and the
+             page JS swaps in the "not configured" notice below. -->
+        <iframe id="gb-frame" src="__GIGABRAIN_URL__/admin"
+          title="GigaBrain analytics dashboard"
+          referrerpolicy="no-referrer-when-downgrade"></iframe>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="/js/admin-gigabrain.js"></script>
+  <script type="module" src="/js/admin-shell.js"></script>
+</body>
+</html>

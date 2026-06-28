@@ -25,6 +25,8 @@ export const SECTIONS = [
   { key: 'community',  label: 'Community',  route: '-community',  icon: 'community', accent: '#fb923c', nav: true,  dark: true,  desc: 'Comments and viewer engagement.' },
   { key: 'telegram',   label: 'Telegram',   route: '-telegram',   icon: 'telegram',  accent: '#38bdf8', nav: true,  dark: true,  desc: 'Bot configuration and group access.' },
   { key: 'review',     label: 'Review',     route: '-review',     icon: 'review',    accent: '#a3e635', nav: true,  dark: true,  desc: 'Approve or reject the draft queue.' },
+  // GigaBrain analytics sidecar, embedded as a second dashboard ("Analytics 2.0").
+  { key: 'gigabrain',  label: 'Analytics 2.0', route: '-gigabrain', icon: 'gigabrain', accent: '#a78bfa', nav: true,  desc: 'GigaBrain — live visitors, geo, sources, devices.' },
   // Contextual sub-pages — identity for headers/theming, not in the nav.
   { key: 'analytics',  label: 'Analytics',  route: '-analytics',  icon: 'analytics', accent: '#4ade80', nav: false, dark: true,  desc: 'Per-video performance.' },
   { key: 'edit',       label: 'Edit',       route: '-edit',       icon: 'edit',      accent: '#94a3b8', nav: false, dark: true,  desc: 'Edit a single video.' },
