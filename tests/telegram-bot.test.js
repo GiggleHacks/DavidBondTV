@@ -143,6 +143,31 @@ describe('formatMessage', () => {
     expect(msg).toContain('unknown_event');
   });
 
+  it('formats a new comment with who/where/what + a clickable link', () => {
+    const msg = n._test.formatMessage('comment', {
+      username: 'DavidQuake', tag: 'member', text: 'great vid', ip: '8.8.8.8',
+      cc: 'US', country: 'United States', url: 'https://davidbondtv.com/videos/jess-at-a-gogo',
+    });
+    expect(msg).toContain('New comment');
+    expect(msg).toContain('DavidQuake');
+    expect(msg).toContain('United States (US)');
+    expect(msg).toContain('8.8.8.8');
+    expect(msg).toContain('great vid');
+    expect(msg).toContain('<a href="https://davidbondtv.com/videos/jess-at-a-gogo">View page</a>');
+  });
+
+  it('flags a hidden (filtered) comment and escapes HTML in user text', () => {
+    const msg = n._test.formatMessage('comment', {
+      username: 'Anonymous', tag: 'anonymous', text: '<script>x</script>', ip: '1.1.1.1',
+      hidden: true, hiddenReason: 'Firestone', parentId: 'p1',
+    });
+    expect(msg).toContain('New reply');
+    expect(msg).toContain('Hidden from public');
+    expect(msg).toContain('Firestone');
+    expect(msg).toContain('&lt;script&gt;');
+    expect(msg).not.toContain('<script>');
+  });
+
   it('estimateStripeNet applies ~2.9% + 30¢', () => {
     const { estimateStripeNet } = n._test;
     expect(estimateStripeNet(1700)).toEqual({ fee: Math.round(1700 * 0.029) + 30, net: 1700 - (Math.round(1700 * 0.029) + 30) });

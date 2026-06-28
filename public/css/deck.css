@@ -68,6 +68,22 @@
 .dsrc { margin-top: 10px; border-top: 1px solid var(--d-edge); padding-top: 7px; font-size: 10px; color: var(--d-dim); line-height: 1.55; }
 .dsrc b { color: var(--d-accent); font-weight: 500; }
 
+.funnel-card { margin: 12px 0; }
+.funnel-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.funnel-grid > div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--d-edge);
+  border-radius: 8px;
+  background: var(--d-panel2);
+}
+.funnel-grid b {
+  display: block;
+  color: var(--d-text);
+  font: 700 20px/1.15 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.funnel-grid span { display: block; margin-top: 4px; color: var(--d-dim); font-size: 11px; }
+
 /* KPI cards */
 .kpi { border-top: 2px solid var(--d-accent); }
 .kpi.amber { border-top-color: var(--d-amber); }
@@ -212,6 +228,7 @@
 @media (max-width: 720px) {
   .ov-metrics .ovm-divider { display: none; }
   .ov-metrics .ovm-group { gap: 20px; }
+  .funnel-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* Quick action links row */

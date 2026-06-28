@@ -3,6 +3,7 @@
 // check); everyone else posts anonymously behind a signed math human-check. All
 // user text is rendered via textContent (never innerHTML) — XSS-safe.
 import { fetchMe } from './account.js';
+import { analyticsContext } from './analytics-client.js';
 
 // Standard 12-hour date + time, e.g. "Jun 21, 2026, 3:45 PM".
 function formatDateTime(ts) {
@@ -136,6 +137,7 @@ export function initComments(videoId) {
         token: tok || token,
         parentId,
         hp: hp || '',
+        ...analyticsContext(),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -389,7 +391,8 @@ export function initComments(videoId) {
 
   async function loadComments() {
     try {
-      const res = await fetch(`/api/comments?video=${encodeURIComponent(VIDEO)}`);
+      const ctx = analyticsContext();
+      const res = await fetch(`/api/comments?video=${encodeURIComponent(VIDEO)}&visitorId=${encodeURIComponent(ctx.visitorId || '')}`);
       const data = await res.json();
       const comments = data.comments || [];
       if (comments.length === 0) renderEmpty();

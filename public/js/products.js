@@ -21,7 +21,7 @@ const escHtml = (s) => String(s == null ? '' : s)
 function courseCard(p, owned) {
   const b = p.branding || {};
   const sales = p.sales || {};
-  const href = `/course.html?slug=${encodeURIComponent(p.slug)}`;
+  const href = `/courses/${encodeURIComponent(p.slug)}`;
   const a = document.createElement('a');
   a.className = 'pcard';
   a.href = href;

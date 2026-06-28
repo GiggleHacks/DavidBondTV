@@ -2,25 +2,14 @@
 // played seconds (accumulated from timeupdate deltas, so pauses and seeks don't
 // inflate it) and flushes every 15s plus on pause / end / tab-hide / unload.
 // The server attaches IP / country / user — the client sends no PII.
+import { analyticsIdentity } from './analytics-client.js';
+
 export function initWatchTracker(video, videoId) {
   if (!video || !videoId) return;
   const viewId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2);
-  const sessionId = (() => {
-    try {
-      const key = 'dbtv_watch_session_id';
-      let id = sessionStorage.getItem(key);
-      if (!id) { id = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)); sessionStorage.setItem(key, id); }
-      return id;
-    } catch { return viewId; }
-  })();
-  const deviceId = (() => {
-    try {
-      const key = 'dbtv_device_id';
-      let id = localStorage.getItem(key);
-      if (!id) { id = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)); localStorage.setItem(key, id); }
-      return id;
-    } catch { return null; }
-  })();
+  const ids = analyticsIdentity();
+  const sessionId = ids.sessionId || viewId;
+  const deviceId = ids.deviceId || null;
   let acc = 0;       // unsent watched seconds
   let last = null;   // previous currentTime sample
 
@@ -36,7 +25,7 @@ export function initWatchTracker(video, videoId) {
     if (acc <= 0) return;
     const dt = acc; acc = 0;
     const payload = JSON.stringify({
-      v: videoId, vid: viewId, sid: sessionId, did: deviceId,
+      v: videoId, vid: viewId, sid: sessionId, did: deviceId, visitorId: ids.visitorId,
       dt: Math.round(dt * 100) / 100,
       pos: Math.round(video.currentTime || 0), dur: Math.round(video.duration || 0),
       vp: `${window.innerWidth || 0}x${window.innerHeight || 0}`,

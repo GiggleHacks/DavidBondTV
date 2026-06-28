@@ -501,7 +501,7 @@ function openCourseModal(product, v) {
   buy.textContent = (product.sales && product.sales.ctaLabel) || `Purchase ${fmtMoney(product.price, product.currency)}`;
   buy.onclick = () => goToCourse(product);
   const alt = modal.querySelector('.pm-alt');
-  alt.onclick = (e) => { e.preventDefault(); location.href = `/course.html?slug=${encodeURIComponent(product.slug)}`; };
+  alt.onclick = (e) => { e.preventDefault(); location.href = `/courses/${encodeURIComponent(product.slug)}`; };
   modal.classList.add('show');
 }
 

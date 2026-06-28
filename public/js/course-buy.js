@@ -20,7 +20,7 @@ export function fmtMoney(amount, currency) {
  * the card rail is gone. `product` needs {slug}.
  */
 export function goToCourse(product) {
-  location.href = `/course.html?slug=${encodeURIComponent(product.slug)}`;
+  location.href = `/courses/${encodeURIComponent(product.slug)}`;
 }
 
 /** After checkout the webhook may lag — poll a few times for the entitlement. */

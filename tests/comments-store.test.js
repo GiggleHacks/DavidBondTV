@@ -122,6 +122,58 @@ describe('addComment + listComments (persistence)', () => {
     expect(typeof c.ts).toBe('number');
     expect(c.ts).toBeGreaterThan(0);
   });
+
+  it('persists admin-only anonymous analytics metadata and visitor id', async () => {
+    const c = await addComment(TMP_FILE, 'video4', {
+      name: 'Anonymous',
+      text: 'metadata please',
+      visitorId: 'visitor-1',
+      analytics: {
+        ip: '203.0.113.10',
+        country: 'US',
+        city: 'Bakersfield',
+        region: 'California',
+        referrer: 'https://example.com/',
+        path: '/watch?v=video4',
+        deviceId: 'device-1',
+        sessionId: 'session-1',
+        device: { type: 'desktop', os: 'Windows', browser: 'Chrome', ua: 'Mozilla/5.0' },
+      },
+    });
+
+    expect(c.visitorId).toBe('visitor-1');
+    expect(c.analytics).toMatchObject({
+      ip: '203.0.113.10',
+      country: 'US',
+      city: 'Bakersfield',
+      referrer: 'https://example.com/',
+      deviceId: 'device-1',
+      sessionId: 'session-1',
+      device: { type: 'desktop', os: 'Windows', browser: 'Chrome' },
+    });
+  });
+
+  it('persists shadow filter moderation metadata', async () => {
+    const c = await addComment(TMP_FILE, 'video5', {
+      name: 'Anonymous',
+      text: 'filtered',
+      moderation: {
+        shadow: true,
+        reason: 'word_filter',
+        phrase: 'Mark Firestone',
+        filterId: 'filter_1',
+        ts: 1234,
+      },
+    });
+
+    expect(c.moderation).toEqual({
+      shadow: true,
+      reason: 'word_filter',
+      phrase: 'Mark Firestone',
+      filterId: 'filter_1',
+      ts: 1234,
+    });
+  });
 });
 
 describe('replies (parentId threading)', () => {

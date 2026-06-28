@@ -97,10 +97,10 @@ function drawTrend(svg, series) {
   const W = 640, H = 200, pad = 6;
   if (!series.length) { svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" fill="#64748b" font-size="13" text-anchor="middle" font-family="monospace">awaiting data…</text>`; return; }
   const xs = (i) => pad + (i * (W - pad * 2)) / Math.max(series.length - 1, 1);
+  const maxAll = Math.max(1, ...series.flatMap((d) => [d.pageViews || 0, d.uniqueVisitors || 0]));
+  const ys = (n) => H - pad - (n / maxAll) * (H - pad * 2);
   const line = (key, color, dash, fill) => {
     const vals = series.map((d) => d[key] || 0);
-    const max = Math.max(...vals, 1);
-    const ys = (n) => H - pad - (n / max) * (H - pad * 2);
     const pts = series.map((d, i) => `${xs(i).toFixed(1)},${ys(d[key] || 0).toFixed(1)}`).join(' ');
     let out = '';
     if (fill) out += `<polygon points="${pad},${H - pad} ${pts} ${W - pad},${H - pad}" fill="${color}" opacity="0.08"/>`;
@@ -109,7 +109,13 @@ function drawTrend(svg, series) {
   };
   let grid = '';
   for (let i = 1; i < 4; i++) grid += `<line x1="0" y1="${(H / 4) * i}" x2="${W}" y2="${(H / 4) * i}" stroke="#1e2030" stroke-width="0.5"/>`;
-  svg.innerHTML = grid + line('views', '#818cf8', false, true);
+  svg.innerHTML = grid
+    + line('pageViews', '#38bdf8', false, true)
+    + line('uniqueVisitors', '#fbbf24', true, false)
+    + `<g font-family="monospace" font-size="10" fill="#94a3b8">
+      <circle cx="20" cy="18" r="4" fill="#38bdf8"/><text x="30" y="22">Page views</text>
+      <circle cx="118" cy="18" r="4" fill="#fbbf24"/><text x="128" y="22">Visitors</text>
+    </g>`;
 }
 function drawDonut(svg, legendEl, countries) {
   const entries = Object.entries(countries || {})
@@ -209,18 +215,30 @@ function mountRangeBar() {
     </span>
     <span class="range-note muted" id="range-note"></span>`;
   panel.insertBefore(bar, panel.firstChild);
+  const funnel = document.createElement('section');
+  funnel.id = 'purchase-funnel';
+  funnel.className = 'dcard funnel-card';
+  funnel.innerHTML = `
+    <div class="dcard-head"><div><b>Purchase funnel</b><span>Buy clicks to paid access</span></div><span class="muted" id="funnel-window"></span></div>
+    <div class="funnel-grid">
+      <div><b id="fun-buy">0</b><span>Buy clicks</span></div>
+      <div><b id="fun-start">0</b><span>Checkouts</span></div>
+      <div><b id="fun-grant">0</b><span>Granted</span></div>
+      <div><b id="fun-rate">0%</b><span>Click → grant</span></div>
+    </div>`;
+  panel.insertBefore(funnel, bar.nextSibling);
   $('range-seg').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-range]');
     if (!btn) return;
     currentRange = btn.dataset.range;
     [...$('range-seg').children].forEach((b) => b.classList.toggle('active', b === btn));
     $('range-custom').hidden = currentRange !== 'custom';
-    if (currentRange !== 'custom' || (customFrom && customTo)) { loadOverview().catch(() => {}); loadPages().catch(() => {}); }
+    if (currentRange !== 'custom' || (customFrom && customTo)) { loadOverview().catch(() => {}); loadPages().catch(() => {}); loadFunnel().catch(() => {}); }
   });
   const onCustom = () => {
     customFrom = $('range-from').value || customFrom;
     customTo = $('range-to').value || customTo;
-    if (currentRange === 'custom' && customFrom && customTo) { loadOverview().catch(() => {}); loadPages().catch(() => {}); }
+    if (currentRange === 'custom' && customFrom && customTo) { loadOverview().catch(() => {}); loadPages().catch(() => {}); loadFunnel().catch(() => {}); }
   };
   $('range-from').addEventListener('change', onCustom);
   $('range-to').addEventListener('change', onCustom);
@@ -285,6 +303,20 @@ async function loadPages() {
         return `<div class="b"><div><div class="lab">🔗 ${esc(pageLabel(p.path))}</div><div class="track"><div class="fill" style="width:${pct}%"></div></div></div><div class="n">${nf(p.visits)}</div></div>`;
       }).join('')
     : '<p class="muted">No page visits recorded yet.</p>';
+}
+
+async function loadFunnel() {
+  const box = $('purchase-funnel');
+  if (!box) return;
+  const d = await api('/api/admin/analytics/funnel' + rangeQuery());
+  const totals = d.totals || {};
+  const set = (id, value) => { const el = $(id); if (el) el.textContent = value; };
+  set('fun-buy', nf(totals.buy_click || 0));
+  set('fun-start', nf(totals.checkout_started || 0));
+  set('fun-grant', nf(totals.payment_granted || 0));
+  set('fun-rate', `${((d.conversion && d.conversion.buyToGrant) || 0).toLocaleString()}%`);
+  const win = $('funnel-window');
+  if (win) win.textContent = d.from ? `${d.from} → ${d.to}` : '';
 }
 
 function mapCounts(mode) {
@@ -753,7 +785,7 @@ async function main() {
   mountRangeBar();
   wireTabs(); wireMapModes(); wireGeo();
   tickClock(); setInterval(tickClock, 1000);
-  setInterval(() => { loadOverview().catch(() => {}); loadPages().catch(() => {}); }, 10000);
+  setInterval(() => { loadOverview().catch(() => {}); loadPages().catch(() => {}); loadFunnel().catch(() => {}); }, 10000);
   setInterval(() => { loadOverviewFinance().catch(() => {}); }, 30000);
   setInterval(() => { loadVisitors().catch(() => {}); }, 10000);
   setInterval(() => { loadMetrics().catch(() => {}); }, 10000);
@@ -764,7 +796,7 @@ async function main() {
     if (p && p.classList.contains('on')) loadFinancial().catch(() => {});
   }, 20000); // auto-refresh financial while its tab is open
   try {
-    await Promise.all([loadOverview(), loadPages(), loadOverviewFinance(), loadCountries('viewers'), loadGeo(), loadExtras(), loadVisitors(), loadMetrics(), loadLive()]);
+    await Promise.all([loadOverview(), loadPages(), loadFunnel(), loadOverviewFinance(), loadCountries('viewers'), loadGeo(), loadExtras(), loadVisitors(), loadMetrics(), loadLive()]);
   } catch { /* a 401 mid-flight reloads into the gate */ }
 }
 main();

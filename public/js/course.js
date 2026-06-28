@@ -7,12 +7,14 @@ import { fetchMe } from '/js/account.js';
 import { pollOwnership, fmtMoney } from '/js/course-buy.js';
 import { startCryptoCheckout, resumeCryptoCheckout, cryptoCoinOptions } from '/js/crypto-checkout.js';
 import { initTheme } from '/js/theme.js';
+import { trackEvent } from '/js/analytics-client.js';
 
 initTheme();
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
-const slug = params.get('slug') || '';
+const pathCourse = /^\/courses\/([^/?#]+)$/.exec(location.pathname);
+const slug = params.get('slug') || (pathCourse ? decodeURIComponent(pathCourse[1]) : '');
 const status = params.get('status');
 const rawNext = params.get('next');
 const next = (rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')) ? rawNext : '';
@@ -74,6 +76,7 @@ async function setupCrypto(product) {
   box.hidden = false;
   btn.addEventListener('click', () => {
     btn.disabled = true;
+    trackEvent('buy_click', { provider: 'crypto', productId: product.id, metadata: { kind: 'product', slug: product.slug } });
     startCryptoCheckout({ kind: 'product', productId: product.id, coin: sel.value }, mount);
   });
 

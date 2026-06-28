@@ -26,6 +26,137 @@ describe('analytics retention defaults', () => {
   });
 });
 
+describe('page visitors and funnel analytics', () => {
+  it('keeps unique visitor counting stable across analytics store restarts', () => {
+    let analytics = createAnalytics({ dir });
+    analytics.recordVisit({
+      t: Date.parse('2026-06-20T12:00:00Z'),
+      path: '/membership',
+      deviceId: 'device-1',
+      visitorId: 'visitor-1',
+      sessionId: 'session-1',
+      ip: '203.0.113.10',
+      cc: 'US',
+      device: { type: 'desktop', os: 'Windows', browser: 'Chrome' },
+    });
+    analytics.flush(true);
+
+    analytics = createAnalytics({ dir });
+    analytics.recordVisit({
+      t: Date.parse('2026-06-20T12:05:00Z'),
+      path: '/membership',
+      deviceId: 'device-1',
+      visitorId: 'visitor-1',
+      sessionId: 'session-1',
+      ip: '203.0.113.10',
+      cc: 'US',
+      device: { type: 'desktop', os: 'Windows', browser: 'Chrome' },
+    });
+    analytics.flush(true);
+
+    expect(analytics.getVisitorStats('2026-06-20', '2026-06-20')).toEqual({
+      pageViews: 2,
+      uniqueVisitors: 1,
+    });
+    expect(analytics.getVisitorSeries('2026-06-20', '2026-06-20')).toEqual([
+      { day: '2026-06-20', pageViews: 2, uniqueVisitors: 1 },
+    ]);
+  });
+
+  it('records purchase funnel events and builds a conversion summary', () => {
+    const analytics = createAnalytics({ dir });
+    analytics.recordFunnelEvent({
+      t: Date.parse('2026-06-20T12:00:00Z'),
+      eventType: 'buy_click',
+      visitorId: 'visitor-1',
+      sessionId: 'session-1',
+      path: '/courses/digital-pickup',
+      productId: 'prod_1',
+      provider: 'crypto',
+    });
+    analytics.recordFunnelEvent({
+      t: Date.parse('2026-06-20T12:01:00Z'),
+      eventType: 'checkout_started',
+      visitorId: 'visitor-1',
+      sessionId: 'session-1',
+      path: '/courses/digital-pickup',
+      productId: 'prod_1',
+      provider: 'crypto',
+    });
+    analytics.recordFunnelEvent({
+      t: Date.parse('2026-06-20T12:03:00Z'),
+      eventType: 'payment_granted',
+      visitorId: 'visitor-1',
+      sessionId: 'session-1',
+      productId: 'prod_1',
+      provider: 'crypto',
+    });
+
+    const funnel = analytics.getFunnelStats('2026-06-20', '2026-06-20');
+
+    expect(funnel.totals).toMatchObject({
+      buy_click: 1,
+      checkout_started: 1,
+      payment_granted: 1,
+    });
+    expect(funnel.conversion.buyToCheckout).toBe(100);
+    expect(funnel.conversion.buyToGrant).toBe(100);
+    expect(funnel.series).toEqual([
+      {
+        day: '2026-06-20',
+        buy_click: 1,
+        checkout_started: 1,
+        payment_granted: 1,
+      },
+    ]);
+  });
+
+  it('builds an admin-only visitor profile from visits, comments, watch activity, and funnel events', () => {
+    const analytics = createAnalytics({ dir });
+    analytics.recordVisit({
+      t: Date.parse('2026-06-20T12:00:00Z'),
+      path: '/membership',
+      referrer: 'https://example.com/',
+      deviceId: 'device-1',
+      visitorId: 'visitor-1',
+      sessionId: 'session-1',
+      ip: '203.0.113.10',
+      cc: 'US',
+      country: 'United States',
+      city: 'Bakersfield',
+      device: { type: 'desktop', os: 'Windows', browser: 'Chrome' },
+    });
+    analytics.record({
+      t: Date.parse('2026-06-20T12:02:00Z'),
+      video: 'video-1',
+      viewId: 'view-1',
+      visitorId: 'visitor-1',
+      sessionId: 'session-1',
+      deviceId: 'device-1',
+      ip: '203.0.113.10',
+      cc: 'US',
+      dt: 12,
+    });
+    analytics.recordFunnelEvent({
+      t: Date.parse('2026-06-20T12:03:00Z'),
+      eventType: 'buy_click',
+      visitorId: 'visitor-1',
+      sessionId: 'session-1',
+      productId: 'prod_1',
+    });
+
+    const profile = analytics.getVisitorProfile('visitor-1', {
+      comments: [{ id: 'c1', text: 'hello', visitorId: 'visitor-1' }],
+    });
+
+    expect(profile.visitorId).toBe('visitor-1');
+    expect(profile.summary).toMatchObject({ pageViews: 1, comments: 1, funnelEvents: 1 });
+    expect(profile.ips).toEqual(['203.0.113.10']);
+    expect(profile.devices[0]).toMatchObject({ id: 'device-1', type: 'desktop', os: 'Windows', browser: 'Chrome' });
+    expect(profile.activity.map((e) => e.type)).toEqual(['funnel.buy_click', 'watch', 'visit']);
+  });
+});
+
 describe('activity logs', () => {
   it('stores expanded watch events and supports search, filters, and cursor paging', () => {
     const analytics = createAnalytics({ dir });

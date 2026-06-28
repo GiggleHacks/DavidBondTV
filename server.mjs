@@ -19,6 +19,7 @@ import { createAccounts } from './lib/accounts.js';
 import { createTurnstile } from './lib/turnstile.js';
 import { createTenor, isTenorGifUrl } from './lib/tenor.js';
 import { createCommentGuard, DEFAULT_BANNED } from './lib/comment-guard.js';
+import { createCommentFilterStore } from './lib/comment-filter.js';
 import { adminUser } from './lib/users-store.js';
 import { createPaymentsStore } from './lib/payments-store.js';
 import { createCryptoOrdersStore } from './lib/crypto-orders-store.js';
@@ -48,6 +49,9 @@ import * as coupons from './lib/coupons.js';
 import * as uploads from './lib/upload-sessions.mjs';
 import * as products from './lib/products.js';
 import * as pricing from './lib/pricing.js';
+import { buildFinancialSummary } from './lib/financial-summary.js';
+import { resolveCanonicalRedirect } from './lib/public-routes.js';
+import { createIpGeo } from './lib/ip-geo.js';
 import { createRequestContext, isBotUa } from './lib/request-context.mjs';
 import { createAnalytics } from './lib/analytics-store.mjs';
 import { createGeoGate } from './lib/geo-gate.mjs';
@@ -137,16 +141,12 @@ const SYNC_TOKEN = process.env.SYNC_TOKEN || '';
 const SYNC_TARGET_URL = (process.env.SYNC_TARGET_URL || '').replace(/\/+$/, '');
 const ALLOWED_SYNC_PREFIXES = ['/thumbs/', '/previews/', '/videos/', '/storyboards/'];
 const limiter = createRateLimiter(60_000, 3); // up to 3 comments/min per IP
-// Comment anti-spam: per-account limits, duplicate/flood detection, link controls,
-// banned-word blocklist. Extra blocked words can be added in data/comment-blocklist.json
-// (a JSON array of strings) without a code change.
-const commentBlocklist = (() => {
-  try {
-    const extra = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'comment-blocklist.json'), 'utf8'));
-    return Array.isArray(extra) ? [...DEFAULT_BANNED, ...extra.filter((w) => typeof w === 'string')] : DEFAULT_BANNED;
-  } catch { return DEFAULT_BANNED; }
-})();
-const commentGuard = createCommentGuard({ banned: commentBlocklist });
+// Comment anti-spam: per-account limits, duplicate/flood detection and link
+// controls. Sensitive phrase filtering is a separate shadow-moderation layer
+// below so posters see success while the public feed stays clean.
+const commentGuard = createCommentGuard({ banned: DEFAULT_BANNED });
+const COMMENT_FILTER_FILE = path.join(__dirname, 'data', 'comment-blocklist.json');
+const commentFilters = createCommentFilterStore(COMMENT_FILTER_FILE);
 // Max accepted upload size. Configurable so the grey-cloud upload host can take
 // large masters; default 25 GB. (Cloudflare still caps the main host at ~100 MB,
 // so large uploads go via the DNS-only upload subdomain — see deploy docs.)
@@ -293,6 +293,31 @@ const analytics = createAnalytics({
 const buildRequestContext = createRequestContext({
   geoip, accounts, trustCloudflare: TRUST_CLOUDFLARE,
 });
+// City-level IP geolocation for the admin visitor dossier (admin-only, cached,
+// best-effort). Set IP_GEO_DISABLE=1 to keep it country-level / fully offline.
+const ipGeo = createIpGeo({
+  cacheFile: path.join(__dirname, 'data', 'ip-geo-cache.json'),
+  endpoint: process.env.IP_GEO_URL || 'http://ip-api.com/json/',
+  enabled: process.env.IP_GEO_DISABLE !== '1',
+});
+// Enrich a visitor profile's `location` with city/region/coords from the IP.
+async function enrichProfileLocation(profile) {
+  if (!profile) return profile;
+  const ip = (profile.ips && profile.ips[0]) || (profile.location && profile.location.ip) || null;
+  const geo = await ipGeo.lookup(ip).catch(() => null);
+  if (!geo) return profile;
+  const base = profile.location || {};
+  profile.location = {
+    cc: base.cc || geo.cc || null,
+    country: base.country || geo.country || null,
+    region: geo.region || base.region || null,
+    city: geo.city || base.city || null,
+    lat: base.lat != null ? base.lat : geo.lat,
+    lon: base.lon != null ? base.lon : geo.lon,
+    isp: geo.isp || base.isp || null,
+  };
+  return profile;
+}
 const trackLimiter = createRateLimiter(60_000, 120); // generous: ~heartbeats from a few concurrent views
 const GEO_RULES_FILE = path.join(__dirname, 'data', 'geo-rules.json');
 const geoGate = createGeoGate(GEO_RULES_FILE);
@@ -423,8 +448,58 @@ function logFiltersFromUrl(url) {
   return out;
 }
 
+function allCommentsWithContext() {
+  const store = readAllComments(COMMENTS_FILE);
+  const vmeta = new Map();
+  for (const v of listManifest()) vmeta.set(v.id, { id: v.id, title: v.title || v.id, thumb: v.thumb || null });
+  const out = [];
+  for (const [vid, list] of Object.entries(store)) {
+    if (!Array.isArray(list)) continue;
+    const vc = vmeta.get(vid) || { id: vid, title: vid, thumb: null };
+    for (const c of list) {
+      if (!c) continue;
+      out.push({
+        id: c.id,
+        video: vc,
+        name: c.name || 'Anonymous',
+        username: c.username || null,
+        userId: c.userId || null,
+        text: c.text || '',
+        ts: c.ts || 0,
+        avatar: c.avatar || null,
+        gifUrl: c.gifUrl || null,
+        country: c.country || null,
+        visitorId: c.visitorId || (c.analytics && c.analytics.visitorId) || null,
+        analytics: c.analytics || null,
+      });
+    }
+  }
+  return out;
+}
+
+function shadowModerationFor(match) {
+  if (!match) return undefined;
+  return {
+    shadow: true,
+    reason: 'word_filter',
+    phrase: match.phrase,
+    filterId: match.id,
+    ts: Date.now(),
+  };
+}
+
+function ownsShadowComment(c, ctx, visitorId = '') {
+  if (!c || !(c.moderation && c.moderation.shadow)) return true;
+  if (ctx && ctx.isAdmin) return true;
+  if (ctx && ctx.user && c.userId && ctx.user.id === c.userId) return true;
+  if (visitorId && c.visitorId && visitorId === c.visitorId) return true;
+  return false;
+}
+
 function resolveFile(urlPath) {
   let pathname = decodeURIComponent(urlPath.split('?')[0]);
+  const cleanRoute = resolveCanonicalRedirect(urlPath, { videos: listManifest(), products: products.listPublished() });
+  if (cleanRoute && cleanRoute.rewrite) pathname = cleanRoute.rewrite;
   if (pathname === '/') pathname = '/browse.html'; // homepage = the video grid
   if (pathname === '/videos') pathname = '/browse.html'; // canonical feed URL (post-login landing)
   if (pathname === '/watch') pathname = '/index.html'; // per-video watch page (?v=<id>)
@@ -610,6 +685,7 @@ async function handleApi(req, res, ctx) {
           dt: body.dt,
           pos: body.pos,
           dur: body.dur,
+          visitorId: body.visitorId || body.did,
           deviceId: body.did,
           device: {
             ...(ctx.device || {}),
@@ -639,16 +715,53 @@ async function handleApi(req, res, ctx) {
           path: visitPath,
           referrer: String(body?.ref || '').slice(0, 500),
           deviceId: String(body?.did || '').slice(0, 64),
+          visitorId: String(body?.visitorId || body?.vid || body?.did || '').slice(0, 160),
+          sessionId: String(body?.sessionId || body?.sid || '').slice(0, 120),
           ip: ctx.ip,
           cc: ctx.country,
           country: ctx.geo && ctx.geo.countryName,
           city: ctx.geo && ctx.geo.city,
+          region: ctx.geo && ctx.geo.region,
           device: ctx.device || {},
           userId: u ? u.id : null,
           username: u ? (u.username || u.email || u.id) : null,
         });
       }
     } catch { /* never surface tracking errors */ }
+    res.writeHead(204); res.end();
+    return true;
+  }
+
+  // POST /api/analytics/event — low-volume purchase-intent/funnel events.
+  if (req.method === 'POST' && url.pathname === '/api/analytics/event') {
+    try {
+      if (ctx.isBot || !trackLimiter.hit(ctx.ip).allowed) { res.writeHead(204); res.end(); return true; }
+      const raw = await readBody(req, 4096);
+      let body; try { body = JSON.parse(raw); } catch { body = null; }
+      const eventType = typeof body?.eventType === 'string' ? body.eventType.slice(0, 80) : '';
+      if (eventType) {
+        const u = ctx.user || null;
+        analytics.recordFunnelEvent({
+          eventType,
+          path: typeof body.path === 'string' ? body.path.slice(0, 240) : '',
+          referrer: typeof body.referrer === 'string' ? body.referrer.slice(0, 500) : '',
+          productId: typeof body.productId === 'string' ? body.productId.slice(0, 160) : '',
+          provider: typeof body.provider === 'string' ? body.provider.slice(0, 80) : '',
+          visitorId: String(body.visitorId || body.did || '').slice(0, 160),
+          sessionId: String(body.sessionId || body.sid || '').slice(0, 120),
+          deviceId: String(body.deviceId || body.did || '').slice(0, 160),
+          ip: ctx.ip,
+          cc: ctx.country,
+          country: ctx.geo && ctx.geo.countryName,
+          city: ctx.geo && ctx.geo.city,
+          region: ctx.geo && ctx.geo.region,
+          device: ctx.device || {},
+          userId: u ? u.id : null,
+          username: u ? (u.username || u.email || u.id) : null,
+          meta: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+        });
+      }
+    } catch { /* tracking is best-effort */ }
     res.writeHead(204); res.end();
     return true;
   }
@@ -684,6 +797,7 @@ async function handleApi(req, res, ctx) {
   if (req.method === 'GET' && url.pathname === '/api/comments') {
     try {
       const video = url.searchParams.get('video') || 'bikinis';
+      const viewerVisitorId = String(url.searchParams.get('visitorId') || url.searchParams.get('did') || '').slice(0, 160);
       // Hide comments from banned (blocked) users — banning an author also
       // removes their comments from view.
       const blockedIds = new Set(geoGate.getRules().blockedUserIds);
@@ -693,12 +807,14 @@ async function handleApi(req, res, ctx) {
       // ex-admin's old badge clears too.
       const flat = listComments(COMMENTS_FILE, video)
         .filter((c) => !(c.userId && blockedIds.has(c.userId)))
+        .filter((c) => ownsShadowComment(c, ctx, viewerVisitorId))
         .map((c) => {
-          if (!c.username) return c;
-          const u = accounts.store.getByUsername(c.username);
+          const { analytics: _analytics, visitorId: _visitorId, moderation: _moderation, ...publicComment } = c;
+          if (!publicComment.username) return publicComment;
+          const u = accounts.store.getByUsername(publicComment.username);
           const admin = !!(u && Array.isArray(u.roles) && u.roles.includes('admin'));
           const member = !!(u && hasActiveMembership(u));
-          return { ...c, admin, member };
+          return { ...publicComment, admin, member };
         });
       // Group into single-level threads: roots newest-first, each with its replies
       // (oldest-first) + replyCount. `total` counts roots AND replies for the header.
@@ -714,7 +830,7 @@ async function handleApi(req, res, ctx) {
   if (req.method === 'POST' && url.pathname === '/api/comments') {
     try {
       // 1. Rate limit
-      const ip = clientIp(req);
+      const ip = ctx.ip || clientIp(req);
       const rl = limiter.hit(ip);
       if (!rl.allowed) {
         sendJson(res, 429, {
@@ -723,6 +839,15 @@ async function handleApi(req, res, ctx) {
         });
         return true;
       }
+
+      // 1b. Geo/IP/user block: API routing runs before the global geo-gate, so
+      // enforce it here too. Blocked posters are silently shadow-hidden (they
+      // still see their own comment; the public never does) rather than rejected,
+      // so a banned troll keeps shouting into a void instead of probing for the
+      // block and rotating identity.
+      const geoModeration = (!ctx.isAdmin && geoGate.evaluate(ctx).blocked)
+        ? { shadow: true, reason: 'geo_block', ts: Date.now() }
+        : undefined;
 
       // 2. Read + parse body
       const raw = await readBody(req, 65536);
@@ -769,6 +894,7 @@ async function handleApi(req, res, ctx) {
           sendJson(res, 400, { error: validation.error });
           return true;
         }
+        const filterMatch = commentFilters.match(validation.value.text);
         stored = await addComment(COMMENTS_FILE, video || 'bikinis', {
           name: user.username,
           text: validation.value.text,
@@ -779,6 +905,19 @@ async function handleApi(req, res, ctx) {
           gifUrl,
           country,
           parentId,
+          moderation: shadowModerationFor(filterMatch) || geoModeration,
+          visitorId: typeof body.visitorId === 'string' ? body.visitorId : undefined,
+          analytics: {
+            ip,
+            country,
+            city: ctx.geo && ctx.geo.city,
+            region: ctx.geo && ctx.geo.region,
+            referrer: typeof body.referrer === 'string' ? body.referrer : '',
+            path: typeof body.path === 'string' ? body.path : '',
+            deviceId: typeof body.deviceId === 'string' ? body.deviceId : (typeof body.did === 'string' ? body.did : ''),
+            sessionId: typeof body.sessionId === 'string' ? body.sessionId : '',
+            device: ctx.device || {},
+          },
         });
       } else {
         // Anonymous: require the math challenge; give a varied generic avatar.
@@ -791,6 +930,7 @@ async function handleApi(req, res, ctx) {
           sendJson(res, 400, { error: validation.error });
           return true;
         }
+        const filterMatch = commentFilters.match(validation.value.text);
         stored = await addComment(COMMENTS_FILE, video || 'bikinis', {
           name: validation.value.name,
           text: validation.value.text,
@@ -798,6 +938,19 @@ async function handleApi(req, res, ctx) {
           gifUrl,
           country,
           parentId,
+          moderation: shadowModerationFor(filterMatch) || geoModeration,
+          visitorId: typeof body.visitorId === 'string' ? body.visitorId : undefined,
+          analytics: {
+            ip,
+            country,
+            city: ctx.geo && ctx.geo.city,
+            region: ctx.geo && ctx.geo.region,
+            referrer: typeof body.referrer === 'string' ? body.referrer : '',
+            path: typeof body.path === 'string' ? body.path : '',
+            deviceId: typeof body.deviceId === 'string' ? body.deviceId : (typeof body.did === 'string' ? body.did : ''),
+            sessionId: typeof body.sessionId === 'string' ? body.sessionId : '',
+            device: ctx.device || {},
+          },
         });
       }
       // Ping the owner's bell about the new comment (skip the admin's own posts).
@@ -810,6 +963,24 @@ async function handleApi(req, res, ctx) {
           title: `New ${parentId ? 'reply' : 'comment'} from ${who}`,
           body: snippet,
           link: `/watch?v=${encodeURIComponent(video || 'bikinis')}`,
+        });
+        // Immediate Telegram DM with who / where / what + a link to the page.
+        // Fire-and-forget: notify() never throws and no-ops when unconfigured.
+        const cc = ctx.country || country || '';
+        const safePath = (typeof body.path === 'string' && /^\/[\w\-/?=&.%#]*$/.test(body.path))
+          ? body.path
+          : `/watch?v=${encodeURIComponent(video || 'bikinis')}`;
+        telegramNotifier.notify('comment', {
+          parentId,
+          username: user ? (user.username || user.email || 'Member') : (stored.name || 'Anonymous'),
+          tag: user ? 'member' : 'anonymous',
+          text: stored.text,
+          ip,
+          cc,
+          country: (ctx.geo && ctx.geo.countryName) || cc || 'Unknown',
+          url: `${BASE_URL}${safePath}`,
+          hidden: !!(stored.moderation && stored.moderation.shadow),
+          hiddenReason: stored.moderation && (stored.moderation.phrase || stored.moderation.reason),
         });
       }
       sendJson(res, 200, { ok: true, comment: stored });
@@ -1338,11 +1509,12 @@ async function handleApi(req, res, ctx) {
         .filter((e) => e.t >= since && !isBotUa(e.device && e.device.ua));
       const buckets = {};
       const seen = new Set();
+      const seenVisitorsByHour = {};
       const vidAgg = {};
       let totViews = 0, totSeconds = 0, totBlocked = 0;
       for (const e of evs) {
         const hk = new Date(e.t).toISOString().slice(0, 13); // YYYY-MM-DDTHH
-        const b = (buckets[hk] ||= { views: 0, _sec: 0, blocked: 0 });
+        const b = (buckets[hk] ||= { views: 0, _sec: 0, blocked: 0, pageViews: 0, uniqueVisitors: 0 });
         if (e.blocked) { b.blocked += 1; totBlocked += 1; continue; }
         b._sec += e.dt || 0; totSeconds += e.dt || 0;
         if (e.video) { const va = (vidAgg[e.video] ||= { views: 0, seconds: 0 }); va.seconds += e.dt || 0; }
@@ -1352,9 +1524,22 @@ async function handleApi(req, res, ctx) {
           if (e.video) vidAgg[e.video].views += 1;
         }
       }
+      const visitLogs = analytics.queryLogs({ type: 'visit', from: utcDay(since), to: utcDay(now), limit: 5000 }).events
+        .filter((e) => e.t >= since);
+      for (const e of visitLogs) {
+        const hk = new Date(e.t).toISOString().slice(0, 13);
+        const b = (buckets[hk] ||= { views: 0, _sec: 0, blocked: 0, pageViews: 0, uniqueVisitors: 0 });
+        b.pageViews += 1;
+        const vk = e.visitorId || e.deviceId || e.ip;
+        if (vk) {
+          const s = (seenVisitorsByHour[hk] ||= new Set());
+          if (!s.has(vk)) { s.add(vk); b.uniqueVisitors += 1; }
+        }
+      }
       const series = Object.keys(buckets).sort().map((hk) => ({
         day: hk.slice(11) + ':00', views: buckets[hk].views,
         minutes: Math.round(buckets[hk]._sec / 60), blocked: buckets[hk].blocked,
+        pageViews: buckets[hk].pageViews || 0, uniqueVisitors: buckets[hk].uniqueVisitors || 0,
       }));
       const topVideos = Object.entries(vidAgg)
         .map(([id, s]) => ({ id, title: titles[id] || id, views: s.views, minutes: Math.round(s.seconds / 60) }))
@@ -1404,6 +1589,11 @@ async function handleApi(req, res, ctx) {
       if (!inWindow(day)) continue;
       (byDay[day] ||= { views: 0, minutes: 0, blocked: 0 }).blocked += n;
       blockedTotal += n;
+    }
+    for (const v of analytics.getVisitorSeries(fromDay, toDay)) {
+      const e = (byDay[v.day] ||= { views: 0, minutes: 0, blocked: 0 });
+      e.pageViews = v.pageViews || 0;
+      e.uniqueVisitors = v.uniqueVisitors || 0;
     }
     const series = Object.keys(byDay).sort().map((day) => ({ day, ...byDay[day] }));
     const totViews = series.reduce((a, s) => a + s.views, 0);
@@ -1468,6 +1658,27 @@ async function handleApi(req, res, ctx) {
       totals: analytics.getVisitorStats(fromDay, toDay),
       generatedAt: now,
     });
+    return true;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/admin/analytics/funnel') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const DAY = 86400000;
+    const now = Date.now();
+    const utcDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+    const rangeParam = (url.searchParams.get('range') || '30d').toLowerCase();
+    let toDay = utcDay(now), fromDay;
+    if (rangeParam === 'custom') {
+      const valid = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+      const f = url.searchParams.get('from'), t = url.searchParams.get('to');
+      fromDay = valid(f) ? f : utcDay(now - 29 * DAY);
+      if (valid(t)) toDay = t;
+      if (fromDay > toDay) { const tmp = fromDay; fromDay = toDay; toDay = tmp; }
+    } else {
+      const days = rangeParam === '7d' ? 7 : rangeParam === '90d' ? 90 : 30;
+      fromDay = utcDay(now - (days - 1) * DAY);
+    }
+    sendJson(res, 200, { ...analytics.getFunnelStats(fromDay, toDay), from: fromDay, to: toDay, generatedAt: now });
     return true;
   }
 
@@ -1577,59 +1788,7 @@ async function handleApi(req, res, ctx) {
   // Aggregates the payment ledger (data/payments.json) + user membership state.
   if (req.method === 'GET' && url.pathname === '/api/admin/financial') {
     if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
-    const users = accounts.store.listAll();
-    let revenueCents = 0; let subsRevenue = 0; let productRevenue = 0;
-    let subSales = 0; let productSales = 0; let currency = 'usd';
-    const byMonth = {}; // 'YYYY-MM' → cents
-    for (const u of users) {
-      for (const t of paymentsStore.listForUser(u.id)) {
-        if (t.kind !== 'stripe.invoice.paid' && t.kind !== 'stripe.product.paid') continue;
-        const amt = Number(t.amount) || 0;
-        revenueCents += amt;
-        if (t.currency) currency = t.currency;
-        if (t.kind === 'stripe.invoice.paid') { subsRevenue += amt; subSales += 1; }
-        else { productRevenue += amt; productSales += 1; }
-        const d = new Date(t.ts || 0);
-        const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-        byMonth[key] = (byMonth[key] || 0) + amt;
-      }
-    }
-    const subs = { active: 0, trialing: 0, pastDue: 0, comp: 0, canceling: 0, canceled: 0 };
-    let paidUsers = 0;
-    for (const u of users) {
-      const m = u.membership || null;
-      const active = hasActiveMembership(u);
-      const ownsProduct = Array.isArray(u.products) && u.products.length > 0;
-      if (active || ownsProduct) paidUsers += 1;
-      if (!m) continue;
-      if (active) {
-        if (m.provider === 'admin') subs.comp += 1;
-        else if (m.status === 'trialing') subs.trialing += 1;
-        else if (m.status === 'past_due') subs.pastDue += 1;
-        else subs.active += 1;
-        if (m.cancelAtPeriodEnd) subs.canceling += 1;
-      } else {
-        subs.canceled += 1; // had a membership, no longer active
-      }
-    }
-    const total = users.length;
-    const free = Math.max(0, total - paidUsers);
-    // Revenue trend: trailing 12 months, oldest → newest (for the chart).
-    const series = [];
-    const dn = new Date();
-    for (let i = 11; i >= 0; i -= 1) {
-      const d = new Date(Date.UTC(dn.getUTCFullYear(), dn.getUTCMonth() - i, 1));
-      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-      series.push({ month: key, cents: byMonth[key] || 0 });
-    }
-    sendJson(res, 200, {
-      currency,
-      revenue: { total: revenueCents, subscriptions: subsRevenue, products: productRevenue, series },
-      sales: { total: subSales + productSales, subscriptions: subSales, products: productSales },
-      subscriptions: subs,
-      users: { total, paid: paidUsers, free, conversion: total ? Math.round((paidUsers / total) * 1000) / 10 : 0 },
-      generatedAt: Date.now(),
-    });
+    sendJson(res, 200, buildFinancialSummary(accounts.store.listAll(), paymentsStore));
     return true;
   }
 
@@ -1676,7 +1835,7 @@ async function handleApi(req, res, ctx) {
 
       // Flatten + enrich with live author status and video context.
       let all = [];
-      const summary = { total: 0, registered: 0, anon: 0, withGif: 0 };
+      const summary = { total: 0, registered: 0, anon: 0, withGif: 0, filtered: 0 };
       const videosWithComments = [];
       for (const [vid, list] of Object.entries(store)) {
         if (!Array.isArray(list) || !list.length) continue;
@@ -1689,10 +1848,13 @@ async function handleApi(req, res, ctx) {
           summary.total += 1;
           if (c.username) summary.registered += 1; else summary.anon += 1;
           if (c.gifUrl) summary.withGif += 1;
+          if (c.moderation && c.moderation.shadow) summary.filtered += 1;
           all.push({
             id: c.id, video: vc, name: c.name || 'Anonymous', username: c.username || null,
             userId: c.userId || null, text: c.text || '', ts: c.ts || 0,
             avatar: c.avatar || null, gifUrl: c.gifUrl || null, country: c.country || null,
+            visitorId: c.visitorId || null,
+            moderation: c.moderation || null,
             isMember, isAdmin,
           });
         }
@@ -1704,6 +1866,7 @@ async function handleApi(req, res, ctx) {
       else if (author === 'anon') all = all.filter((c) => !c.username);
       else if (author === 'member') all = all.filter((c) => c.isMember);
       else if (author === 'admin') all = all.filter((c) => c.isAdmin);
+      else if (author === 'filtered') all = all.filter((c) => c.moderation && c.moderation.shadow);
       if (q) all = all.filter((c) => c.text.toLowerCase().includes(q) || (c.name || '').toLowerCase().includes(q) || (c.username || '').toLowerCase().includes(q));
 
       all.sort((a, b) => (sort === 'old' ? a.ts - b.ts : b.ts - a.ts));
@@ -1715,6 +1878,65 @@ async function handleApi(req, res, ctx) {
     } catch {
       sendJson(res, 500, { error: 'Server error' });
     }
+    return true;
+  }
+
+  if (req.method === 'GET' && url.pathname.startsWith('/api/admin/visitors/')) {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const visitorId = decodeURIComponent(url.pathname.slice('/api/admin/visitors/'.length));
+    const comments = allCommentsWithContext();
+    const profile = analytics.getVisitorProfile(visitorId, { comments });
+    if (!profile) { sendJson(res, 404, { error: 'Visitor not found' }); return true; }
+    await enrichProfileLocation(profile);
+    sendJson(res, 200, { profile, generatedAt: Date.now() });
+    return true;
+  }
+
+  if (url.pathname === '/api/admin/comment-filters' || url.pathname.startsWith('/api/admin/comment-filters/')) {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const id = url.pathname.startsWith('/api/admin/comment-filters/')
+      ? decodeURIComponent(url.pathname.slice('/api/admin/comment-filters/'.length))
+      : '';
+    if (req.method === 'GET' && url.pathname === '/api/admin/comment-filters') {
+      sendJson(res, 200, { filters: commentFilters.list() });
+      return true;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/admin/comment-filters') {
+      try {
+        const raw = await readBody(req, 8192);
+        let body; try { body = JSON.parse(raw); } catch { body = null; }
+        const result = commentFilters.add(body && body.phrase);
+        sendJson(res, result.ok ? 200 : 400, result);
+      } catch { sendJson(res, 500, { error: 'Server error' }); }
+      return true;
+    }
+    if (req.method === 'POST' && id) {
+      try {
+        const raw = await readBody(req, 8192);
+        let body; try { body = JSON.parse(raw); } catch { body = null; }
+        const result = commentFilters.update(id, body || {});
+        sendJson(res, result.ok ? 200 : 404, result);
+      } catch { sendJson(res, 500, { error: 'Server error' }); }
+      return true;
+    }
+    if (req.method === 'DELETE' && id) {
+      const result = commentFilters.remove(id);
+      sendJson(res, result.ok ? 200 : 404, result);
+      return true;
+    }
+  }
+
+  if (req.method === 'GET' && url.pathname.startsWith('/api/admin/comments/') && url.pathname.endsWith('/visitor')) {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const commentId = decodeURIComponent(url.pathname.slice('/api/admin/comments/'.length, -'/visitor'.length));
+    const comments = allCommentsWithContext();
+    const comment = comments.find((c) => c.id === commentId);
+    if (!comment) { sendJson(res, 404, { error: 'Comment not found' }); return true; }
+    const visitorId = comment.visitorId || (comment.analytics && (comment.analytics.visitorId || comment.analytics.deviceId));
+    if (!visitorId) { sendJson(res, 404, { error: 'No visitor profile for this comment' }); return true; }
+    const profile = analytics.getVisitorProfile(visitorId, { comments });
+    await enrichProfileLocation(profile);
+    sendJson(res, 200, { comment, profile, generatedAt: Date.now() });
     return true;
   }
 
@@ -2585,6 +2807,11 @@ const server = http.createServer(async (req, res) => {
     // a blocked country/IP, or blocked users. Carve-outs (admin login, shell
     // assets, under-construction page) always pass so the owner can't lock out.
     const pathname = decodeURIComponent((req.url.split('?')[0]) || '/');
+    const canonical = resolveCanonicalRedirect(req.url, { videos: listManifest().filter((v) => v.published !== false), products: products.listPublished() });
+    if (canonical && canonical.location) {
+      res.writeHead(canonical.status || 301, withSecurityHeaders({ Location: canonical.location }));
+      return res.end();
+    }
     if (isLegacyAdminRoute(pathname)) {
       res.writeHead(404, withSecurityHeaders());
       return res.end('Not found');

@@ -8,6 +8,10 @@
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/css/admin.css" />
+  <!-- Dossier fonts (scoped to the visitor-profile panel via CSS). -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
   <script>document.documentElement.classList.add('admin-auth-pending');</script>
 </head>
 <body>
@@ -21,7 +25,7 @@
         </div>
 
         <!-- Summary stat strip -->
-        <div class="stat-grid" id="summary" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px"></div>
+        <div class="stat-grid" id="summary" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:16px"></div>
 
         <!-- Filter bar -->
         <div class="comm-filters">
@@ -33,6 +37,7 @@
             <option value="anon">Anonymous</option>
             <option value="member">Members</option>
             <option value="admin">Admins</option>
+            <option value="filtered">Filtered</option>
           </select>
           <select id="sort">
             <option value="new">Newest first</option>
@@ -42,6 +47,19 @@
         </div>
 
         <div id="comm-list"></div>
+      </section>
+
+      <section class="card" style="margin-top:16px">
+        <div class="card-head">
+          <h2>Comment word filter</h2>
+        </div>
+        <div class="filter-admin">
+          <form id="filter-form" class="comm-filters">
+            <input id="filter-phrase" placeholder="Word or phrase to shadow ban" />
+            <button class="btn sm" type="submit">Add phrase</button>
+          </form>
+          <div id="filter-list" class="filter-list"></div>
+        </div>
       </section>
     </main>
   </div>

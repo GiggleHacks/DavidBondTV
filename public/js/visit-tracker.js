@@ -7,19 +7,29 @@
   // Never track admin pages even if the script somehow loads there.
   if (location.pathname.startsWith('/god')) return;
 
+  function uuid() {
+    try { return crypto.randomUUID(); } catch (e) { return String(Date.now()) + '-' + String(Math.random()).slice(2); }
+  }
+  function stored(storage, key) {
+    try {
+      var id = storage.getItem(key);
+      if (!id) { id = uuid(); storage.setItem(key, id); }
+      return id;
+    } catch (e) { return ''; }
+  }
+
   var did;
+  var visitorId;
+  var sessionId;
   try {
-    var key = 'dbtv_device_id';
-    did = localStorage.getItem(key);
-    if (!did) {
-      did = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2);
-      localStorage.setItem(key, did);
-    }
-  } catch (e) { did = ''; }
+    did = stored(localStorage, 'dbtv_device_id');
+    visitorId = stored(localStorage, 'dbtv_visitor_id') || did;
+    sessionId = stored(sessionStorage, 'dbtv_session_id');
+  } catch (e) { did = ''; visitorId = ''; sessionId = ''; }
 
   function send() {
     try {
-      var payload = JSON.stringify({ path: location.pathname, ref: document.referrer || '', did: did || '' });
+      var payload = JSON.stringify({ path: location.pathname, ref: document.referrer || '', did: did || '', visitorId: visitorId || did || '', sessionId: sessionId || '' });
       if (navigator.sendBeacon) {
         navigator.sendBeacon('/api/visit', new Blob([payload], { type: 'application/json' }));
       } else {

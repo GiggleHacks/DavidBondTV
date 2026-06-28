@@ -17,6 +17,7 @@ import { startCryptoCheckout, resumeCryptoCheckout, cryptoConfig } from '/js/cry
 import { deriveBillingView } from '/js/billing-view.js';
 import { initTheme } from '/js/theme.js';
 import { ADMIN_PATHS } from '/js/admin-paths.js';
+import { trackEvent } from '/js/analytics-client.js';
 
 initTheme();
 
@@ -114,8 +115,13 @@ async function reconcileWhop() {
 async function startWhopCheckout(btn) {
   setMsg('');
   btn.disabled = true;
+  trackEvent('buy_click', { provider: 'whop', metadata: { kind: 'membership' } });
+  trackEvent('checkout_started', { provider: 'whop', metadata: { kind: 'membership' } });
   const r = await postJSON('/api/pay/whop/checkout', { next });
-  if (r.ok && r.data.url) { location.href = r.data.url; return; }
+  if (r.ok && r.data.url) {
+    trackEvent('checkout_redirect', { provider: 'whop', metadata: { kind: 'membership' } });
+    location.href = r.data.url; return;
+  }
   if (r.status === 401) {
     // Not signed in → sign up/in first, then return to this offer (with next intact).
     const here = location.pathname + location.search;
@@ -129,6 +135,7 @@ async function startWhopCheckout(btn) {
     btn.disabled = false;
     return;
   }
+  trackEvent('checkout_error', { provider: 'whop', metadata: { kind: 'membership', status: r.status } });
   setMsg((r.data && r.data.error) || 'Could not start checkout. Please try again.', 'error');
   btn.disabled = false;
 }
@@ -340,6 +347,7 @@ async function setupPaymentMethods() {
 
   const startOrder = (plan) => {
     plansEl.hidden = true;
+    trackEvent('buy_click', { provider: 'crypto', metadata: { kind: 'membership', plan: plan.key } });
     startCryptoCheckout(
       { kind: 'membership', membershipPlan: plan.key, coin: 'ETH' },
       mount,

@@ -8,6 +8,7 @@
 // textContent / createElement — never innerHTML — so a malicious order payload
 // can't inject markup.
 import { fetchMe, postJSON } from '/js/account.js';
+import { trackEvent } from '/js/analytics-client.js';
 
 const COIN_LABELS = { ETH: 'Ethereum', LTC: 'Litecoin', XMR: 'Monero' };
 const POLL_MS = 4500;
@@ -134,10 +135,12 @@ export async function startCryptoCheckout(opts, mount, onExpire = null) {
   loading.append(sp, 'Creating your order…');
   mount.append(loading);
 
+  trackEvent('checkout_started', { provider: 'crypto', productId: opts.productId || '', metadata: { kind: opts.kind || '' } });
   const r = await postJSON('/api/pay/crypto/checkout', opts);
   if (r.status === 401) { location.href = `/signup.html?next=${encodeURIComponent(location.pathname + location.search)}`; return; }
   if (r.status === 403) { location.href = '/profile-setup.html'; return; }
   if (!r.ok || !r.data || !r.data.orderId) {
+    trackEvent('checkout_error', { provider: 'crypto', productId: opts.productId || '', metadata: { kind: opts.kind || '', status: r.status } });
     mount.textContent = '';
     const err = document.createElement('p');
     err.className = 'crypto-err';
@@ -145,6 +148,7 @@ export async function startCryptoCheckout(opts, mount, onExpire = null) {
     mount.append(err);
     return;
   }
+  trackEvent('crypto_order_created', { provider: 'crypto', productId: opts.productId || '', metadata: { kind: opts.kind || '', orderId: r.data.orderId } });
   renderInvoice({ ...r.data, status: 'waiting' }, mount, onExpire);
 }
 
@@ -234,6 +238,7 @@ function renderInvoice(order, mount, onExpire = null) {
 
   const showDetected = () => {
     advanced = true;
+    trackEvent('payment_detected', { provider: 'crypto', metadata: { orderId } });
     head.textContent = 'Payment detected ✓';
     countdown.hidden = true; // expiry no longer applies once funds are seen
     note.textContent = 'No need to wait here — we’ve emailed you a link to come back to this page. We’ll unlock your access automatically the moment it confirms.';
@@ -266,6 +271,7 @@ function renderInvoice(order, mount, onExpire = null) {
 
       if (s.status === 'granted') {
         finish();
+        trackEvent('payment_granted', { provider: 'crypto', metadata: { orderId } });
         head.textContent = 'Payment received';
         countdown.hidden = true; note.hidden = true;
         qrBox.style.opacity = '.35';

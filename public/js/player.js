@@ -17,13 +17,41 @@ import { goToCourse, fmtMoney } from './course-buy.js';
 import { getOfferCopy } from './offer-copy.js';
 import { ADMIN_PATHS } from './admin-paths.js';
 import { toggleFullscreen } from './fullscreen.js';
+import { trackEvent } from './analytics-client.js';
 
 const $ = (id) => document.getElementById(id);
 const FPS = 30000 / 1001; // source frame rate (~29.97)
 
-/** Read the video id from /watch?v=<id>. */
-function getVideoId() {
-  return new URLSearchParams(window.location.search).get('v') || '';
+function slugifyPathPart(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'item';
+}
+
+function canonicalVideoSlug(video, videos) {
+  const base = slugifyPathPart(video.slug || video.title || video.id);
+  const sameBase = videos.filter((v) => slugifyPathPart(v.slug || v.title || v.id) === base);
+  if (sameBase.length > 1 && sameBase[0] !== video) return `${base}-${slugifyPathPart(video.id).slice(0, 16)}`;
+  return base;
+}
+
+/** Read the video id from /watch?v=<id> or /videos/<video-slug>. */
+async function getVideoId() {
+  const direct = new URLSearchParams(window.location.search).get('v') || '';
+  if (direct) return direct;
+  const m = /^\/videos\/([^/?#]+)$/.exec(window.location.pathname);
+  if (!m) return '';
+  try {
+    const res = await fetch('/thumbs/videos.json', { cache: 'no-store' });
+    const videos = await res.json();
+    const slug = decodeURIComponent(m[1]);
+    const match = Array.isArray(videos) ? videos.find((v) => canonicalVideoSlug(v, videos) === slug) : null;
+    return match ? match.id : '';
+  } catch {
+    return '';
+  }
 }
 
 // One shared /api/auth/me lookup per page load: several gates need the viewer's
@@ -154,10 +182,13 @@ function showCourseGate(container, entry, product) {
   gate.querySelector('.cg-price').textContent = price;
   const buy = gate.querySelector('.cg-buy');
   buy.textContent = cta;
-  buy.addEventListener('click', () => goToCourse(product));
+  buy.addEventListener('click', () => {
+    trackEvent('buy_click', { provider: 'course_gate', productId: product.id, metadata: { kind: 'product', slug: product.slug } });
+    goToCourse(product);
+  });
   gate.querySelector('.pg-alt').addEventListener('click', (e) => {
     e.preventDefault();
-    location.href = `/course.html?slug=${encodeURIComponent(product.slug)}`;
+    location.href = `/courses/${encodeURIComponent(product.slug)}`;
   });
 }
 
@@ -230,7 +261,7 @@ async function init() {
   retryBtn.addEventListener('click', () => { errorOverlay.hidden = true; location.reload(); });
 
   // Resolve which video to play + its metadata.
-  const videoId = getVideoId();
+  const videoId = await getVideoId();
   const entry = videoId ? await loadEntry(videoId) : null;
   // No such video (empty/bad ?v=, or the record was removed). There is no demo
   // stream to fall back to, so return the viewer to the homepage grid.
