@@ -172,4 +172,8 @@ async function pollOnce() {
 }
 
 setInterval(pollOnce, POLL_MS);
-server.listen(PORT, () => console.log(`[watcher] listening on ${PORT}, coins: ${Object.keys(adapters).join(', ')}`));
+// Bind host: set WATCHER_HOST=127.0.0.1 when the main app runs on the same box and
+// reaches the watcher over localhost (no public exposure needed). Defaults to all
+// interfaces for back-compat (e.g. behind a container port-map / tunnel).
+const HOST = process.env.WATCHER_HOST || '0.0.0.0';
+server.listen(PORT, HOST, () => console.log(`[watcher] listening on ${HOST}:${PORT}, coins: ${Object.keys(adapters).join(', ')}`));
