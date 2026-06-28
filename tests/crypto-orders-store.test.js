@@ -35,4 +35,33 @@ describe('crypto-orders-store', () => {
     expect(s.listOpen().map((o) => o.id)).toEqual(['a']);
     await s.flush();
   });
+
+  describe('findActiveByUser (resume an in-progress order)', () => {
+    it('returns the most recent in-flight order for the user', async () => {
+      const s = createCryptoOrdersStore(tmpFile());
+      const NOW = 1_000_000;
+      await s.create({ id: 'old', userId: 'u1', status: 'waiting', createdAt: 100, expiresAt: NOW + 1000 });
+      await s.create({ id: 'new', userId: 'u1', status: 'waiting', createdAt: 200, expiresAt: NOW + 1000 });
+      expect(s.findActiveByUser('u1', NOW).id).toBe('new');
+      await s.flush();
+    });
+
+    it('treats detected/confirmed as in-flight even past expiry; ignores granted/expired-waiting', async () => {
+      const s = createCryptoOrdersStore(tmpFile());
+      const NOW = 1_000_000;
+      await s.create({ id: 'granted', userId: 'u1', status: 'granted', createdAt: 500, expiresAt: NOW + 1000 });
+      await s.create({ id: 'staleWait', userId: 'u1', status: 'waiting', createdAt: 400, expiresAt: NOW - 1 });
+      await s.create({ id: 'detectedLate', userId: 'u1', status: 'detected', createdAt: 300, expiresAt: NOW - 1 });
+      expect(s.findActiveByUser('u1', NOW).id).toBe('detectedLate');
+      await s.flush();
+    });
+
+    it('returns null when the user has no in-flight order, and never another user’s', async () => {
+      const s = createCryptoOrdersStore(tmpFile());
+      const NOW = 1_000_000;
+      await s.create({ id: 'other', userId: 'u2', status: 'waiting', createdAt: 100, expiresAt: NOW + 1000 });
+      expect(s.findActiveByUser('u1', NOW)).toBe(null);
+      await s.flush();
+    });
+  });
 });

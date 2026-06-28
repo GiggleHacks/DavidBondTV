@@ -30,6 +30,14 @@ function fakeOrders() {
     get: (id) => (orders[id] ? { ...orders[id] } : null),
     update: async (id, p) => { if (orders[id]) Object.assign(orders[id], p); return orders[id]; },
     listOpen: () => Object.values(orders).filter((o) => o.status === 'waiting'),
+    findActiveByUser: (userId, nowTs = Date.now()) => {
+      const inFlight = (o) => o.status === 'detected' || o.status === 'confirmed'
+        || (o.status === 'waiting' && (!o.expiresAt || nowTs <= o.expiresAt));
+      const mine = Object.values(orders).filter((o) => o.userId === userId && inFlight(o));
+      if (!mine.length) return null;
+      mine.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      return { ...mine[0] };
+    },
     isCallbackProcessed: (id) => Object.prototype.hasOwnProperty.call(cbs, id),
     markCallback: async (id) => { cbs[id] = 1; },
     flush: async () => {},
@@ -66,7 +74,7 @@ function make(overrides = {}) {
     pricing: { getConfig: () => ({ currency: 'usd', monthly: { amount: 1700 }, yearly: { enabled: true, amount: 12000 } }) },
     paymentsStore: { addTxn: async () => {} },
     telegramNotifier: { notify: (t, p) => tg.push({ t, p }) },
-    mailer: { sendProductGrantedEmail: async () => mails.push('product'), sendMembershipGrantedEmail: async () => mails.push('membership'), mailerConfigured: () => true },
+    mailer: { sendProductGrantedEmail: async () => mails.push('product'), sendMembershipGrantedEmail: async () => mails.push('membership'), sendCryptoPaymentDetectedEmail: async () => mails.push('detected'), mailerConfigured: () => true },
   });
   return { cp, store, orders, tg, mails };
 }
@@ -141,6 +149,19 @@ describe('crypto webhook', () => {
     await cp._test.grantMembership(order); // same order again — must NOT stack
     const end2 = store._users.u1.membership.currentPeriodEnd;
     expect(end2).toBe(end1);
+  });
+
+  it('emails the buyer once when payment is first detected, and not on repeat detected callbacks', async () => {
+    const { cp, orders, mails } = make();
+    await orders.create({ id: 'e1', userId: 'u1', kind: 'membership', termMonths: 3, coin: 'ETH', amount: '0.0834', expectedFiat: 59.07, status: 'waiting', confirmations: 1, productId: null });
+    const r1 = fakeRes();
+    await cp._test.webhook(webhookReq({ orderId: 'e1', coin: 'ETH', outcome: 'detected', txid: '0xaa', amount: '0.0834', confirmations: 0 }), r1);
+    expect(orders._orders.e1.status).toBe('detected');
+    expect(mails).toEqual(['detected']);
+    expect(orders._orders.e1.detectedEmailedAt).toBeTruthy();
+    const r2 = fakeRes();
+    await cp._test.webhook(webhookReq({ orderId: 'e1', coin: 'ETH', outcome: 'detected', txid: '0xaa', amount: '0.0834', confirmations: 0 }), r2);
+    expect(mails).toEqual(['detected']); // not re-sent
   });
 
   it('marks detected on a broadcast callback without granting, then grants on confirm', async () => {
@@ -234,5 +255,33 @@ describe('crypto checkout', () => {
     await cp._test.orderStatus({ method: 'GET', headers: {} }, res, 'o9', { id: 'u1' });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body).status).toBe('waiting');
+  });
+});
+
+describe('crypto open-order (resume)', () => {
+  it('401s when signed out', async () => {
+    const { cp } = make();
+    const res = fakeRes();
+    await cp._test.openOrder({ method: 'GET', headers: {} }, res, null);
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('returns {order:null} when the user has no in-flight order', async () => {
+    const { cp } = make();
+    const res = fakeRes();
+    await cp._test.openOrder({ method: 'GET', headers: {} }, res, { id: 'u1' });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).order).toBe(null);
+  });
+
+  it('returns the active order (enough to re-render) for the owner', async () => {
+    const { cp, orders } = make();
+    await orders.create({ id: 'op1', userId: 'u1', kind: 'membership', productId: null, coin: 'ETH', amount: '0.0834', address: '0xabc', status: 'waiting', createdAt: 1, expiresAt: Date.now() + 100000 });
+    const res = fakeRes();
+    await cp._test.openOrder({ method: 'GET', headers: {} }, res, { id: 'u1' });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).order).toMatchObject({
+      orderId: 'op1', coin: 'ETH', amount: '0.0834', address: '0xabc', status: 'waiting', kind: 'membership',
+    });
   });
 });

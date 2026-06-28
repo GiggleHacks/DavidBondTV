@@ -13,7 +13,7 @@
 // back to a short poll. A successful payment NEVER re-shows the sales offer — at
 // worst it shows a "finalizing" state with a "Check again" button.
 import { fetchMe, postJSON } from '/js/account.js';
-import { startCryptoCheckout, cryptoConfig } from '/js/crypto-checkout.js';
+import { startCryptoCheckout, resumeCryptoCheckout, cryptoConfig } from '/js/crypto-checkout.js';
 import { deriveBillingView } from '/js/billing-view.js';
 import { initTheme } from '/js/theme.js';
 import { ADMIN_PATHS } from '/js/admin-paths.js';
@@ -390,6 +390,27 @@ async function setupPaymentMethods() {
     selectMethod('eth');
     showPlanChoice();
   }
+
+  // Resume an in-flight ETH order so a closed tab isn't lost — via the email link
+  // (?order=<id>) or any open order on this account. Takes over the ETH panel.
+  try {
+    const orderParam = params.get('order');
+    let active = null;
+    if (orderParam) {
+      const s = await (await fetch(`/api/pay/crypto/order/${encodeURIComponent(orderParam)}`)).json();
+      if (s && ['waiting', 'detected', 'confirmed'].includes(s.status)) {
+        active = { orderId: orderParam, coin: s.coin, address: s.address, amount: s.amount, expiresAt: s.expiresAt, status: s.status };
+      }
+    } else {
+      const r = await (await fetch('/api/pay/crypto/order/open')).json();
+      if (r && r.order && r.order.kind === 'membership') active = r.order;
+    }
+    if (active) {
+      selectMethod('eth');
+      plansEl.hidden = true;
+      resumeCryptoCheckout(active, mount, showPlanChoice);
+    }
+  } catch { /* no resume — fall back to the normal plan chooser */ }
 }
 
 async function render() {

@@ -5,7 +5,7 @@
 // (the video they wanted) or into the course view.
 import { fetchMe } from '/js/account.js';
 import { pollOwnership, fmtMoney } from '/js/course-buy.js';
-import { startCryptoCheckout, cryptoCoinOptions } from '/js/crypto-checkout.js';
+import { startCryptoCheckout, resumeCryptoCheckout, cryptoCoinOptions } from '/js/crypto-checkout.js';
 import { initTheme } from '/js/theme.js';
 
 initTheme();
@@ -76,6 +76,23 @@ async function setupCrypto(product) {
     btn.disabled = true;
     startCryptoCheckout({ kind: 'product', productId: product.id, coin: sel.value }, mount);
   });
+
+  // Resume an in-flight order for this course (email link ?order=id, or an open
+  // order on this account) so a closed tab isn't lost.
+  try {
+    const orderParam = params.get('order');
+    let active = null;
+    if (orderParam) {
+      const s = await (await fetch(`/api/pay/crypto/order/${encodeURIComponent(orderParam)}`)).json();
+      if (s && ['waiting', 'detected', 'confirmed'].includes(s.status)) {
+        active = { orderId: orderParam, coin: s.coin, address: s.address, amount: s.amount, expiresAt: s.expiresAt, status: s.status };
+      }
+    } else {
+      const r = await (await fetch('/api/pay/crypto/order/open')).json();
+      if (r && r.order && r.order.kind === 'product' && r.order.productSlug === slug) active = r.order;
+    }
+    if (active) { sel.hidden = true; btn.hidden = true; resumeCryptoCheckout(active, mount); }
+  } catch { /* no resume — show the normal pay button */ }
 }
 
 // Load the course trailer (a free, published video) into the hero player. Pulls
