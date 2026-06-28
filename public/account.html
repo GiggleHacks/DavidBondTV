@@ -209,41 +209,17 @@
       }
       if (view.action !== 'manage') return; // admin-access / nothing to manage
 
-      // Comped membership (granted by the team) has no Stripe billing to manage.
-      if (m && m.provider === 'admin') {
-        status.textContent = 'Your membership was granted by the team — contact us if you need any changes.';
-        return;
-      }
-
-      // Stripe member: always offer "Manage billing" (cards, invoices, portal cancel).
-      action.textContent = 'Manage billing';
-      action.hidden = false;
-      action.onclick = async () => {
-        action.disabled = true;
-        const r = await postJSON('/api/pay/stripe/portal', {});
-        if (r.ok && r.data.url) { window.location.href = r.data.url; return; }
-        action.disabled = false;
-        setMsg(r.data.error || 'Could not open the billing portal.', 'error');
-      };
-
-      // Direct in-app cancel for an active sub that isn't already ending.
-      if (m && m.provider === 'stripe' && m.active && !m.cancelAtPeriodEnd) {
-        cancelBtn.hidden = false;
-        cancelBtn.onclick = async () => {
-          const ends = m.currentPeriodEnd ? new Date(m.currentPeriodEnd).toLocaleDateString() : 'the end of your paid period';
-          if (!window.confirm(`Cancel your membership? You'll keep full access until ${ends}, then it won't renew.`)) return;
-          cancelBtn.disabled = true;
-          const r = await postJSON('/api/pay/stripe/cancel', {});
-          if (r.ok && r.data.ok) {
-            const end = r.data.currentPeriodEnd ? new Date(r.data.currentPeriodEnd).toLocaleDateString() : null;
-            status.textContent = end ? `Membership ends ${end} — you keep access until then.` : 'Your membership will not renew.';
-            cancelBtn.hidden = true;
-            setMsg('Membership cancelled — you keep access until it ends.', 'success');
-          } else {
-            cancelBtn.disabled = false;
-            setMsg((r.data && r.data.error) || 'Could not cancel — try “Manage billing”.', 'error');
-          }
-        };
+      // No in-app billing portal anymore (Stripe removed). Show a provider-aware
+      // note; there are no in-app manage/cancel actions. (action + cancelBtn stay
+      // hidden — set at the top of this function.)
+      const provider = m && m.provider;
+      if (provider === 'whop') {
+        status.textContent = 'Manage or cancel your subscription anytime from your Whop account — the link is in your purchase receipt email.';
+      } else if (provider === 'crypto') {
+        status.textContent = 'Your membership is prepaid and won’t auto-renew. Re-up anytime from the membership page.';
+      } else {
+        // admin comp or legacy Stripe member.
+        status.textContent = 'Your membership is active — contact us if you need any changes.';
       }
     }
 

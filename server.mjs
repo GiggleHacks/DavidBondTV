@@ -21,7 +21,6 @@ import { createTenor, isTenorGifUrl } from './lib/tenor.js';
 import { createCommentGuard, DEFAULT_BANNED } from './lib/comment-guard.js';
 import { adminUser } from './lib/users-store.js';
 import { createPaymentsStore } from './lib/payments-store.js';
-import { createStripePayments } from './lib/stripe-payments.js';
 import { createCryptoOrdersStore } from './lib/crypto-orders-store.js';
 import { createCryptoPayments } from './lib/crypto-payments.js';
 import { createWhopPayments } from './lib/whop-payments.js';
@@ -210,32 +209,15 @@ const accounts = createAccounts({
   turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || null,
 });
 
-// --- Payments (Stripe membership) ---
-// All keys come from the environment; without them checkout/portal return 503
-// and the rest of the app runs unchanged. The webhook must be publicly reachable
-// at BASE_URL/api/pay/stripe/webhook (it is, behind nginx/Cloudflare in prod).
+// --- Payments ---
+// WHOP (card) + self-hosted crypto (ETH) are the payment rails. Each ships dark
+// unless its env is configured; the rest of the app runs unchanged. Public pricing
+// + offer copy is served by GET /api/membership/config (pricing.publicConfig()).
 const PAYMENTS_FILE = path.join(__dirname, 'data', 'payments.json');
 const paymentsStore = createPaymentsStore(PAYMENTS_FILE);
 const telegramNotifier = createTelegramNotifier({
   botToken: process.env.TELEGRAM_BOT_TOKEN,
   chatId: process.env.TELEGRAM_CHAT_ID,
-});
-const stripePayments = createStripePayments({
-  store: accounts.store,
-  currentUser: accounts.currentUser,
-  paymentsStore,
-  baseUrl: BASE_URL,
-  secretKey: process.env.STRIPE_SECRET_KEY,
-  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-  priceMonthly: process.env.STRIPE_PRICE_MONTHLY,
-  priceYearly: process.env.STRIPE_PRICE_YEARLY,
-  products,
-  pricing,
-  coupons,
-  telegramNotifier,
-  // Stripe account suspended → hard-disable the card rail until WHOP replaces it.
-  // Hides the Card option in the UI and refuses any stale/direct Stripe checkout.
-  cardDisabled: process.env.STRIPE_DISABLED === '1',
 });
 
 const CRYPTO_ORDERS_FILE = path.join(__dirname, 'data', 'crypto-orders.json');
@@ -1883,12 +1865,6 @@ async function handleApi(req, res, ctx) {
         sendJson(res, 200, { ok: true, subscribed: true });
         return true;
       }
-      // revoke: only clear admin comps here; Stripe subscriptions are cancelled
-      // through the billing portal so local + Stripe state can't drift.
-      if (u.membership && u.membership.provider === 'stripe') {
-        sendJson(res, 400, { error: 'This is a Stripe subscription — cancel it from the billing portal.' });
-        return true;
-      }
       await accounts.store.updateUser(userId, { membership: null, hasPurchased: false });
       await paymentsStore.addTxn(userId, { kind: 'admin.revoke', ts: Date.now(), by: admin ? admin.id : null });
       analytics.recordActivity('admin.membership.revoke', {
@@ -1900,40 +1876,10 @@ async function handleApi(req, res, ctx) {
       return true;
     }
 
-    // POST resync-stripe — admin safety-net: pull this user's real subscription
-    // from Stripe and activate locally (use when a payment succeeded but the
-    // membership didn't activate, e.g. a missed webhook). Reuses applySubscription
-    // (sends the deduped welcome email).
-    if (req.method === 'POST' && action === 'resync-stripe') {
-      const admin = accounts.currentUser(req);
-      const result = await stripePayments.resyncUser(userId);
-      if (!result.ok) { sendJson(res, 400, { error: result.error || 'Could not resync.' }); return true; }
-      await paymentsStore.addTxn(userId, { kind: 'admin.stripe.resync', ts: Date.now(), by: admin ? admin.id : null });
-      analytics.recordActivity('admin.stripe.resync', {
-        userId, username: u.username || u.email || u.id,
-        ip: ctx.ip, cc: ctx.country, geo: ctx.geo, device: ctx.device,
-        meta: { by: admin ? admin.id : null, active: !!(result.membership && result.membership.active) },
-      });
-      if (result.membership && result.membership.active) {
-        addAccountNotification(userId, {
-          title: 'Membership activated 🎉',
-          body: 'You now have full access to all exclusive videos.',
-          link: '/account.html',
-        }).catch(() => {});
-      }
-      sendJson(res, 200, { ok: true, ...result });
-      return true;
-    }
-
-    // POST delete — permanently remove the account. Refuses active Stripe
-    // members (cancel via the billing portal first, so we never orphan a payer).
-    // Analytics rollups + payment history are intentionally left intact; they're
-    // historical/financial records and simply no longer resolve to a live user.
+    // POST delete — permanently remove the account. Analytics rollups + payment
+    // history are intentionally left intact; they're historical/financial records
+    // and simply no longer resolve to a live user.
     if (req.method === 'POST' && action === 'delete') {
-      if (u.membership && u.membership.provider === 'stripe' && hasActiveMembership(u)) {
-        sendJson(res, 400, { error: 'This user has an active Stripe subscription — cancel it from the billing portal before deleting.' });
-        return true;
-      }
       const result = await accounts.store.deleteUser(userId);
       if (!result.ok) { sendJson(res, 404, { error: 'User not found' }); return true; }
       // Cross-store cleanup: drop any geo-block rule.
@@ -2451,12 +2397,16 @@ async function handleApi(req, res, ctx) {
     return true;
   }
 
-  // Payments (/api/pay/stripe/*). Before accounts so the public webhook (no
-  // session) is reached; the webhook reads the raw body for signature checking.
-  if (await stripePayments.handle(req, res, url)) return true;
+  // Public membership pricing + offer copy (prices, intro, offer headline/CTA),
+  // edited from /god-pricing. Consumed by the paywall gate + browse modal
+  // (offer-copy.js). Provider-neutral — replaces the former Stripe config route.
+  if (req.method === 'GET' && url.pathname === '/api/membership/config') {
+    sendJson(res, 200, pricing.publicConfig());
+    return true;
+  }
 
   // Self-hosted crypto payments (/api/pay/crypto/*). Public webhook (HMAC-signed
-  // by the watcher) shares the pre-accounts slot like the Stripe webhook.
+  // by the watcher) is reached before accounts; it reads the raw body to verify.
   if (await cryptoPayments.handle(req, res, url)) return true;
 
   // WHOP card payments (/api/pay/whop/*). Public webhook (Standard-Webhooks signed)
@@ -2815,12 +2765,6 @@ server.listen(PORT, async () => {
     console.log('└─────────────────────────────────────────────────────────────┘\n');
   }
   await seedAdminUser(); // ensure davidbond exists as a user with the admin role
-  // One-time pricing backfill: if the owner hasn't set membership pricing yet,
-  // seed it from the legacy env Stripe prices so a deploy keeps charging the same
-  // amount (after this, data/pricing.json is the source of truth).
-  if (!pricing.isConfigured()) {
-    try { pricing.seedFrom(await stripePayments.envPriceAmounts()); } catch { /* defaults stand */ }
-  }
   console.log(`▶  David Bond TV running at http://localhost:${PORT}`);
   console.log(`   admin uploads: ${adminConfigured(adminAccount) ? 'enabled' : 'DISABLED'} · ffmpeg: ${hasFfmpeg() ? 'ok' : 'MISSING'} · cloudflare: ${TRUST_CLOUDFLARE ? 'trusted' : 'off'}`);
   // Surface the effective HTTP timeouts. A slow upload that runs longer than

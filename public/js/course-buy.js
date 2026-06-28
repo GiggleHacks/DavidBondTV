@@ -1,8 +1,8 @@
-// Shared one-time course/product purchase flow, used by the homepage grid modal
-// (browse.js), the watch-page course gate (player.js) and the course landing page
-// (course.js). Mirrors membership.js startCheckout: POST → redirect to Stripe;
-// 401 → sign up first (returning to the course page); 403 → finish profile.
-import { fetchMe, postJSON } from '/js/account.js';
+// Shared helpers for the one-time course/product surfaces (browse.js modal,
+// player.js watch-gate, course.js landing). Products are purchased with crypto
+// (ETH) on the course page — the card rail (Stripe) was removed — so the buy
+// buttons on other surfaces route to the course page where the ETH flow lives.
+import { fetchMe } from '/js/account.js';
 
 /** Format integer cents as a localized currency string (e.g. 9900 → "$99"). */
 export function fmtMoney(amount, currency) {
@@ -15,27 +15,12 @@ export function fmtMoney(amount, currency) {
 }
 
 /**
- * Begin a one-time purchase of `product` (needs {id, slug}). `next` is the
- * same-origin path to return to after a successful purchase (e.g. the video).
- * Redirects the browser to Stripe Checkout on success; routes unauthenticated /
- * incomplete-profile users into the right onboarding step first. Returns the
- * response object on a soft error so the caller can surface the message.
+ * Send the buyer to the course landing page, where the crypto (ETH) purchase
+ * flow lives. Used by the homepage modal + watch-page gate buy buttons now that
+ * the card rail is gone. `product` needs {slug}.
  */
-export async function startPurchase(product, next, btn, couponCode = '') {
-  if (btn) btn.disabled = true;
-  const r = await postJSON('/api/pay/stripe/buy', { productId: product.id, next: next || '', couponCode });
-  if (r.ok && r.data && r.data.url) { location.href = r.data.url; return r; }
-  if (r.status === 401) {
-    // Not signed in → sign up/in first, then land on this course's page to buy.
-    const dest = `/course.html?slug=${encodeURIComponent(product.slug)}`;
-    try { localStorage.setItem('dbtv_after_auth', dest); } catch { /* ignore */ }
-    location.href = `/signup.html?next=${encodeURIComponent(dest)}`;
-    return r;
-  }
-  if (r.status === 403) { location.href = '/profile-setup.html'; return r; }
-  if (r.status === 409) { location.reload(); return r; } // already owns it
-  if (btn) btn.disabled = false;
-  return r;
+export function goToCourse(product) {
+  location.href = `/course.html?slug=${encodeURIComponent(product.slug)}`;
 }
 
 /** After checkout the webhook may lag — poll a few times for the entitlement. */

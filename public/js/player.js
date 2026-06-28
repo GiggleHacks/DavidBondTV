@@ -13,7 +13,7 @@ import { initShare } from './share.js';
 import { initWatchTracker } from './watch-tracker.js';
 import { attachWatchProgress } from './watch-progress.js';
 import { canUserWatchPremium, isAdminUser, canWatchVideo } from './viewer-access.js';
-import { startPurchase, fmtMoney } from './course-buy.js';
+import { goToCourse, fmtMoney } from './course-buy.js';
 import { getOfferCopy } from './offer-copy.js';
 import { ADMIN_PATHS } from './admin-paths.js';
 import { toggleFullscreen } from './fullscreen.js';
@@ -154,7 +154,7 @@ function showCourseGate(container, entry, product) {
   gate.querySelector('.cg-price').textContent = price;
   const buy = gate.querySelector('.cg-buy');
   buy.textContent = cta;
-  buy.addEventListener('click', () => startPurchase(product, location.pathname + location.search, buy));
+  buy.addEventListener('click', () => goToCourse(product));
   gate.querySelector('.pg-alt').addEventListener('click', (e) => {
     e.preventDefault();
     location.href = `/course.html?slug=${encodeURIComponent(product.slug)}`;

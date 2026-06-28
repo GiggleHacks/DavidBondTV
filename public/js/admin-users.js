@@ -161,7 +161,6 @@ async function showDetail(id) {
       <div class="u-actions">
         <button id="toggle-block" class="btn sm ghost">${d.blocked ? 'Unblock user' : 'Block user'}</button>
         ${membershipButton(d.subscribed, u.membership)}
-        <button id="resync-stripe" class="btn sm ghost" title="Pull this user's real subscription from Stripe and activate (use after a missed webhook)">Resync Stripe</button>
         <button id="delete-user" class="btn sm danger" style="margin-left:auto">Delete user</button>
       </div>
       <h4 style="margin:18px 0 4px">Product access</h4>
@@ -211,18 +210,6 @@ async function showDetail(id) {
       showDetail(id);
     });
   }
-  const resyncBtn = $('resync-stripe');
-  if (resyncBtn) {
-    resyncBtn.addEventListener('click', async () => {
-      resyncBtn.disabled = true; resyncBtn.textContent = 'Resyncing…';
-      const r = await api(`/api/admin/users/${encodeURIComponent(id)}/resync-stripe`, { method: 'POST', body: '{}' });
-      resyncBtn.disabled = false; resyncBtn.textContent = 'Resync Stripe';
-      if (r && r.error) { alert(r.error); return; }
-      alert(r && r.membership && r.membership.active ? 'Synced from Stripe — membership is now active.' : 'Synced from Stripe.');
-      await loadList();
-      showDetail(id);
-    });
-  }
 }
 
 // Render the per-product grant/revoke controls for the open user. `owned` is the
@@ -262,12 +249,8 @@ function membershipLabel(active, m) {
   return 'Member';
 }
 
-/**
- * Grant/revoke button. Stripe members can't be revoked here (do it via the
- * billing portal), so only show a button for comps and free users.
- */
+/** Grant/revoke membership button (works for every provider). */
 function membershipButton(active, m) {
-  if (active && m && m.provider === 'stripe') return '';
   const label = active ? 'Revoke membership' : 'Grant membership';
   return `<button id="toggle-member" class="btn sm ghost">${label}</button>`;
 }

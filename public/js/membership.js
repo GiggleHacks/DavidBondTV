@@ -24,7 +24,6 @@ const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const rawNext = params.get('next');
 const next = (rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')) ? rawNext : '';
-const sessionId = params.get('session_id') || '';
 // Card rail availability (server may hard-disable it, e.g. Stripe suspended). When
 // false the Card option is hidden and Ethereum becomes the sole payment method.
 let cardEnabled = true;
@@ -78,8 +77,10 @@ function showMember(me) {
   if (foot) foot.textContent = view.kind === 'admin-access' ? 'Back to the admin dashboard →' : 'Browse exclusive videos →';
   if (foot && view.kind === 'admin-access') foot.href = ADMIN_PATHS.dashboard;
   if (foot && view.kind !== 'admin-access') foot.href = '/';
+  // No in-app billing portal anymore (Stripe removed): WHOP members manage their
+  // subscription on whop.com; crypto memberships are prepaid with no auto-renew.
   const manage = $('manage-btn');
-  manage.hidden = view.action !== 'manage';
+  if (manage) manage.hidden = true;
 }
 
 function showPlans() {
@@ -98,13 +99,6 @@ function showPending() {
   $('member-view').hidden = true;
   $('pending-actions').hidden = false;
   showBanner('Payment received — finalizing your access. This can take a few seconds. We’ve emailed your receipt; tap “Check again” below.', 'ok');
-}
-
-/** Synchronous server-side activation from the checkout session on the URL. */
-async function reconcileSession() {
-  if (!sessionId) return null;
-  const r = await postJSON('/api/pay/stripe/reconcile', { sessionId });
-  return r && r.ok ? r.data : null;
 }
 
 /**
@@ -163,15 +157,6 @@ function enterMember(me, { celebrate } = {}) {
   if (celebrate) showBanner('You’re all set — welcome to David Bond TV membership! 🎉', 'ok');
   showMember(me);
   maybeShowTelegram();
-}
-
-async function openPortal(btn) {
-  setMsg('');
-  btn.disabled = true;
-  const r = await postJSON('/api/pay/stripe/portal', {});
-  if (r.ok && r.data.url) { location.href = r.data.url; return; }
-  setMsg(r.data.error || 'Could not open the billing portal.', 'error');
-  btn.disabled = false;
 }
 
 /** After checkout, the webhook may lag — poll a few times for the active flag. */
@@ -257,7 +242,7 @@ async function applyConfig() {
 async function recheck(btn) {
   if (btn) btn.disabled = true;
   showBanner('Checking…', 'ok');
-  await reconcileSession();
+  await reconcileWhop();
   const me = await fetchMe();
   if (hasAccessFor(me)) {
     enterMember(me, { celebrate: true });
@@ -411,7 +396,6 @@ async function render() {
   // The Card button now starts a WHOP checkout (Stripe is suspended). WHOP's plan
   // is monthly-only, so the yearly button isn't shown.
   $('pay-card').addEventListener('click', (e) => startWhopCheckout(e.currentTarget));
-  $('manage-btn').addEventListener('click', (e) => openPortal(e.currentTarget));
   $('recheck-btn')?.addEventListener('click', (e) => recheck(e.currentTarget));
 
   const status = params.get('status');
@@ -422,11 +406,10 @@ async function render() {
 
   if (status === 'success' && !isActive(me)) {
     showBanner('Payment received — activating your membership…', 'ok');
-    // 1) Synchronous activation, no webhook dependency: WHOP first (its redirect
-    //    carries no session id), then the legacy Stripe session if one is present.
-    //    2) Re-read. 3) Short poll as a backstop while the webhook catches up.
+    // Synchronous activation, no webhook dependency: ask the server to pull the
+    // membership straight from WHOP, re-read, then short-poll as a backstop while
+    // the webhook catches up.
     await reconcileWhop();
-    await reconcileSession();
     me = await fetchMe();
     if (!isActive(me)) me = await pollUntilActive(4);
   }

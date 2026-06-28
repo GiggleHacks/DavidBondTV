@@ -4,7 +4,7 @@
 // (All Videos / Exclusive Videos / Courses) and a lock layer for non-entitled
 // viewers (premium membership OR one-time course purchase).
 import { canWatchVideo } from '/js/viewer-access.js';
-import { startPurchase, fmtMoney } from '/js/course-buy.js';
+import { goToCourse, fmtMoney } from '/js/course-buy.js';
 import { categoryDisplayName, categoryVisualMarkup, resolveCategoryVisual } from '/js/category-visuals.js';
 import { renderThumbProgress } from '/js/watch-progress.js';
 const PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
@@ -456,7 +456,7 @@ function renderCourseHeader(product) {
     const btn = document.createElement('button');
     btn.className = 'cb-buy gold-cta';
     btn.textContent = (product.sales && product.sales.ctaLabel) || `Purchase ${fmtMoney(product.price, product.currency)}`;
-    btn.addEventListener('click', () => startPurchase(product, '', btn));
+    btn.addEventListener('click', () => goToCourse(product));
     cta.appendChild(btn);
   }
 }
@@ -499,7 +499,7 @@ function openCourseModal(product, v) {
   modal.querySelector('.cm-price').textContent = fmtMoney(product.price, product.currency);
   const buy = modal.querySelector('.cm-buy');
   buy.textContent = (product.sales && product.sales.ctaLabel) || `Purchase ${fmtMoney(product.price, product.currency)}`;
-  buy.onclick = () => startPurchase(product, v ? `/watch?v=${encodeURIComponent(v.id)}` : '', buy);
+  buy.onclick = () => goToCourse(product);
   const alt = modal.querySelector('.pm-alt');
   alt.onclick = (e) => { e.preventDefault(); location.href = `/course.html?slug=${encodeURIComponent(product.slug)}`; };
   modal.classList.add('show');

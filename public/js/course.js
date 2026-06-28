@@ -4,7 +4,7 @@
 // poll /api/auth/me until the entitlement lands, then send the buyer to `next`
 // (the video they wanted) or into the course view.
 import { fetchMe } from '/js/account.js';
-import { startPurchase, pollOwnership, fmtMoney } from '/js/course-buy.js';
+import { pollOwnership, fmtMoney } from '/js/course-buy.js';
 import { startCryptoCheckout, cryptoCoinOptions } from '/js/crypto-checkout.js';
 import { initTheme } from '/js/theme.js';
 
@@ -118,18 +118,10 @@ async function render() {
   $('content').hidden = false;
   document.title = `${product.name} — David Bond TV`;
 
+  // Card rail removed — products are purchased with crypto (ETH) via the box below.
   const buy = $('buy-btn');
-  buy.textContent = (product.sales && product.sales.ctaLabel) || `Purchase ${fmtMoney(product.price, product.currency)}`;
-  buy.addEventListener('click', () => startPurchase(product, next, buy));
+  if (buy) buy.hidden = true;
   setupCrypto(product);
-
-  // Card rail may be hard-disabled (e.g. Stripe suspended) — hide the card buy
-  // button so buyers use the crypto option instead of a dead processor.
-  try {
-    const cfg = await (await fetch('/api/pay/stripe/config')).json();
-    const cardOn = cfg && (cfg.cardEnabled !== undefined ? cfg.cardEnabled : cfg.enabled);
-    if (!cardOn) buy.hidden = true;
-  } catch { /* leave the button as-is on a config fetch error */ }
 
   if (status === 'cancel') banner('Checkout canceled — no charge was made.', 'warn');
 
