@@ -422,46 +422,9 @@ describe('checkout → dynamic subscription pricing', () => {
   });
 });
 
-describe('payments frozen (maintenance kill-switch)', () => {
-  const fakeRes = () => ({
-    statusCode: null, body: null,
-    writeHead(s) { this.statusCode = s; },
-    end(p) { this.body = p; },
-  });
-
-  it('checkout refuses new charges with 503 + maintenance flag and never calls Stripe', async () => {
-    let stripeCalled = false;
-    const user = { id: 'u1', profileComplete: true, stripeCustomerId: 'cus_1', email: 'a@b.com' };
-    const sp = createStripePayments({
-      store: fakeStore({ u1: user }), paymentsStore: fakePayments(),
-      currentUser: () => user, baseUrl: 'http://x', secretKey: 'sk_test', webhookSecret: SECRET,
-      pricing: { getConfig: () => ({ currency: 'usd', monthly: { amount: 1700, introAmount: 0 }, yearly: { enabled: true, amount: 12000 } }) },
-      paymentsFrozen: true,
-      fetchImpl: async () => { stripeCalled = true; return { ok: true, json: async () => ({}) }; },
-    });
-    const req = Readable.from([Buffer.from(JSON.stringify({ interval: 'month' }))]);
-    const res = fakeRes();
-    await sp._test.checkout(req, res);
-    expect(res.statusCode).toBe(503);
-    expect(JSON.parse(res.body)).toMatchObject({ maintenance: true });
-    expect(stripeCalled).toBe(false);
-  });
-
-  it('config reports enabled:false + maintenance:true when frozen', async () => {
-    const sp = createStripePayments({
-      store: fakeStore(), paymentsStore: fakePayments(), currentUser: () => null,
-      baseUrl: 'http://x', secretKey: 'sk_test', webhookSecret: SECRET,
-      priceMonthly: 'price_m', priceYearly: 'price_y',
-      pricing: { publicConfig: () => ({ currency: 'usd', intervals: { month: true, year: true }, prices: { month: { amount: 1700, currency: 'usd' }, year: null }, intro: null }) },
-      paymentsFrozen: true,
-    });
-    const res = fakeRes();
-    await sp._test.config({}, res);
-    const body = JSON.parse(res.body);
-    expect(body.enabled).toBe(false);
-    expect(body.maintenance).toBe(true);
-  });
-});
+// NOTE: the old `paymentsFrozen` (maintenance kill-switch) tests were removed when
+// the Stripe card rail was hard-disabled in favour of WHOP. The replacement
+// behaviour is covered by the 'cardDisabled switch' describe block below.
 
 describe('configured flag', () => {
   it('is false without keys/prices', () => {
@@ -622,5 +585,55 @@ describe('resyncUser (admin safety-net)', () => {
     });
     const out = await sp.resyncUser('u1');
     expect(out.ok).toBe(false);
+  });
+});
+
+describe('cardDisabled switch (Stripe suspended → hide/refuse card)', () => {
+  const fakeRes = () => ({ statusCode: null, body: null, writeHead(s) { this.statusCode = s; }, end(p) { this.body = p; } });
+  const pricing = { publicConfig: () => ({ currency: 'usd', intervals: { month: true, year: true }, prices: { month: { amount: 1969, currency: 'usd', interval: 'month' }, year: { amount: 19700, currency: 'usd', interval: 'year' } }, intro: { amount: 6700, label: 'First month', currency: 'usd' } }) };
+
+  function makeSP({ cardDisabled }) {
+    const user = { id: 'u1', profileComplete: true, stripeCustomerId: 'cus_1', email: 'a@b.com' };
+    return createStripePayments({
+      store: fakeStore({ u1: user }), paymentsStore: fakePayments(), currentUser: () => user,
+      baseUrl: 'http://x', secretKey: 'sk_test', webhookSecret: SECRET, pricing, cardDisabled,
+      fetchImpl: async () => ({ ok: true, json: async () => ({ url: 'https://stripe', id: 'cus_1' }) }),
+    });
+  }
+
+  it('config: cardEnabled=true and enabled=true by default', async () => {
+    const sp = makeSP({ cardDisabled: false });
+    const res = fakeRes();
+    await sp.handle({ method: 'GET' }, res, new URL('http://x/api/pay/stripe/config'));
+    const body = JSON.parse(res.body);
+    expect(body.cardEnabled).toBe(true);
+    expect(body.enabled).toBe(true);
+  });
+
+  it('config: cardEnabled=false and enabled=false when cardDisabled', async () => {
+    const sp = makeSP({ cardDisabled: true });
+    const res = fakeRes();
+    await sp.handle({ method: 'GET' }, res, new URL('http://x/api/pay/stripe/config'));
+    const body = JSON.parse(res.body);
+    expect(body.cardEnabled).toBe(false);
+    expect(body.enabled).toBe(false);
+  });
+
+  it('checkout: refuses with 503 when cardDisabled (no Stripe call)', async () => {
+    const sp = makeSP({ cardDisabled: true });
+    const req = Readable.from([Buffer.from(JSON.stringify({ interval: 'month' }))]);
+    const res = fakeRes();
+    await sp._test.checkout(req, res);
+    expect(res.statusCode).toBe(503);
+  });
+
+  it('buy: refuses with 503 when cardDisabled', async () => {
+    const sp = makeSP({ cardDisabled: true });
+    const req = Readable.from([Buffer.from(JSON.stringify({ productId: 'p1' }))]);
+    const res = fakeRes();
+    // buy is reached via handle so we don't depend on it being in _test
+    await sp.handle(Object.assign(req, { method: 'POST' }), res, new URL('http://x/api/pay/stripe/buy'));
+    expect(res.statusCode).toBe(503);
+    expect(JSON.parse(res.body).error).toMatch(/temporarily unavailable/i); // refused for cardDisabled, not missing-products
   });
 });

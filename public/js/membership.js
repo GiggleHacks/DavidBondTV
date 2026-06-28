@@ -1,15 +1,19 @@
 // Paid-membership page (membership.html): shows the premium offer to non-members
-// (→ Stripe Checkout) and a "Manage billing" button to members (→ Stripe Customer
-// Portal).
+// and a "Manage billing" button to members.
+//
+// The "Card" method points at WHOP (the card rail that replaced suspended Stripe):
+// clicking it creates a WHOP checkout server-side and redirects to WHOP's hosted
+// page. "Ethereum" is the self-hosted crypto rail. Either may be hidden if the
+// server reports it disabled.
 //
 // Flow: the page may carry ?next=<video> so that after a successful checkout we
-// send the user straight back to the content they wanted. Stripe redirects to
-// ?status=success&session_id=<cs_…>&next=…. We activate SYNCHRONOUSLY by posting
-// that session id to /api/pay/stripe/reconcile (so activation never depends on
-// the webhook), then fall back to a short poll. A successful payment NEVER
-// re-shows the sales offer — at worst it shows a "finalizing" state with a
-// "Check again" button.
+// send the user straight back to the content they wanted. WHOP redirects to
+// ?status=success&next=…. We activate SYNCHRONOUSLY by posting to
+// /api/pay/whop/reconcile (so activation never depends on the webhook), then fall
+// back to a short poll. A successful payment NEVER re-shows the sales offer — at
+// worst it shows a "finalizing" state with a "Check again" button.
 import { fetchMe, postJSON } from '/js/account.js';
+import { startCryptoCheckout, cryptoConfig } from '/js/crypto-checkout.js';
 import { deriveBillingView } from '/js/billing-view.js';
 import { initTheme } from '/js/theme.js';
 import { ADMIN_PATHS } from '/js/admin-paths.js';
@@ -21,7 +25,9 @@ const params = new URLSearchParams(location.search);
 const rawNext = params.get('next');
 const next = (rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')) ? rawNext : '';
 const sessionId = params.get('session_id') || '';
-let primaryInterval = 'month';
+// Card rail availability (server may hard-disable it, e.g. Stripe suspended). When
+// false the Card option is hidden and Ethereum becomes the sole payment method.
+let cardEnabled = true;
 
 const isActive = (me) => !!(me && me.membership && me.membership.active);
 const hasAccessFor = (me) => {
@@ -101,6 +107,38 @@ async function reconcileSession() {
   return r && r.ok ? r.data : null;
 }
 
+/**
+ * WHOP redirect carries no session id, so on return we ask the server to pull the
+ * buyer's membership straight from WHOP and grant it — the webhook's safety net.
+ */
+async function reconcileWhop() {
+  const r = await postJSON('/api/pay/whop/reconcile', {});
+  return r && r.ok ? r.data : null;
+}
+
+/** Start a WHOP checkout for the membership plan and redirect to the hosted page. */
+async function startWhopCheckout(btn) {
+  setMsg('');
+  btn.disabled = true;
+  const r = await postJSON('/api/pay/whop/checkout', { next });
+  if (r.ok && r.data.url) { location.href = r.data.url; return; }
+  if (r.status === 401) {
+    // Not signed in → sign up/in first, then return to this offer (with next intact).
+    const here = location.pathname + location.search;
+    try { localStorage.setItem('dbtv_after_auth', here); } catch { /* ignore */ }
+    location.href = `/signup.html?next=${encodeURIComponent(here)}`;
+    return;
+  }
+  if (r.status === 403) { location.href = `/profile-setup.html`; return; }
+  if (r.status === 409) {
+    setMsg('You already have an active membership.', 'ok');
+    btn.disabled = false;
+    return;
+  }
+  setMsg((r.data && r.data.error) || 'Could not start checkout. Please try again.', 'error');
+  btn.disabled = false;
+}
+
 /** Surface the VIP Telegram join button for eligible members (auto-prompt). */
 async function maybeShowTelegram() {
   const btn = $('tg-join');
@@ -127,27 +165,6 @@ function enterMember(me, { celebrate } = {}) {
   maybeShowTelegram();
 }
 
-async function startCheckout(interval, btn) {
-  setMsg('');
-  btn.disabled = true;
-  const couponCode = $('coupon-code') ? $('coupon-code').value.trim() : '';
-  const r = await postJSON('/api/pay/stripe/checkout', { interval, next, couponCode });
-  if (r.ok && r.data.url) { location.href = r.data.url; return; }
-  if (r.status === 401) {
-    // Not signed in → sign up/in first, then return to this offer (with next intact).
-    const here = location.pathname + location.search;
-    try { localStorage.setItem('dbtv_after_auth', here); } catch { /* ignore */ }
-    location.href = `/signup.html?next=${encodeURIComponent(here)}`;
-    return;
-  }
-  if (r.status === 403) {
-    location.href = `/profile-setup.html`;
-    return;
-  }
-  setMsg(r.data.error || 'Could not start checkout. Please try again.', 'error');
-  btn.disabled = false;
-}
-
 async function openPortal(btn) {
   setMsg('');
   btn.disabled = true;
@@ -167,30 +184,27 @@ async function pollUntilActive(tries = 6) {
   return fetchMe();
 }
 
-// Crypto is priced 20% below the card price (paid direct, no processor fees).
-const CRYPTO_DISCOUNT = 0.20;
-
 /**
  * Render the monthly card headline from live config. With an intro price we show
  * "<intro> first month" + a "then <recurring>/mo" note; otherwise the flat
- * monthly price. The crypto card always reflects the recurring monthly price.
+ * monthly price.
  */
 function setCardPricing(month, intro) {
   const recurring = month.amount;
   const cur = month.currency;
   const sub = $('price-sub');
-  if (intro && intro.amount > 0) {
-    $('price-amount').textContent = fmtMoney(intro.amount, cur);
-    $('price-per').textContent = (intro.label || 'first month').toLowerCase();
-    if (sub) { sub.textContent = `then ${fmtMoney(recurring, cur)}/mo`; sub.hidden = false; }
+  // Lead with the ongoing monthly price; when the first charge differs (WHOP bills a
+  // higher first month), note it accurately underneath instead of mislabeling it /mo.
+  $('price-amount').textContent = fmtMoney(recurring, cur);
+  $('price-per').textContent = '/ mo';
+  if (!sub) return;
+  if (intro && intro.amount > 0 && intro.amount !== recurring) {
+    sub.textContent = `${fmtMoney(intro.amount, cur)} for your first month, then ${fmtMoney(recurring, cur)}/mo`;
+    sub.hidden = false;
   } else {
-    $('price-amount').textContent = fmtMoney(recurring, cur);
-    $('price-per').textContent = '/ mo';
-    if (sub) { sub.textContent = ''; sub.hidden = true; }
+    sub.textContent = '';
+    sub.hidden = true;
   }
-  const cryptoAmt = Math.round(recurring * (1 - CRYPTO_DISCOUNT));
-  const cryptoPrice = $('crypto-price');
-  if (cryptoPrice) cryptoPrice.textContent = fmtMoney(cryptoAmt, cur);
 }
 
 /** Show/populate the yearly option (with its discount vs 12× monthly), or hide it. */
@@ -202,45 +216,42 @@ function setYearly(year, month) {
   $('year-amount').textContent = fmtMoney(year.amount, year.currency);
   const saveEl = $('year-save');
   if (saveEl && month && month.amount > 0 && year.amount < month.amount * 12) {
-    const pct = Math.round((1 - year.amount / (month.amount * 12)) * 100);
-    saveEl.textContent = `save ${pct}%`;
+    // Express the discount as "N months free" when it lands within ~half a month
+    // of a whole-month saving (the usual framing); otherwise fall back to a %.
+    const monthsFree = (month.amount * 12 - year.amount) / month.amount;
+    const rounded = Math.round(monthsFree);
+    if (rounded >= 1 && Math.abs(monthsFree - rounded) <= 0.5) {
+      saveEl.textContent = `${rounded} month${rounded === 1 ? '' : 's'} free`;
+    } else {
+      saveEl.textContent = `save ${Math.round((1 - year.amount / (month.amount * 12)) * 100)}%`;
+    }
     saveEl.hidden = false;
   } else if (saveEl) {
     saveEl.hidden = true;
   }
 }
 
-/** Disable both CTAs and label them as under maintenance (payments frozen). */
-function showMaintenance() {
-  const card = $('pay-card');
-  card.disabled = true;
-  card.textContent = 'Payments Under Maintenance';
-  const year = $('pay-year');
-  if (year) year.disabled = true;
-  showBanner('Payments are temporarily under maintenance. Existing members keep full access — new sign-ups are paused for a short while. Please check back soon.', 'warn');
-}
-
 async function applyConfig() {
   let cfg = null;
-  try { cfg = await (await fetch('/api/pay/stripe/config')).json(); } catch { /* default below */ }
-  if (cfg && cfg.maintenance) { showMaintenance(); return; }
-  if (!cfg || !cfg.enabled) {
-    $('pay-card').disabled = true;
-    showBanner('Memberships aren’t available just yet — check back soon.', 'warn');
-    return;
+  try { cfg = await (await fetch('/api/pay/whop/config')).json(); } catch { /* default below */ }
+  // cardEnabled is the explicit card-rail flag; fall back to legacy `enabled`.
+  cardEnabled = !!(cfg && (cfg.cardEnabled !== undefined ? cfg.cardEnabled : cfg.enabled));
+  // Card off: don't paint card pricing or show a discouraging banner here — ETH
+  // may still be available; setupPaymentMethods() decides the final layout.
+  if (!cardEnabled) return;
+  // WHOP bills a higher first charge ($28) then the recurring monthly ($19.69). Lead
+  // with the recurring price; pass the first charge as the "intro" so the sub-line
+  // reads "$28 for your first month, then $19.69/mo". The plan is monthly → no yearly.
+  const cur = cfg.currency || 'usd';
+  const first = cfg && typeof cfg.price === 'number' ? cfg.price : null;          // first charge
+  const recurring = cfg && typeof cfg.renewalPrice === 'number' ? cfg.renewalPrice : first; // ongoing
+  if (recurring !== null) {
+    setCardPricing(
+      { amount: Math.round(recurring * 100), currency: cur },
+      (first !== null && first !== recurring) ? { amount: Math.round(first * 100) } : null,
+    );
   }
-  const prices = cfg.prices || {};
-  // Headline price: prefer monthly (with optional intro); fall back to yearly.
-  if (cfg.intervals.month && prices.month) {
-    primaryInterval = 'month';
-    setCardPricing(prices.month, cfg.intro);
-    setYearly(cfg.intervals.year ? prices.year : null, prices.month);
-  } else if (cfg.intervals.year && prices.year) {
-    primaryInterval = 'year';
-    $('price-amount').textContent = fmtMoney(prices.year.amount, prices.year.currency);
-    $('price-per').textContent = '/ yr';
-    setYearly(null, null);
-  }
+  setYearly(null, null);
 }
 
 async function recheck(btn) {
@@ -256,10 +267,150 @@ async function recheck(btn) {
   }
 }
 
+// USD formatter for crypto prepay plans (priceUsd comes as a plain number).
+function fmtUsd(n) {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency', currency: 'USD',
+      minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
+    }).format(n);
+  } catch { return `$${Number(n).toFixed(2)}`; }
+}
+
+/**
+ * Per-plan marketing framing (display only). `baseMonthly` is the cheapest per-month
+ * rate across plans (the 3-month); the annual's "N months free" + dollar saving are
+ * derived from it so the numbers are always honest and self-consistent.
+ */
+function ethPlanFraming(plan, baseMonthly) {
+  const months = plan.months || 1;
+  const perMo = fmtUsd(Number((plan.priceUsd / months).toFixed(2)));
+  if (months >= 12) {
+    const saved = Math.max(0, Math.round(baseMonthly * months - plan.priceUsd));
+    const monthsFree = baseMonthly > 0 ? Math.round((baseMonthly * months - plan.priceUsd) / baseMonthly) : 0;
+    return {
+      best: true,
+      ribbon: 'Best value',
+      pill: monthsFree > 0 ? `${monthsFree} months free` : 'Best deal',
+      meta: saved > 0 ? `Just ${perMo}/mo · save $${saved}/yr` : `Just ${perMo}/mo`,
+    };
+  }
+  return { best: false, tag: months <= 3 ? 'Minimum' : '', meta: `${perMo}/mo · no signup fee` };
+}
+
+/**
+ * Switch the active payment method tile + reveal its flow panel. `which` is
+ * 'card' | 'eth'. The non-selected flow is hidden so only one is ever live.
+ */
+function selectMethod(which) {
+  const cardTile = $('method-card');
+  const ethTile = $('method-eth');
+  const cardFlow = $('flow-card');
+  const ethFlow = $('flow-eth');
+  const on = (tile, sel) => { if (tile) { tile.classList.toggle('selected', sel); tile.setAttribute('aria-checked', sel ? 'true' : 'false'); } };
+  on(cardTile, which === 'card');
+  on(ethTile, which === 'eth');
+  if (cardFlow) { cardFlow.hidden = which !== 'card'; if (which === 'card') cardFlow.classList.add('mb-flow-in'); }
+  if (ethFlow) { ethFlow.hidden = which !== 'eth'; if (which === 'eth') ethFlow.classList.add('mb-flow-in'); }
+}
+
+/**
+ * Build the ETH plan chooser from /api/pay/crypto/config and wire each plan to
+ * start a crypto order. Only reveals the Ethereum method tile when the server
+ * has crypto enabled with ETH in its coin list.
+ */
+async function setupPaymentMethods() {
+  if (cardEnabled) {
+    // Wire the Card tile and default-select it so a flow is visible on load.
+    $('method-card')?.addEventListener('click', () => selectMethod('card'));
+    selectMethod('card');
+  } else {
+    // Card rail is off (e.g. Stripe suspended) — hide all card chrome so nobody is
+    // funnelled toward a dead processor. Also hide the card-specific price headline
+    // and the auto-renew consent copy (ETH is a one-time prepay, no renewal).
+    const hide = (el) => { if (el) el.hidden = true; };
+    hide($('method-card')); hide($('flow-card'));
+    hide(document.querySelector('#plans-view .mb-pricing'));
+    hide(document.querySelector('#plans-view .mb-consent'));
+  }
+
+  const cfg = await cryptoConfig();
+  const ethEnabled = cfg && Array.isArray(cfg.coins) && cfg.coins.includes('ETH');
+  if (!ethEnabled) {
+    // Nothing left to offer if the card rail is also off.
+    if (!cardEnabled) showBanner('Payments are temporarily unavailable — please check back soon.', 'warn');
+    return;
+  }
+
+  const ethTile = $('method-eth');
+  const plansEl = $('eth-plans');
+  const mount = $('crypto-mount');
+  if (!ethTile || !plansEl || !mount) return;
+
+  const plans = Array.isArray(cfg.membershipPlans) ? cfg.membershipPlans : [];
+  if (!plans.length) return;
+
+  // Re-open the plan choice (clears the invoice) — used by the panel's "Start over".
+  const showPlanChoice = () => { mount.textContent = ''; plansEl.hidden = false; };
+
+  const startOrder = (plan) => {
+    plansEl.hidden = true;
+    startCryptoCheckout(
+      { kind: 'membership', membershipPlan: plan.key, coin: 'ETH' },
+      mount,
+      showPlanChoice,
+    );
+  };
+
+  plansEl.textContent = '';
+  // Standard (undiscounted) monthly rate = the HIGHEST per-month across plans, i.e. the
+  // short 3-month plan's rate. The annual is cheaper per month, so its savings are
+  // measured against this — not against itself (Math.min would zero the discount out).
+  const baseMonthly = Math.max(...plans.map((p) => p.priceUsd / (p.months || 1)));
+  // Best value (most months) first so the annual anchors the choice.
+  const ordered = plans.slice().sort((a, b) => (b.months || 0) - (a.months || 0));
+  for (const plan of ordered) {
+    const f = ethPlanFraming(plan, baseMonthly);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = f.best ? 'mb-eth-plan mb-eth-plan--best' : 'mb-eth-plan';
+    if (f.ribbon) {
+      const ribbon = document.createElement('span');
+      ribbon.className = 'mb-eth-ribbon'; ribbon.textContent = f.ribbon;
+      btn.append(ribbon);
+    }
+    const left = document.createElement('span'); left.className = 'mb-eth-plan-l';
+    const name = document.createElement('span'); name.className = 'mb-eth-plan-name';
+    name.textContent = plan.label || `${plan.months} months`;
+    const meta = document.createElement('span'); meta.className = 'mb-eth-plan-meta'; meta.textContent = f.meta;
+    left.append(name, meta);
+    const right = document.createElement('span'); right.className = 'mb-eth-plan-r';
+    if (f.pill) { const pill = document.createElement('span'); pill.className = 'mb-eth-plan-save'; pill.textContent = f.pill; right.append(pill); }
+    else if (f.tag) { const tag = document.createElement('span'); tag.className = 'mb-eth-plan-min'; tag.textContent = f.tag; right.append(tag); }
+    const price = document.createElement('span'); price.className = 'mb-eth-plan-price'; price.textContent = fmtUsd(plan.priceUsd);
+    right.append(price);
+    btn.append(left, right);
+    btn.addEventListener('click', () => startOrder(plan));
+    plansEl.append(btn);
+  }
+
+  ethTile.hidden = false;
+  ethTile.addEventListener('click', () => { selectMethod('eth'); showPlanChoice(); });
+
+  // Card off → Ethereum is the only rail: drop the now-pointless one-option picker
+  // and open the ETH plan chooser straight away.
+  if (!cardEnabled) {
+    const picker = document.querySelector('#plans-view .mb-pay');
+    if (picker) picker.hidden = true;
+    selectMethod('eth');
+    showPlanChoice();
+  }
+}
+
 async function render() {
-  $('pay-card').addEventListener('click', (e) => startCheckout(primaryInterval, e.currentTarget));
-  const payYear = $('pay-year');
-  if (payYear) payYear.addEventListener('click', (e) => startCheckout('year', e.currentTarget));
+  // The Card button now starts a WHOP checkout (Stripe is suspended). WHOP's plan
+  // is monthly-only, so the yearly button isn't shown.
+  $('pay-card').addEventListener('click', (e) => startWhopCheckout(e.currentTarget));
   $('manage-btn').addEventListener('click', (e) => openPortal(e.currentTarget));
   $('recheck-btn')?.addEventListener('click', (e) => recheck(e.currentTarget));
 
@@ -271,8 +422,10 @@ async function render() {
 
   if (status === 'success' && !isActive(me)) {
     showBanner('Payment received — activating your membership…', 'ok');
-    // 1) Synchronous activation tied to THIS user's checkout session (no webhook
-    //    dependency). 2) Re-read. 3) Short poll as a backstop.
+    // 1) Synchronous activation, no webhook dependency: WHOP first (its redirect
+    //    carries no session id), then the legacy Stripe session if one is present.
+    //    2) Re-read. 3) Short poll as a backstop while the webhook catches up.
+    await reconcileWhop();
     await reconcileSession();
     me = await fetchMe();
     if (!isActive(me)) me = await pollUntilActive(4);
@@ -299,6 +452,7 @@ async function render() {
     return;
   }
   showPlans();
+  setupPaymentMethods();
 }
 
 render();
