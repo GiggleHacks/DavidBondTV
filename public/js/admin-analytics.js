@@ -64,7 +64,24 @@ function wireTabs() {
     bar.querySelectorAll('.deck-tab').forEach((b) => b.classList.toggle('on', b === btn));
     document.querySelectorAll('.deck-panel-tab').forEach((p) => p.classList.toggle('on', p.dataset.panel === tab));
     if (tab === 'financial') loadFinancial().catch(() => {});
+    if (tab === 'live') initGigaBrainEmbed();
   });
+}
+
+// ---------- GigaBrain live tab ----------
+let gbInited = false;
+function initGigaBrainEmbed() {
+  if (gbInited) return;
+  gbInited = true;
+  const frame = $('gb-frame');
+  const stage = $('gb-stage');
+  if (!frame || !stage) return;
+  const src = frame.dataset.src || '';
+  if (!src || src.includes('__GIGABRAIN_URL__')) {
+    stage.innerHTML = '<div class="gb-embed-missing"><div><h3>Not connected</h3><p>Set <code>GIGABRAIN_PUBLIC_URL</code> on the server to enable live analytics.</p></div></div>';
+    return;
+  }
+  frame.src = src;
 }
 
 // ---------- charts (pure SVG) ----------

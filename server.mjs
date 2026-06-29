@@ -958,7 +958,8 @@ async function handleApi(req, res, ctx) {
           },
         });
       }
-      // Ping the owner's bell about the new comment (skip the admin's own posts).
+      // Ping the owner's bell about the new comment (skip the admin's own posts
+      // in the bell, but ALWAYS fire the Telegram ping — David wants every comment).
       const authorIsAdmin = !!(user && Array.isArray(user.roles) && user.roles.includes('admin'));
       if (!authorIsAdmin && stored) {
         const who = stored.username || stored.name || 'Someone';
@@ -969,8 +970,8 @@ async function handleApi(req, res, ctx) {
           body: snippet,
           link: `/watch?v=${encodeURIComponent(video || 'bikinis')}`,
         });
-        // Immediate Telegram DM with who / where / what + a link to the page.
-        // Fire-and-forget: notify() never throws and no-ops when unconfigured.
+      }
+      if (stored) {
         const cc = ctx.country || country || '';
         const safePath = (typeof body.path === 'string' && /^\/[\w\-/?=&.%#]*$/.test(body.path))
           ? body.path

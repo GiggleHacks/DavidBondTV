@@ -313,6 +313,36 @@ body {
 .player:hover .controls, .player.paused .controls, .player:focus-within .controls { opacity: 1; }
 .player:hover .gradient, .player.paused .gradient, .player:focus-within .gradient { opacity: 1; }
 
+/* Auto-hide controls when idle in fullscreen — scoped so desktop hover still works */
+.player:fullscreen.idle-hide .controls,
+.player:-webkit-full-screen.idle-hide .controls { opacity: 0; pointer-events: none; }
+.player:fullscreen.idle-hide .gradient,
+.player:-webkit-full-screen.idle-hide .gradient { opacity: 0; }
+
+/* Skip indicators (double-tap feedback) */
+.skip-indicator {
+  position: absolute; top: 0; bottom: 0; width: 35%;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none; z-index: 10; opacity: 0;
+}
+.skip-backward { left: 0; }
+.skip-forward { right: 0; }
+.skip-indicator.show { animation: skip-flash .7s ease-in-out forwards; }
+.skip-circle {
+  background: rgba(255, 255, 255, 0.18); backdrop-filter: blur(2px);
+  border-radius: 50%; width: 76px; height: 76px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: #fff;
+}
+.skip-circle svg { width: 30px; height: 30px; fill: #fff; }
+.skip-circle span { font-size: 11px; font-weight: 700; margin-top: 1px; }
+@keyframes skip-flash {
+  0%   { opacity: 0; transform: scale(0.8); }
+  20%  { opacity: 1; transform: scale(1);   }
+  75%  { opacity: 1; transform: scale(1);   }
+  100% { opacity: 0; transform: scale(0.9); }
+}
+
 .progress { position: relative; height: 20px; display: flex; align-items: center; cursor: pointer; }
 .progress-track {
   position: relative; width: 100%; height: 4px;

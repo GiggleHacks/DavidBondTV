@@ -18,6 +18,7 @@ import { getOfferCopy } from './offer-copy.js';
 import { ADMIN_PATHS } from './admin-paths.js';
 import { toggleFullscreen } from './fullscreen.js';
 import { trackEvent } from './analytics-client.js';
+import { attachTouchControls } from './touch-controls.js';
 
 const $ = (id) => document.getElementById(id);
 const FPS = 30000 / 1001; // source frame rate (~29.97)
@@ -382,6 +383,7 @@ async function init() {
 
   createControls({ video, container, els, onToggleSettings: () => settings.toggle() });
   createProgressBar({ video, els, storyboard });
+  attachTouchControls(container, video);
 
   // Close settings menu when clicking elsewhere in the player
   container.addEventListener('click', (e) => {
