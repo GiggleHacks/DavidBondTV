@@ -9,11 +9,7 @@
 // `dark: true` flips icon/text contrast to a dark ink for bright accents.
 
 export const SECTIONS = [
-  { key: 'dashboard',  label: 'Dashboard',  route: '',            icon: 'dashboard', accent: '#818cf8', nav: true,  desc: 'Live control deck — traffic, viewers, geo-defense.' },
-  // Dashboard 2.0 ("Control Deck") is an unfinished WIP running on mock data — kept
-  // reachable by URL for development but pulled from the nav so there's one real
-  // dashboard. Flip nav:true to resurface it once it's wired to live data.
-  { key: 'dashboard2', label: 'Dashboard 2.0', route: '-dashboard2', icon: 'dashboard2', accent: '#f43f5e', nav: false,  desc: 'Next-generation real-time command center.' },
+  { key: 'dashboard',  label: 'DataBond GigaBrain', route: '',     icon: 'gigabrain', accent: '#a78bfa', nav: true,  desc: 'Live analytics — visitors, sources, behaviour, real-time, geo.' },
   { key: 'upload',     label: 'Upload',     route: '-upload',     icon: 'upload',    accent: '#22d3ee', nav: true,  dark: true,  desc: 'Add new videos and track processing.' },
   { key: 'videos',     label: 'Videos',     route: '-videos',     icon: 'video',     accent: '#3b82f6', nav: true,  desc: 'Manage the library — publish, tag, organize.' },
   { key: 'products',   label: 'Products',   route: '-products',   icon: 'package',   accent: '#34d399', nav: true,  dark: true,  desc: 'Courses and one-time purchases.' },
@@ -25,9 +21,6 @@ export const SECTIONS = [
   { key: 'community',  label: 'Community',  route: '-community',  icon: 'community', accent: '#fb923c', nav: true,  dark: true,  desc: 'Comments and viewer engagement.' },
   { key: 'telegram',   label: 'Telegram',   route: '-telegram',   icon: 'telegram',  accent: '#38bdf8', nav: true,  dark: true,  desc: 'Bot configuration and group access.' },
   { key: 'review',     label: 'Review',     route: '-review',     icon: 'review',    accent: '#a3e635', nav: true,  dark: true,  desc: 'Approve or reject the draft queue.' },
-  // GigaBrain analytics sidecar — merged into the main Dashboard's LIVE tab;
-  // standalone page kept for full-screen access, but pulled from the nav.
-  { key: 'gigabrain',  label: 'Analytics 2.0', route: '-gigabrain', icon: 'gigabrain', accent: '#a78bfa', nav: false, desc: 'GigaBrain — live visitors, geo, sources, devices.' },
   // Contextual sub-pages — identity for headers/theming, not in the nav.
   { key: 'analytics',  label: 'Analytics',  route: '-analytics',  icon: 'analytics', accent: '#4ade80', nav: false, dark: true,  desc: 'Per-video performance.' },
   { key: 'edit',       label: 'Edit',       route: '-edit',       icon: 'edit',      accent: '#94a3b8', nav: false, dark: true,  desc: 'Edit a single video.' },

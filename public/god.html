@@ -4,26 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex" />
-  <title>David Bond TV — Control Deck</title>
+  <title>David Bond TV — DataBond GigaBrain</title>
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/css/admin.css" />
   <link rel="stylesheet" href="/css/deck.css" />
+  <link rel="stylesheet" href="/css/databond.css" />
   <script type="importmap">
     { "imports": { "three": "/vendor/three/three.module.js" } }
   </script>
   <script>document.documentElement.classList.add('admin-auth-pending');</script>
-  <style>
-    .gb-embed-stage { position: relative; height: calc(100vh - 180px); min-height: 520px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
-    .gb-embed-stage iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
-    .gb-embed-toolbar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
-    .gb-embed-hint { font-size: 12.5px; color: var(--text-dim); }
-    .gb-embed-ext { margin-left: auto; font-size: 13px; color: var(--text); text-decoration: none; border: 1px solid var(--border); border-radius: 8px; padding: 7px 11px; white-space: nowrap; transition: border-color .15s, color .15s; }
-    .gb-embed-ext:hover { border-color: var(--section-accent, var(--accent)); color: var(--section-accent, var(--accent)); }
-    .gb-embed-missing { display: grid; place-items: center; height: 100%; text-align: center; padding: 24px; }
-    .gb-embed-missing h3 { margin: 0 0 8px; font-size: 16px; }
-    .gb-embed-missing p { margin: 6px 0; color: var(--text-dim); font-size: 13.5px; line-height: 1.55; }
-  </style>
 </head>
 <body>
   <div class="admin-wrap wide admin-app-shell deck">
@@ -32,56 +22,168 @@
     <main id="app">
       <!-- Page header (icon + title) is injected by admin-shell.js -->
 
+      <!-- ============ shared controls (range + bots) ============ -->
+      <div class="db-controls" id="db-controls">
+        <span class="range-label">📅 Range</span>
+        <span class="seg" id="db-range">
+          <button type="button" data-range="24h">24h</button>
+          <button type="button" data-range="7d" class="active">7d</button>
+          <button type="button" data-range="30d">30d</button>
+          <button type="button" data-range="90d">90d</button>
+        </span>
+        <label class="db-toggle"><input type="checkbox" id="db-bots" /> <span>Include bots</span></label>
+        <span class="db-stamp muted" id="db-stamp"></span>
+      </div>
+
+      <!-- "not connected" notice swapped in by JS when the sidecar is unconfigured. -->
+      <div class="db-notice" id="db-notice" hidden></div>
+
       <!-- ============ tab bar ============ -->
       <div class="deck-tabs" id="deck-tabs">
         <button class="deck-tab on" data-tab="overview"><span class="dico">📊</span>OVERVIEW</button>
         <button class="deck-tab" data-tab="traffic"><span class="dico">🌍</span>TRAFFIC</button>
-        <button class="deck-tab" data-tab="viewers"><span class="dico">🙋</span>VIEWERS</button>
+        <button class="deck-tab" data-tab="visitors"><span class="dico">🧑‍💻</span>VISITORS</button>
+        <button class="deck-tab" data-tab="behavior"><span class="dico">🧭</span>BEHAVIOR</button>
+        <button class="deck-tab" data-tab="business"><span class="dico">💰</span>BUSINESS</button>
+        <button class="deck-tab" data-tab="realtime"><span class="dico">📡</span>REAL-TIME</button>
         <button class="deck-tab" data-tab="geo"><span class="dico">🛡️</span>GEO-DEFENSE</button>
-        <button class="deck-tab" data-tab="videos"><span class="dico">🎬</span>VIDEOS</button>
-        <button class="deck-tab" data-tab="financial"><span class="dico">💰</span>FINANCIAL</button>
-        <button class="deck-tab" data-tab="live"><span class="dico">📡</span>LIVE</button>
       </div>
 
-      <!-- ============ OVERVIEW (populated by admin-analytics.js layout system) ============ -->
+      <!-- ============ OVERVIEW ============ -->
       <section class="deck-panel-tab on" data-panel="overview">
-        <!-- JS injects the active layout HTML here -->
+        <div class="grid g-kpi">
+          <div class="dpanel kpi"><div class="klabel"><span class="kemoji">👣</span> VISITORS</div><div class="kv glow" id="kpi-visitors">—</div><div class="ktrend flat" id="d-visitors">—</div></div>
+          <div class="dpanel kpi cyan"><div class="klabel"><span class="kemoji">📄</span> PAGE VIEWS</div><div class="kv glow" id="kpi-pageviews">—</div><div class="ktrend flat" id="d-pageviews">—</div></div>
+          <div class="dpanel kpi amber"><div class="klabel"><span class="kemoji">🧩</span> SESSIONS</div><div class="kv glow" id="kpi-sessions">—</div><div class="ktrend flat" id="d-sessions">—</div></div>
+          <div class="dpanel kpi magenta"><div class="klabel"><span class="kemoji">🎯</span> CONVERSIONS</div><div class="kv glow" id="kpi-conversions">—</div><div class="ktrend flat" id="d-conversions">—</div></div>
+        </div>
+        <div class="grid g-kpi row-gap">
+          <div class="dpanel kpi cyan"><div class="klabel"><span class="kemoji">⏱️</span> AVG ENGAGEMENT</div><div class="kv glow" id="kpi-engage">—</div><div class="ktrend flat" id="d-engage">—</div></div>
+          <div class="dpanel kpi amber"><div class="klabel"><span class="kemoji">↩️</span> BOUNCE RATE</div><div class="kv glow" id="kpi-bounce">—</div><div class="ktrend flat" id="d-bounce">—</div></div>
+          <div class="dpanel kpi"><div class="klabel"><span class="kemoji">✨</span> NEW VISITORS</div><div class="kv glow" id="kpi-new">—</div><div class="ktrend flat" id="d-new">returning <b id="kpi-ret">—</b></div></div>
+          <div class="dpanel kpi magenta"><div class="klabel"><span class="kemoji">🤖</span> BOTS FILTERED</div><div class="kv glow" id="kpi-bots">—</div><div class="ktrend flat" id="d-bots">humans <b id="kpi-humans">—</b></div></div>
+        </div>
+        <div class="grid g-2 row-gap">
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">📈</span> TRAFFIC OVER TIME</div>
+            <svg class="dchart" id="db-traffic" viewBox="0 0 640 200" preserveAspectRatio="none" role="img" aria-label="Traffic over time"></svg>
+            <div class="dsrc">SOURCE: <b>DataBond GigaBrain</b> · page views + unique visitors over the selected range</div>
+          </div>
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">🚦</span> CHANNELS</div>
+            <svg id="db-channels" viewBox="0 0 220 156" role="img" aria-label="Traffic by channel"></svg>
+            <div class="dlegend" id="db-channels-legend"></div>
+            <div class="dp-title" style="margin-top:10px"><span class="dico">✨</span> NEW VS RETURNING</div>
+            <svg id="db-newret" viewBox="0 0 220 156" role="img" aria-label="New vs returning"></svg>
+            <div class="dlegend" id="db-newret-legend"></div>
+          </div>
+        </div>
       </section>
 
       <!-- ============ TRAFFIC ============ -->
       <section class="deck-panel-tab" data-panel="traffic">
         <div class="dpanel">
-          <div class="dp-title" style="margin-bottom:12px"><span class="dico">🗺️</span> WHERE VIEWERS ARE
-            <span class="seg" id="map-mode" style="margin-left:auto">
-              <button data-mode="viewers" class="active">Viewers</button>
-              <button data-mode="subscribers">Subscribers</button>
-              <button data-mode="blocked">Blocked</button>
-            </span>
-            <span class="seg" id="map-view" style="margin-left:10px" title="Switch between the flat map and the 3D globe">
+          <div class="dp-title" style="margin-bottom:12px"><span class="dico">🗺️</span> WHERE VISITORS ARE
+            <span class="seg" id="map-view" style="margin-left:auto" title="Switch between the flat map and the 3D globe">
               <button data-view="2d" class="active">2D</button>
               <button data-view="3d">3D Globe</button>
             </span>
           </div>
           <div class="traffic-grid">
             <div class="map-wrap globe-wrap">
-              <div id="map" class="traffic-globe" aria-label="Interactive 3D traffic globe"></div>
+              <div id="map" class="traffic-globe" aria-label="Interactive visitor map"></div>
               <div class="map-hover" id="map-hover"></div>
             </div>
             <aside class="traffic-inspector" id="traffic-detail">
-              <p class="muted">Select a marker to inspect visitor, subscriber, device, and session details.</p>
+              <p class="muted">Select a city marker to inspect its visitor count and location.</p>
             </aside>
           </div>
           <div class="rank" id="country-rank"></div>
-          <div class="dsrc">SOURCE: <b>analytics raw logs</b> · precise markers use trusted city-level geolocation when available</div>
+          <div class="dsrc">SOURCE: <b>DataBond GigaBrain</b> · city markers use trusted geolocation when available</div>
+        </div>
+        <div class="grid g-3 row-gap">
+          <div class="dpanel"><div class="dp-title"><span class="dico">🔗</span> TOP REFERRERS</div><div class="dbars" id="db-referrers"></div></div>
+          <div class="dpanel"><div class="dp-title"><span class="dico">🔎</span> SEARCH KEYWORDS</div><div class="dbars" id="db-keywords"></div></div>
+          <div class="dpanel"><div class="dp-title"><span class="dico">📣</span> SOCIAL &amp; VIDEO</div><div class="dbars" id="db-social"></div></div>
+        </div>
+        <div class="grid g-2 row-gap">
+          <div class="dpanel"><div class="dp-title"><span class="dico">🏷️</span> CAMPAIGNS (UTM)</div><div class="dbars" id="db-campaigns"></div></div>
+          <div class="dpanel"><div class="dp-title"><span class="dico">▶️</span> YOUTUBE VIDEOS</div><div class="dbars" id="db-youtube"></div></div>
         </div>
       </section>
 
-      <!-- ============ VIEWERS ============ -->
-      <section class="deck-panel-tab" data-panel="viewers">
+      <!-- ============ VISITORS ============ -->
+      <section class="deck-panel-tab" data-panel="visitors">
         <div class="dpanel">
-          <div class="dp-title"><span class="dico">🔎</span> RECENT USERS <a class="back" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-users.html" style="margin-left:auto">Manage all →</a></div>
-          <div id="recent-users"></div>
-          <div class="dsrc">SOURCE: <b>data/users.json</b> + analytics rollups · newest first · verified only · <a href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-logs.html">Open Logs</a></div>
+          <div class="dp-title"><span class="dico">🧑‍💻</span> RECENT VISITORS
+            <button class="btn sm ghost" id="db-export-visitors" style="margin-left:auto">Export CSV</button>
+          </div>
+          <div class="db-table" id="db-visitors"></div>
+          <div class="dsrc">SOURCE: <b>DataBond GigaBrain</b> · latest activity per visitor over the range · click a row for the full journey</div>
+        </div>
+        <div class="grid g-3 row-gap">
+          <div class="dpanel"><div class="dp-title"><span class="dico">💻</span> DEVICES</div><div class="dbars" id="db-devices"></div></div>
+          <div class="dpanel"><div class="dp-title"><span class="dico">🪟</span> OPERATING SYSTEMS</div><div class="dbars" id="db-os"></div></div>
+          <div class="dpanel"><div class="dp-title"><span class="dico">🧭</span> BROWSERS</div><div class="dbars" id="db-browsers"></div></div>
+        </div>
+        <div class="grid g-3 row-gap">
+          <div class="dpanel"><div class="dp-title"><span class="dico">🌐</span> TOP COUNTRIES</div><div class="dbars" id="db-countries"></div></div>
+          <div class="dpanel"><div class="dp-title"><span class="dico">🏙️</span> TOP CITIES</div><div class="dbars" id="db-cities"></div></div>
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">🛰️</span> CONNECTION</div>
+            <svg id="db-vpn" viewBox="0 0 220 156" role="img" aria-label="Connection reputation"></svg>
+            <div class="dlegend" id="db-vpn-legend"></div>
+            <div class="dp-title" style="margin-top:8px"><span class="dico">🕵️</span> TOP VPN/PROXY ISPS</div>
+            <div class="dbars" id="db-vpnisps"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ BEHAVIOR ============ -->
+      <section class="deck-panel-tab" data-panel="behavior">
+        <div class="dpanel">
+          <div class="dp-title"><span class="dico">📑</span> TOP PAGES</div>
+          <div class="db-table" id="db-pages"></div>
+          <div class="dsrc">SOURCE: <b>DataBond GigaBrain</b> · ranked by page views</div>
+        </div>
+        <div class="grid g-2 row-gap">
+          <div class="dpanel"><div class="dp-title"><span class="dico">🚪</span> ENTRY PAGES</div><div class="dbars" id="db-entry"></div></div>
+          <div class="dpanel"><div class="dp-title"><span class="dico">👋</span> EXIT PAGES</div><div class="dbars" id="db-exit"></div></div>
+        </div>
+      </section>
+
+      <!-- ============ BUSINESS (David Bond TV's own revenue/membership data) ============ -->
+      <section class="deck-panel-tab" data-panel="business">
+        <div class="grid g-kpi">
+          <div class="dpanel kpi"><div class="klabel"><span class="kemoji">💵</span> TOTAL REVENUE</div><div class="kv glow" id="biz-revenue">—</div><div class="ktrend flat" id="biz-revenue-sub">—</div></div>
+          <div class="dpanel kpi cyan"><div class="klabel"><span class="kemoji">🧾</span> SALES</div><div class="kv glow" id="biz-sales">—</div><div class="ktrend flat" id="biz-sales-sub">—</div></div>
+          <div class="dpanel kpi amber"><div class="klabel"><span class="kemoji">⭐</span> ACTIVE SUBSCRIBERS</div><div class="kv glow" id="biz-subs">—</div><div class="ktrend flat" id="biz-subs-sub">—</div></div>
+          <div class="dpanel kpi magenta"><div class="klabel"><span class="kemoji">👥</span> PAID USERS</div><div class="kv glow" id="biz-paid">—</div><div class="ktrend flat" id="biz-paid-sub">—</div></div>
+        </div>
+        <div class="grid g-2 row-gap">
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">📈</span> REVENUE — LAST 12 MONTHS</div>
+            <svg class="dchart" id="biz-chart" viewBox="0 0 640 200" preserveAspectRatio="none" role="img" aria-label="Revenue by month"></svg>
+            <div class="dsrc">SOURCE: <b>data/payments.json</b> · paid invoices + product sales</div>
+          </div>
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">📊</span> SUBSCRIPTION STATUS</div>
+            <div class="rank" id="biz-subs-breakdown"></div>
+            <div class="dp-title" style="margin-top:10px"><span class="dico">🔥</span> TOP VIDEOS</div>
+            <div class="dbars" id="biz-videos"></div>
+            <div class="dsrc">SOURCE: <b>live user.membership state</b> + analytics rollups</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ REAL-TIME ============ -->
+      <section class="deck-panel-tab" data-panel="realtime">
+        <div class="dpanel">
+          <div class="dp-title"><span class="dico">📡</span> ACTIVE NOW
+            <span class="rt-badge" id="rt-active">— <span class="deck-dot"></span>live</span>
+          </div>
+          <div class="db-table" id="rt-list"></div>
+          <div class="dsrc">SOURCE: <b>DataBond GigaBrain</b> · visitors active in the last 5 minutes · refreshes every 10s</div>
         </div>
       </section>
 
@@ -119,72 +221,18 @@
           </div>
           <div class="dsrc">SOURCE: <b>data/geo-rules.json</b> · your IP/country detected via Cloudflare on this request</div>
         </div>
-      </section>
-
-      <!-- ============ VIDEOS ============ -->
-      <section class="deck-panel-tab" data-panel="videos">
         <div class="dpanel">
-          <div class="dp-title"><span class="dico">🔥</span> TOP VIDEOS <a class="back" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-videos.html" style="margin-left:auto">Manage →</a></div>
-          <div class="dbars" id="top-videos"></div>
-          <div class="dsrc">SOURCE: <b>analytics/videos.json</b> · ranked by distinct views · titles via manifest</div>
-        </div>
-      </section>
-
-      <!-- ============ LIVE (GigaBrain analytics sidecar) ============ -->
-      <section class="deck-panel-tab" data-panel="live">
-        <div class="gb-embed" id="gb-embed">
-          <div class="gb-embed-toolbar">
-            <span class="gb-embed-hint">Live first-party analytics (GigaBrain). Sign in once with the dashboard password.</span>
-            <a class="gb-embed-ext" id="gb-open" href="__GIGABRAIN_URL__/admin" target="_blank" rel="noopener">Open full screen ↗</a>
+          <div class="dp-title"><span class="dico">🚫</span> BLOCKED ATTEMPTS — DATABOND GIGABRAIN</div>
+          <div class="grid g-2">
+            <div class="dbars" id="geo-summary"></div>
+            <div class="db-table" id="geo-log"></div>
           </div>
-          <div class="gb-embed-stage" id="gb-stage">
-            <iframe id="gb-frame" data-src="__GIGABRAIN_URL__/admin"
-              title="GigaBrain analytics dashboard"
-              referrerpolicy="no-referrer-when-downgrade"></iframe>
-          </div>
-        </div>
-      </section>
-
-      <!-- ============ FINANCIAL ============ -->
-      <section class="deck-panel-tab" data-panel="financial">
-        <div class="grid g-kpi">
-          <div class="dpanel kpi">
-            <div class="klabel"><span class="kemoji">💵</span> TOTAL REVENUE</div>
-            <div class="kv glow" id="fin-revenue">—</div>
-            <div class="ktrend flat" id="fin-revenue-sub">—</div>
-          </div>
-          <div class="dpanel kpi cyan">
-            <div class="klabel"><span class="kemoji">🧾</span> SALES</div>
-            <div class="kv glow" id="fin-sales">—</div>
-            <div class="ktrend flat" id="fin-sales-sub">—</div>
-          </div>
-          <div class="dpanel kpi amber">
-            <div class="klabel"><span class="kemoji">⭐</span> ACTIVE SUBSCRIBERS</div>
-            <div class="kv glow" id="fin-subs">—</div>
-            <div class="ktrend flat" id="fin-subs-sub">—</div>
-          </div>
-          <div class="dpanel kpi magenta">
-            <div class="klabel"><span class="kemoji">👥</span> PAID USERS</div>
-            <div class="kv glow" id="fin-paid">—</div>
-            <div class="ktrend flat" id="fin-paid-sub">—</div>
-          </div>
-        </div>
-        <div class="grid g-2 row-gap">
-          <div class="dpanel">
-            <div class="dp-title"><span class="dico">📈</span> REVENUE — LAST 12 MONTHS</div>
-            <svg class="dchart" id="fin-chart" viewBox="0 0 640 200" preserveAspectRatio="none" role="img" aria-label="Revenue by month"></svg>
-            <div class="dsrc">SOURCE: <b>data/payments.json</b> · paid invoices + product sales</div>
-          </div>
-          <div class="dpanel">
-            <div class="dp-title"><span class="dico">📊</span> SUBSCRIPTION STATUS</div>
-            <div class="rank" id="fin-subs-breakdown"></div>
-            <div class="dsrc">SOURCE: <b>live user.membership state</b></div>
-          </div>
+          <div class="dsrc">SOURCE: <b>DataBond GigaBrain</b> · requests turned away by geo rules (analytics, read-only)</div>
         </div>
       </section>
     </main>
   </div>
-  <script type="module" src="/js/admin-analytics.js"></script>
+  <script type="module" src="/js/admin-databond.js"></script>
   <script type="module" src="/js/admin-shell.js"></script>
 </body>
 </html>

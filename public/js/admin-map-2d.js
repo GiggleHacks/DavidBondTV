@@ -7,7 +7,7 @@
 // with the wheel (or the +/−/reset buttons). Panning moves a single camera <g>
 // transform (rAF-throttled, GPU-composited) instead of re-laying-out the viewBox,
 // which keeps dragging smooth. Exposes the SAME { dispose, update } contract as
-// renderGlobe so admin-analytics can swap them.
+// renderGlobe so admin-databond can swap them.
 import { WORLD_COUNTRIES } from './world-countries.js';
 import { project, flagIcon } from './world-data.js';
 

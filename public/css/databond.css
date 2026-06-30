@@ -1,0 +1,85 @@
+/* DataBond GigaBrain — styles for components the shared admin.css / deck.css skins
+   don't already provide: the top controls bar, generic data tables, the visitor
+   drawer, tags, and a few small bits. Scoped under .deck so it inherits the
+   dashboard's --d-* tokens (see deck.css). */
+
+/* ---------- top controls (range + bots toggle) ---------- */
+.deck .db-controls {
+  display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap;
+  padding: 10px 0 14px; margin-bottom: 4px; border-bottom: 1px solid var(--d-edge);
+}
+.deck .db-controls .range-label { font-size: 11px; letter-spacing: 1px; color: var(--d-dim); text-transform: uppercase; }
+.deck .db-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--d-dim); cursor: pointer; }
+.deck .db-toggle input { accent-color: var(--d-accent); }
+.deck .db-stamp { margin-left: auto; font-size: 11px; }
+
+/* ---------- "not connected" notice ---------- */
+.deck .db-notice {
+  margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; font-size: 13px; line-height: 1.6;
+  background: color-mix(in srgb, var(--d-amber) 12%, var(--d-panel));
+  border: 1px solid color-mix(in srgb, var(--d-amber) 40%, var(--d-edge)); color: var(--d-text);
+}
+.deck .db-notice code { background: var(--d-panel2); border: 1px solid var(--d-edge); border-radius: 5px; padding: 1px 6px; font-size: 12px; }
+
+/* ---------- donut svgs ---------- */
+.deck #db-channels, .deck #db-newret, .deck #db-vpn { width: 100%; max-height: 156px; display: block; }
+
+/* ---------- bar-list sublabel (campaigns: source · medium) ---------- */
+.deck .dbars .bl-sub { color: var(--d-dim); font-size: 10.5px; margin-left: 6px; }
+
+/* ---------- generic data table (visitors, pages, realtime, geo log) ---------- */
+.deck .db-table { font-size: 12px; max-height: 460px; overflow-y: auto; }
+.deck .dbt-h, .deck .dbt-r {
+  display: grid; gap: 10px; align-items: center; padding: 6px 2px; white-space: nowrap;
+}
+.deck .dbt-h {
+  position: sticky; top: 0; z-index: 1; background: var(--d-panel);
+  color: var(--d-dim); font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  border-bottom: 1px solid var(--d-edge);
+}
+.deck .dbt-r { border-bottom: 1px solid color-mix(in srgb, var(--d-edge) 60%, transparent); }
+.deck .dbt-r > span { overflow: hidden; text-overflow: ellipsis; }
+.deck .dbt-click { cursor: pointer; }
+.deck .dbt-click:hover { background: var(--d-panel2); }
+.deck .dbt-r .mono, .deck .db-kv .mono, .deck .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.deck .dbt-r .muted, .deck .muted { color: var(--d-dim); }
+
+.deck .me-tag {
+  font-size: 9.5px; letter-spacing: .5px; text-transform: uppercase; color: #0b0c10;
+  background: var(--d-accent); border-radius: 4px; padding: 1px 5px; margin-left: 4px;
+}
+
+/* ---------- realtime badge ---------- */
+.deck .rt-badge { margin-left: auto; font-size: 12px; color: var(--d-text); display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---------- event/connection tags ---------- */
+.deck .tag {
+  display: inline-block; font-size: 10px; letter-spacing: .4px; text-transform: uppercase;
+  border-radius: 5px; padding: 1px 7px; background: var(--d-panel2); border: 1px solid var(--d-edge); color: var(--d-dim);
+}
+.deck .tag.ok { color: #34d399; border-color: color-mix(in srgb, #34d399 45%, var(--d-edge)); }
+.deck .tag.warn { color: var(--d-rose); border-color: color-mix(in srgb, var(--d-rose) 45%, var(--d-edge)); }
+.deck .tag.cta { color: #34d399; }
+.deck .tag.click { color: var(--d-cyan); }
+.deck .tag.exit { color: var(--d-rose); }
+.deck .tag.pageview { color: var(--d-accent); }
+
+/* ---------- visitor drawer ---------- */
+.db-drawer { position: fixed; inset: 0; z-index: 1000; }
+.db-drawer[hidden] { display: none; }
+.db-drawer-scrim { position: absolute; inset: 0; background: rgba(2, 4, 10, .55); backdrop-filter: blur(2px); }
+.db-drawer-panel {
+  position: absolute; top: 0; right: 0; height: 100%; width: min(460px, 92vw);
+  background: var(--surface); border-left: 1px solid var(--border); box-shadow: -16px 0 40px rgba(0,0,0,.35);
+  padding: 20px; overflow-y: auto; animation: db-slide .18s ease both;
+}
+@keyframes db-slide { from { transform: translateX(20px); opacity: .6; } to { transform: none; opacity: 1; } }
+.db-drawer-panel h3 { margin: 0 0 12px; font-size: 16px; color: var(--text); }
+.db-drawer-x {
+  position: absolute; top: 12px; right: 14px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text); border-radius: 8px; width: 30px; height: 30px; cursor: pointer; font-size: 16px;
+}
+.db-drawer-x:hover { border-color: var(--section-accent, var(--accent)); color: var(--section-accent, var(--accent)); }
+.db-kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; }
+.db-kv b { color: var(--text-dim); font-weight: 500; }
+.db-kv span { color: var(--text); overflow: hidden; text-overflow: ellipsis; }

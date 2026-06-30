@@ -1,15 +1,18 @@
-# Deploying GigaBrain Analytics ("Analytics 2.0")
+# Deploying GigaBrain Analytics (powers "DataBond GigaBrain")
 
 GigaBrain is a **separate Next.js + SQLite service** that runs alongside davidbondtv
-on the same VPS. davidbondtv feeds it traffic (the tracker snippet) and embeds its
-dashboard as the **Analytics 2.0** admin tile. The two never share a process.
+on the same VPS. davidbondtv feeds it traffic (the tracker snippet) and surfaces its
+data natively as the main admin dashboard, **DataBond GigaBrain** — rendered in-app
+and fed by a server-side proxy to the sidecar (no iframe). The two never share a process.
 
 - **Sidecar project (local):** `D:\Local\Digital Products\gigabrain-analytics`
 - **Origin:** `https://analytics.davidbondtv.com` → `127.0.0.1:3001`
 - **DB:** SQLite at `/var/lib/gigabrain-analytics/analytics.db` (outside the app dir)
 
-Local dev is already wired: set `GIGABRAIN_PUBLIC_URL=http://localhost:3001` on
-davidbondtv and run the sidecar with `npx next dev -p 3001`.
+Local dev is already wired: set `GIGABRAIN_PUBLIC_URL=http://localhost:3001` and
+`GIGABRAIN_SESSION_SECRET=<value>` on davidbondtv, set the SAME value as
+`ADMIN_SESSION_SECRET` on the sidecar (its `.env.local`), and run the sidecar with
+`npx next dev -p 3001`.
 
 ---
 
@@ -107,33 +110,48 @@ settings — this step is David's.
 Add to davidbondtv's systemd env drop-in (e.g. `…/davidbondtv.service.d/env.conf`):
 ```ini
 Environment=GIGABRAIN_PUBLIC_URL=https://analytics.davidbondtv.com
+Environment=GIGABRAIN_SESSION_SECRET=<the same value as the sidecar's ADMIN_SESSION_SECRET>
 ```
+`GIGABRAIN_SESSION_SECRET` must equal the sidecar's `ADMIN_SESSION_SECRET` (set in
+step 4's systemd unit). The native **DataBond GigaBrain** dashboard mints the
+sidecar's session JWT from it server-side — there is **no separate GigaBrain
+password**; logging into davidbondtv as `davidbond` is the only gate. (The sidecar
+must use the env `ADMIN_SESSION_SECRET`, not its DB-generated fallback, so the two
+secrets match.)
+
 Redeploy davidbondtv code (the changed `server.mjs`, `lib/`, `public/`) and:
 ```bash
 systemctl daemon-reload && systemctl restart davidbondtv
 ```
 This makes davidbondtv (a) inject the tracker on public pages, (b) allow the sidecar
-origin in its CSP (`connect-src` + `frame-src`, see `lib/http-util.js`), and (c) stamp
-the iframe URL into the Analytics 2.0 tile.
+origin in its CSP (`connect-src`, see `lib/http-util.js`), and (c) serve the native
+DataBond GigaBrain dashboard by proxying the sidecar's admin API
+(`/api/admin/databond/*` → `lib/gigabrain-proxy.js`).
 
 ## 7. Verify in prod
 
 - Visit `https://davidbondtv.com/` → DevTools Network shows a `POST` to
   `https://analytics.davidbondtv.com/api/collect` returning **204**.
-- Open the admin → **Analytics 2.0** tile → sign in to the embedded dashboard once →
-  Overview/Real-time show live traffic, geo now populated.
+- Open the admin → **DataBond GigaBrain** dashboard → tabs (Overview / Traffic /
+  Visitors / Real-time …) show live traffic, geo populated. DevTools Network should
+  show only same-origin `/api/admin/databond/*` calls — no cross-origin requests to
+  `analytics.davidbondtv.com` from the dashboard itself.
 
 ---
 
 ## Notes & gotchas
 
-- **Same-site cookie:** `analytics.davidbondtv.com` and `davidbondtv.com` share the
-  registrable domain, so the dashboard's `SameSite=Lax` login cookie works inside the
-  iframe and the tracker's cross-subdomain beacon is a simple (no-preflight) request.
-- **iframe headers:** the sidecar sets `Content-Security-Policy: frame-ancestors`
-  allowing `davidbondtv.com` (`next.config.ts`); davidbondtv allows the sidecar in
-  `frame-src`/`connect-src` (`lib/http-util.js`). Both sides must list prod origins —
-  already configured; just keep them in sync if the domain changes.
+- **Native dashboard, not an iframe:** the admin dashboard is rendered in-app and
+  reads the sidecar through davidbondtv's own server (`/api/admin/databond/*` →
+  `lib/gigabrain-proxy.js`). There's no separate GigaBrain password: the server
+  MINTS the sidecar's `adc_admin` session JWT from the shared
+  `GIGABRAIN_SESSION_SECRET` (= the sidecar's `ADMIN_SESSION_SECRET`) and relays
+  admin GET/POSTs. The browser never calls the sidecar's admin API directly, so no
+  CORS/iframe wiring is needed, and logging into davidbondtv is the only gate.
+- **Tracker beacon:** the public tracker still POSTs cross-subdomain to
+  `…/api/collect`; that origin stays allowlisted in davidbondtv's CSP `connect-src`
+  (`lib/http-util.js`). The tracker's cross-subdomain beacon is a simple
+  (no-preflight) request.
 - **DB safety:** never put `ANALYTICS_DB_PATH` inside `/opt/gigabrain-analytics` — a
   redeploy would wipe it. Keep it in `/var/lib/...`.
 - **Retention:** optional cron `curl "https://analytics.davidbondtv.com/api/cron/maintain?key=$CRON_SECRET"`

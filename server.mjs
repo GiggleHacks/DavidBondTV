@@ -60,6 +60,7 @@ import { sha256File } from './lib/hash-file.mjs';
 import { diffManifest } from './lib/sync-diff.mjs';
 import { startPublish, getPublishJob, latestPublishJob, controlPublishJob } from './lib/sync-client.mjs';
 import { ADMIN_ROUTE_PREFIX, isLegacyAdminRoute, isPrettyAdminRoute, resolveAdminFilePath } from './lib/admin-routes.js';
+import { gigabrainConfigured, proxyGet, proxyJson } from './lib/gigabrain-proxy.js';
 import { sanitizePlaybackVideo, sanitizePublicVideo } from './lib/video-manifest.js';
 import { CENTROIDS } from './public/js/world-data.js';
 
@@ -1493,6 +1494,57 @@ async function handleApi(req, res, ctx) {
     return true;
   }
 
+
+  // --- DataBond GigaBrain (native dashboard ← GigaBrain sidecar proxy) ---
+  // The browser only ever talks to this app; these routes relay to the GigaBrain
+  // sidecar server-to-server (see lib/gigabrain-proxy.js). Every one is admin-gated.
+
+  // GET /api/admin/databond/status → is the sidecar configured? (drives the UI's
+  // "not connected" notice without leaking whether the password is set).
+  if (req.method === 'GET' && url.pathname === '/api/admin/databond/status') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    sendJson(res, 200, { configured: gigabrainConfigured() });
+    return true;
+  }
+
+  // GET proxies — forward the whitelisted query string to the matching GigaBrain
+  // admin endpoint and pass its status/body straight back to the client.
+  {
+    const GB_GET = {
+      '/api/admin/databond/stats': { path: 'stats', params: ['range', 'bots', 'bucket'] },
+      '/api/admin/databond/realtime': { path: 'realtime', params: [] },
+      '/api/admin/databond/activity': { path: 'activity', params: ['range', 'bots', 'type', 'limit'] },
+      '/api/admin/databond/visitor': { path: 'visitor', params: ['id'] },
+      '/api/admin/databond/geo': { path: 'geo', params: ['range', 'country'] },
+      '/api/admin/databond/gsc': { path: 'gsc', params: ['range'] },
+    };
+    const gbRoute = GB_GET[url.pathname];
+    if (req.method === 'GET' && gbRoute) {
+      if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+      const fwd = new URLSearchParams();
+      for (const key of gbRoute.params) {
+        const v = url.searchParams.get(key);
+        if (v != null && v !== '') fwd.set(key, v);
+      }
+      const qs = fwd.toString();
+      const { status, json } = await proxyGet(gbRoute.path, qs ? `?${qs}` : '');
+      sendJson(res, status, json);
+      return true;
+    }
+  }
+
+  // POST /api/admin/databond/geo → block/unblock a country on the sidecar.
+  if (req.method === 'POST' && url.pathname === '/api/admin/databond/geo') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    let body;
+    try {
+      const raw = await readBody(req, 2048);
+      body = JSON.parse(raw);
+    } catch { sendJson(res, 400, { error: 'Invalid request' }); return true; }
+    const { status, json } = await proxyJson('POST', 'geo', body);
+    sendJson(res, status, json);
+    return true;
+  }
 
   // --- Analytics dashboards (admin) ---
 
@@ -2941,11 +2993,6 @@ const server = http.createServer(async (req, res) => {
     // (pages are small) rather than streaming so we can rewrite the body.
     if (headers['Content-Type'].startsWith('text/html')) {
       let html = await fsp.readFile(filePath, 'utf8');
-      // Stamp the GigaBrain sidecar origin into the Analytics 2.0 embed page.
-      // When unset, the placeholder survives and the page shows a setup notice.
-      if (GIGABRAIN_PUBLIC_URL && html.includes('__GIGABRAIN_URL__')) {
-        html = html.split('__GIGABRAIN_URL__').join(GIGABRAIN_PUBLIC_URL);
-      }
       html = injectMetaTags(html, req.url);
       // Inject visit-tracker on public pages only (not admin pages).
       const vtPath = new URL(req.url, 'http://x').pathname;

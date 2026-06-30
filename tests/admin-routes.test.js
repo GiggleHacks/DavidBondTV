@@ -9,7 +9,6 @@ import {
 describe('admin-routes', () => {
   it('recognizes the new admin route family', () => {
     expect(isPrettyAdminRoute(ADMIN_ROUTE_PREFIX)).toBe(true);
-    expect(isPrettyAdminRoute(`${ADMIN_ROUTE_PREFIX}-dashboard2.html`)).toBe(true);
     expect(isPrettyAdminRoute(`${ADMIN_ROUTE_PREFIX}-videos.html`)).toBe(true);
     expect(isPrettyAdminRoute(`${ADMIN_ROUTE_PREFIX}-upload.html`)).toBe(true);
     expect(isPrettyAdminRoute(`${ADMIN_ROUTE_PREFIX}-logs.html`)).toBe(true);
@@ -25,7 +24,6 @@ describe('admin-routes', () => {
 
   it('maps the new pretty admin urls onto the existing files', () => {
     expect(resolveAdminFilePath(ADMIN_ROUTE_PREFIX)).toBe('/god.html');
-    expect(resolveAdminFilePath(`${ADMIN_ROUTE_PREFIX}-dashboard2.html`)).toBe('/god-dashboard2.html');
     expect(resolveAdminFilePath(`${ADMIN_ROUTE_PREFIX}-analytics.html`)).toBe('/god-analytics.html');
     expect(resolveAdminFilePath(`${ADMIN_ROUTE_PREFIX}-logs.html`)).toBe('/god-logs.html');
     expect(resolveAdminFilePath(`${ADMIN_ROUTE_PREFIX}-edit.html`)).toBe('/god-edit.html');
