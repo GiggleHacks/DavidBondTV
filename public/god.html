@@ -78,6 +78,14 @@
             <div class="dlegend" id="db-newret-legend"></div>
           </div>
         </div>
+        <div class="dpanel db-health row-gap" id="db-health">
+          <div class="dp-title"><span class="dico">🩺</span> ANALYTICS HEALTH
+            <button class="btn sm ghost" id="health-refresh" style="margin-left:auto">Recheck</button>
+          </div>
+          <div class="health-verdict" id="health-verdict">Checking tracking pipeline…</div>
+          <div class="health-grid" id="health-grid"></div>
+          <div class="dsrc">SOURCE: <b>this site</b> · native tracker + rollups + live presence — answers “tracking issue or real drop?” independent of the sidecar</div>
+        </div>
       </section>
 
       <!-- ============ TRAFFIC ============ -->
@@ -137,6 +145,18 @@
             <div class="dbars" id="db-vpnisps"></div>
           </div>
         </div>
+        <div class="grid g-2 row-gap">
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">🕐</span> VISITORS BY HOUR (UTC)</div>
+            <svg class="dchart" id="db-hours" viewBox="0 0 640 150" preserveAspectRatio="none" role="img" aria-label="Visitors by hour"></svg>
+            <div class="dsrc">SOURCE: <b>DataBond GigaBrain</b> · distribution of the recent visitor list by hour of day</div>
+          </div>
+          <div class="dpanel">
+            <div class="dp-title"><span class="dico">🧮</span> DEVICE SPLIT</div>
+            <svg id="db-devmix" viewBox="0 0 220 156" role="img" aria-label="Device split"></svg>
+            <div class="dlegend" id="db-devmix-legend"></div>
+          </div>
+        </div>
       </section>
 
       <!-- ============ BEHAVIOR ============ -->
@@ -183,7 +203,7 @@
             <span class="rt-badge" id="rt-active">— <span class="deck-dot"></span>live</span>
           </div>
           <div class="db-table" id="rt-list"></div>
-          <div class="dsrc">SOURCE: <b>DataBond GigaBrain</b> · visitors active in the last 5 minutes · refreshes every 10s</div>
+          <div class="dsrc">SOURCE: <b>this site — native presence</b> · visitors active in the last few minutes · refreshes every 10s · works even if the sidecar is down</div>
         </div>
       </section>
 

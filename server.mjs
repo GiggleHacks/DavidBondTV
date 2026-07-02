@@ -55,6 +55,7 @@ import { resolveCanonicalRedirect } from './lib/public-routes.js';
 import { createIpGeo } from './lib/ip-geo.js';
 import { createRequestContext, isBotUa } from './lib/request-context.mjs';
 import { createAnalytics } from './lib/analytics-store.mjs';
+import * as presence from './lib/presence.js';
 import { createGeoGate } from './lib/geo-gate.mjs';
 import { PUBLIC_DIR, MEDIA_DIR, MANIFEST, resolveAssetPath } from './lib/paths.js';
 import { sha256File } from './lib/hash-file.mjs';
@@ -680,7 +681,9 @@ async function handleApi(req, res, ctx) {
   // High-frequency: keep it cheap, never error the client, drop bots.
   if (req.method === 'POST' && url.pathname === '/api/track') {
     try {
-      if (ctx.isBot || !trackLimiter.hit(ctx.ip).allowed) { res.writeHead(204); res.end(); return true; }
+      if (ctx.isBot) { presence.bump('bots'); res.writeHead(204); res.end(); return true; }
+      if (!trackLimiter.hit(ctx.ip).allowed) { presence.bump('rateLimited'); res.writeHead(204); res.end(); return true; }
+      presence.bump('counted'); presence.markEvent();
       const raw = await readBody(req, 2048);
       let body; try { body = JSON.parse(raw); } catch { body = null; }
       if (body && isKnownVideo(body.v)) {
@@ -722,18 +725,20 @@ async function handleApi(req, res, ctx) {
   // One call per page load; bots silently dropped.
   if (req.method === 'POST' && url.pathname === '/api/visit') {
     try {
-      if (ctx.isBot || !trackLimiter.hit(ctx.ip).allowed) { res.writeHead(204); res.end(); return true; }
+      if (ctx.isBot) { presence.bump('bots'); res.writeHead(204); res.end(); return true; }
+      if (!trackLimiter.hit(ctx.ip).allowed) { presence.bump('rateLimited'); res.writeHead(204); res.end(); return true; }
       const raw = await readBody(req, 2048);
       let body; try { body = JSON.parse(raw); } catch { body = null; }
       const visitPath = typeof body?.path === 'string' && body.path.startsWith('/')
         ? body.path.slice(0, 200) : '/';
       if (!isLegacyAdminRoute(visitPath) && !isPrettyAdminRoute(visitPath)) {
         const u = ctx.user || null;
+        const visitorId = String(body?.visitorId || body?.vid || body?.did || '').slice(0, 160);
         analytics.recordVisit({
           path: visitPath,
           referrer: String(body?.ref || '').slice(0, 500),
           deviceId: String(body?.did || '').slice(0, 64),
-          visitorId: String(body?.visitorId || body?.vid || body?.did || '').slice(0, 160),
+          visitorId,
           sessionId: String(body?.sessionId || body?.sid || '').slice(0, 120),
           ip: ctx.ip,
           cc: ctx.country,
@@ -744,8 +749,54 @@ async function handleApi(req, res, ctx) {
           userId: u ? u.id : null,
           username: u ? (u.username || u.email || u.id) : null,
         });
+        // Native tracking counters + live presence (sidecar-independent).
+        presence.bump('counted'); presence.bump('pageviews'); presence.markEvent();
+        presence.touch({
+          visitorId: visitorId || ctx.ip,
+          path: visitPath,
+          country: ctx.country,
+          countryName: ctx.geo && ctx.geo.countryName,
+          city: ctx.geo && ctx.geo.city,
+          device: ctx.device && ctx.device.type,
+          os: ctx.device && ctx.device.os,
+          browser: ctx.device && ctx.device.browser,
+          ip: ctx.ip,
+          channel: presence.channelFromReferrer(body?.ref),
+          isMe: !!ctx.isAdmin,
+        });
       }
     } catch { /* never surface tracking errors */ }
+    res.writeHead(204); res.end();
+    return true;
+  }
+
+  // POST /api/presence — lightweight heartbeat that keeps a visitor "active" in
+  // the real-time view WITHOUT recording a new page view (so heartbeats don't
+  // inflate pageview counts). Body: { path, visitorId, did, ref }.
+  if (req.method === 'POST' && url.pathname === '/api/presence') {
+    try {
+      if (ctx.isBot) { res.writeHead(204); res.end(); return true; }
+      if (!trackLimiter.hit(ctx.ip).allowed) { res.writeHead(204); res.end(); return true; }
+      const raw = await readBody(req, 1024);
+      let body; try { body = JSON.parse(raw); } catch { body = null; }
+      const p = typeof body?.path === 'string' && body.path.startsWith('/') ? body.path.slice(0, 200) : '/';
+      if (!isLegacyAdminRoute(p) && !isPrettyAdminRoute(p)) {
+        presence.markEvent();
+        presence.touch({
+          visitorId: String(body?.visitorId || body?.vid || body?.did || '').slice(0, 160) || ctx.ip,
+          path: p,
+          country: ctx.country,
+          countryName: ctx.geo && ctx.geo.countryName,
+          city: ctx.geo && ctx.geo.city,
+          device: ctx.device && ctx.device.type,
+          os: ctx.device && ctx.device.os,
+          browser: ctx.device && ctx.device.browser,
+          ip: ctx.ip,
+          channel: presence.channelFromReferrer(body?.ref),
+          isMe: !!ctx.isAdmin,
+        });
+      }
+    } catch { /* best-effort */ }
     res.writeHead(204); res.end();
     return true;
   }
@@ -753,7 +804,9 @@ async function handleApi(req, res, ctx) {
   // POST /api/analytics/event — low-volume purchase-intent/funnel events.
   if (req.method === 'POST' && url.pathname === '/api/analytics/event') {
     try {
-      if (ctx.isBot || !trackLimiter.hit(ctx.ip).allowed) { res.writeHead(204); res.end(); return true; }
+      if (ctx.isBot) { presence.bump('bots'); res.writeHead(204); res.end(); return true; }
+      if (!trackLimiter.hit(ctx.ip).allowed) { presence.bump('rateLimited'); res.writeHead(204); res.end(); return true; }
+      presence.markEvent();
       const raw = await readBody(req, 4096);
       let body; try { body = JSON.parse(raw); } catch { body = null; }
       const eventType = typeof body?.eventType === 'string' ? body.eventType.slice(0, 80) : '';
@@ -1683,6 +1736,44 @@ async function handleApi(req, res, ctx) {
     return true;
   }
 
+  // GET /api/admin/analytics/realtime → native live-visitor presence (no sidecar).
+  if (req.method === 'GET' && url.pathname === '/api/admin/analytics/realtime') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const visitors = presence.active();
+    sendJson(res, 200, { active: visitors.length, visitors: visitors.slice(0, 100), generatedAt: Date.now() });
+    return true;
+  }
+
+  // GET /api/admin/analytics/health → is tracking actually working? Answers
+  // "tracking issue vs real traffic drop" using first-party signals only.
+  if (req.method === 'GET' && url.pathname === '/api/admin/analytics/health') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const now = Date.now();
+    const tracking = presence.metrics24h();
+    let lastEventAt = presence.getLastEventAt();
+    if (lastEventAt == null) {
+      try {
+        const recent = analytics.getRecentEvents(50);
+        if (recent && recent.length) lastEventAt = Math.max(...recent.map((e) => e.t || 0)) || null;
+      } catch { /* ignore */ }
+    }
+    let rollupUpdatedAt = null;
+    try { rollupUpdatedAt = fs.statSync(path.join(process.cwd(), 'data', 'analytics', 'visitors.json')).mtimeMs; } catch { /* no rollup yet */ }
+    const rollupsFresh = rollupUpdatedAt != null && (now - rollupUpdatedAt) < 5 * 60 * 1000;
+    const sidecar = (GIGABRAIN_PUBLIC_URL && process.env.GIGABRAIN_SESSION_SECRET) ? 'ok' : 'unconfigured';
+    sendJson(res, 200, {
+      activeNow: presence.count(),
+      lastEventAt: lastEventAt || null,
+      tracking,
+      rollupsFresh,
+      rollupUpdatedAt,
+      trackerInjected: true,
+      sidecar,
+      generatedAt: now,
+    });
+    return true;
+  }
+
   // GET /api/admin/analytics/video?id=<id> → one video's stats + daily series.
   if (req.method === 'GET' && url.pathname === '/api/admin/analytics/video') {
     if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
@@ -2042,25 +2133,43 @@ async function handleApi(req, res, ctx) {
     const rest = url.pathname.slice('/api/admin/users'.length).replace(/^\//, '');
     const [userId, action] = rest.split('/');
 
-    // GET list — ?filter=verified|unverified|all (default verified). Unverified
-    // accounts are pending/fake signups; the owner can review and purge them.
+    // GET list — ?filter=verified|unverified|optins|all (default verified),
+    // ?sort=created|lastSeen|watch|name, ?dir=asc|desc (default created desc).
+    // "optins" = accounts with a captured email that aren't paying members yet
+    // (i.e. email leads, incl. free-view-gate signups). The stat strip totals
+    // are computed across ALL accounts so they never shift with the active tab.
     if (req.method === 'GET' && !userId) {
       const ustats = analytics.getAllUserStats();
       const blockedIds = new Set(geoGate.getRules().blockedUserIds);
       const all = accounts.store.listAll();
+      const minutesOf = (u) => Math.round(((ustats[u.id] || {}).totalSeconds || 0) / 60);
+
+      // Filter-independent totals for the insight strip.
       const verifiedCount = all.filter((u) => u.verified).length;
       const unverifiedCount = all.length - verifiedCount;
+      const emailsCaptured = all.filter((u) => u.email).length;
+      const verifiedEmails = all.filter((u) => u.email && u.verified).length;
+      const members = all.filter((u) => hasActiveMembership(u)).length;
+      const blockedTotal = all.filter((u) => blockedIds.has(u.id)).length;
+      const optInCount = all.filter((u) => u.email && !hasActiveMembership(u)).length;
+      const watchMinutes = all.reduce((sum, u) => sum + minutesOf(u), 0);
+
       const filter = url.searchParams.get('filter') || 'verified';
       const picked = filter === 'all' ? all
         : filter === 'unverified' ? all.filter((u) => !u.verified)
-          : all.filter((u) => u.verified);
+          : filter === 'optins' ? all.filter((u) => u.email && !hasActiveMembership(u))
+            : all.filter((u) => u.verified);
       const users = picked.map((u) => {
         const s = ustats[u.id] || {};
+        const subscribed = hasActiveMembership(u);
         return {
           id: u.id, username: u.username, email: u.email,
           country: s.lastCountry || null,
           lastIp: (s.ips && s.ips[0]) || null,
-          subscribed: hasActiveMembership(u),
+          subscribed,
+          optIn: !!u.email,
+          // signup source bucket for the UI: member > free (verified lead) > pending (unverified lead).
+          source: subscribed ? 'member' : (u.verified ? 'free' : 'pending'),
           videosWatched: s.byVideo ? Object.keys(s.byVideo).length : 0,
           minutesWatched: Math.round((s.totalSeconds || 0) / 60),
           lastSeen: s.lastSeen || null,
@@ -2068,9 +2177,25 @@ async function handleApi(req, res, ctx) {
           verified: u.verified, createdAt: u.createdAt,
         };
       });
-      // `hiddenUnverified` kept for backward-compat with older clients.
-      const emailsCaptured = all.filter((u) => u.email).length;
-      sendJson(res, 200, { users, filter, verifiedCount, unverifiedCount, emailsCaptured, hiddenUnverified: unverifiedCount });
+
+      // Sort (default newest signup first).
+      const sortKey = url.searchParams.get('sort') || 'created';
+      const dir = (url.searchParams.get('dir') || 'desc') === 'asc' ? 1 : -1;
+      const keyFns = {
+        created: (x) => x.createdAt || 0,
+        lastSeen: (x) => x.lastSeen || 0,
+        watch: (x) => x.minutesWatched || 0,
+        name: (x) => String(x.username || x.email || '').toLowerCase(),
+      };
+      const kf = keyFns[sortKey] || keyFns.created;
+      users.sort((a, b) => { const va = kf(a), vb = kf(b); return va < vb ? -1 * dir : va > vb ? 1 * dir : 0; });
+
+      sendJson(res, 200, {
+        users, filter, sort: sortKey, dir: dir === 1 ? 'asc' : 'desc',
+        verifiedCount, unverifiedCount, emailsCaptured, verifiedEmails,
+        members, blocked: blockedTotal, optInCount, watchMinutes, totalUsers: all.length,
+        hiddenUnverified: unverifiedCount, // back-compat
+      });
       return true;
     }
 
@@ -2081,12 +2206,14 @@ async function handleApi(req, res, ctx) {
       const csvEscape = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
       const rows = accounts.store.listAll()
         .filter((u) => u.email)
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
         .map((u) => [
           u.email, u.username || '', u.verified ? 'yes' : 'no',
           u.createdAt ? new Date(u.createdAt).toISOString() : '',
           hasActiveMembership(u) ? 'yes' : 'no',
+          hasActiveMembership(u) ? 'member' : (u.verified ? 'free' : 'pending'),
         ].map(csvEscape).join(','));
-      const csv = ['email,username,verified,createdAt,subscribed', ...rows].join('\n');
+      const csv = ['email,username,verified,createdAt,subscribed,source', ...rows].join('\n');
       res.writeHead(200, {
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': 'attachment; filename="davidbondtv-emails.csv"',

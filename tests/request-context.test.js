@@ -69,15 +69,19 @@ describe('request context enrichment', () => {
 });
 
 describe('bot detection', () => {
-  it('isBotUa flags crawlers, AI bots, headless, and empty UAs; passes real browsers', () => {
+  it('isBotUa flags crawlers, AI bots, named automation, and empty UAs; passes real browsers', () => {
     const CHROME = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36';
     expect(isBotUa('')).toBe(true);
     expect(isBotUa(undefined)).toBe(true);
     expect(isBotUa('Googlebot/2.1 (+http://www.google.com/bot.html)')).toBe(true);
     expect(isBotUa('GPTBot/1.0')).toBe(true);
     expect(isBotUa('Mozilla/5.0 (compatible; ClaudeBot/1.0)')).toBe(true);
-    expect(isBotUa('HeadlessChrome/126.0')).toBe(true);
+    // Named automation agents are still flagged…
+    expect(isBotUa('Mozilla/5.0 puppeteer')).toBe(true);
     expect(isBotUa('python-requests/2.31')).toBe(true);
+    // …but the broad `headless` token was intentionally removed: it matched the
+    // in-app preview browser and ambiguous UAs, silently dropping real visitors.
+    expect(isBotUa('HeadlessChrome/126.0')).toBe(false);
     expect(isBotUa(CHROME)).toBe(false);
   });
 

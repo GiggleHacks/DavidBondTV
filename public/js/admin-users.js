@@ -24,8 +24,11 @@ function fmtAgo(t) {
 }
 
 let allUsers = [];
+let totals = {};
 let hiddenUnverified = 0;
 let currentFilter = 'verified';
+let currentSort = 'created';
+let currentDir = 'desc';
 
 // Deterministic avatar tint from a name so each user has a stable colour chip.
 function tint(str) {
@@ -48,15 +51,24 @@ function statusBadges(u, { admin = false } = {}) {
   return out.join(' ');
 }
 
+// Source/opt-in badge — makes email leads visible at a glance.
+function sourceBadge(u) {
+  if (u.source === 'member' || u.subscribed) return '';
+  if (u.source === 'pending' || u.verified === false) return '<span class="badge pending">Lead · pending</span>';
+  return '<span class="badge lead">Lead</span>';
+}
+
 function renderList(filter = '') {
   const f = filter.toLowerCase();
   const rows = allUsers.filter((u) => !f || (u.username || '').toLowerCase().includes(f) || (u.email || '').toLowerCase().includes(f));
   $('ucount').textContent = `(${rows.length})`;
-  const totalMinutes = allUsers.reduce((sum, u) => sum + (u.minutesWatched || 0), 0);
-  $('ui-total').textContent = allUsers.length.toLocaleString();
-  $('ui-members').textContent = allUsers.filter((u) => u.subscribed).length.toLocaleString();
-  $('ui-blocked').textContent = allUsers.filter((u) => u.blocked).length.toLocaleString();
-  $('ui-watch').textContent = `${totalMinutes.toLocaleString()}m`;
+  // Insight strip: server-computed across ALL accounts, so it never shifts with the active tab or search.
+  $('ui-total').textContent = (totals.totalUsers || 0).toLocaleString();
+  $('ui-emails').textContent = (totals.emailsCaptured || 0).toLocaleString();
+  const optEl = $('ui-optins'); if (optEl) optEl.textContent = (totals.optInCount || 0).toLocaleString();
+  $('ui-members').textContent = (totals.members || 0).toLocaleString();
+  $('ui-blocked').textContent = (totals.blocked || 0).toLocaleString();
+  $('ui-watch').textContent = `${(totals.watchMinutes || 0).toLocaleString()}m`;
   const list = $('user-list');
   if (!rows.length) { list.innerHTML = '<p class="muted">No users.</p>'; return; }
   list.innerHTML = '';
@@ -65,13 +77,29 @@ function renderList(filter = '') {
     row.className = 'user-row';
     row.innerHTML = `
       ${avatar(u)}
-      <span class="uname" data-label="User"><span class="un-main">${esc(u.username || '—')}</span><span class="un-sub">${esc(u.email || '')} · ${fmtAgo(u.lastSeen)}</span></span>
+      <span class="uname" data-label="User"><span class="un-main">${esc(u.username || '—')}</span><span class="un-sub">${esc(u.email || 'no email')} · seen ${fmtAgo(u.lastSeen)}</span></span>
       <span class="ucountry" data-label="Country">${u.country ? flagIcon(u.country) + ' ' + u.country : '<span class="muted">—</span>'}</span>
       <span class="uwatched" data-label="Watched">${u.videosWatched} vids · ${u.minutesWatched}m</span>
-      <span class="ustatus" data-label="Status">${statusBadges(u)}</span>`;
+      <span class="usignup" data-label="Signed up" title="${u.createdAt ? new Date(u.createdAt).toLocaleString() : ''}">${fmtDate(u.createdAt)}</span>
+      <span class="ustatus" data-label="Status">${sourceBadge(u)}${statusBadges(u)}</span>`;
     row.addEventListener('click', () => showDetail(u.id));
     list.appendChild(row);
   }
+}
+
+// Email-capture funnel: captured → verified → converted-to-member.
+function renderFunnel(d) {
+  const cap = d.emailsCaptured || 0, ver = d.verifiedEmails || 0, mem = d.members || 0;
+  const setTxt = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  setTxt('ef-captured', cap.toLocaleString());
+  setTxt('ef-verified', ver.toLocaleString());
+  setTxt('ef-members', mem.toLocaleString());
+  const pv = cap ? Math.round((ver / cap) * 100) : 0;
+  const pm = cap ? Math.round((mem / cap) * 100) : 0;
+  const vb = $('ef-verified-bar'); if (vb) vb.style.width = pv + '%';
+  const mb = $('ef-members-bar'); if (mb) mb.style.width = pm + '%';
+  setTxt('ef-verified-pct', `${pv}% of captured`);
+  setTxt('ef-members-pct', `${pm}% of captured`);
 }
 
 async function showDetail(id) {
@@ -256,13 +284,14 @@ function membershipButton(active, m) {
 }
 
 async function loadList() {
-  const d = await api(`/api/admin/users?filter=${encodeURIComponent(currentFilter)}`);
+  const d = await api(`/api/admin/users?filter=${encodeURIComponent(currentFilter)}&sort=${encodeURIComponent(currentSort)}&dir=${encodeURIComponent(currentDir)}`);
   allUsers = d.users || [];
+  totals = d;
   hiddenUnverified = d.unverifiedCount || 0;
   const vn = $('tab-verified-n'); if (vn) vn.textContent = `· ${d.verifiedCount || 0}`;
   const un = $('tab-unverified-n'); if (un) un.textContent = `· ${d.unverifiedCount || 0}`;
-  // Server-computed across ALL accounts, independent of the active filter tab.
-  const em = $('ui-emails'); if (em) em.textContent = (d.emailsCaptured || 0).toLocaleString();
+  const on = $('tab-optins-n'); if (on) on.textContent = `· ${d.optInCount || 0}`;
+  renderFunnel(d);
   renderList($('search').value);
 }
 
@@ -280,6 +309,13 @@ async function main() {
   await requireAdmin();
   $('to-list').addEventListener('click', () => { $('detail-view').classList.add('hidden'); $('list-view').classList.remove('hidden'); });
   $('search').addEventListener('input', (e) => renderList(e.target.value));
+  const sortSel = $('sort-by');
+  if (sortSel) sortSel.addEventListener('change', (e) => {
+    const [s, dir] = e.target.value.split('.');
+    currentSort = s || 'created';
+    currentDir = dir || 'desc';
+    loadList().catch(() => {});
+  });
   wireTabs();
   try { await loadList(); } catch { /* a 401 reloads into the gate */ }
 }

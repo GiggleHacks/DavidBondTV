@@ -7,13 +7,14 @@
 // (/api/admin/databond/*, see lib/gigabrain-proxy.js) — the browser never talks
 // to the analytics sidecar directly. Business data comes from the existing
 // /api/admin/financial and /api/admin/analytics/overview endpoints.
-import { flagIcon } from './world-data.js';
+import { flagIcon, flagFor } from './world-data.js';
+import { osIcon, browserIcon, deviceIcon } from './device-icons.js';
 import { COUNTRIES } from './countries.js';
 import { requireAdmin } from './god-auth.js';
 import { ADMIN_PATHS } from './admin-paths.js';
 import {
   nf, esc, fmtMoney, fmtAgo, fmtDur, deltaChip,
-  drawTraffic, drawDonut, barList,
+  drawTraffic, drawDonut, barList, drawColumns, countUp,
 } from './admin-charts.js';
 
 const $ = (id) => document.getElementById(id);
@@ -75,6 +76,7 @@ function wireTabs() {
     if (tab === 'traffic') loadMap().catch(() => {});
     if (tab === 'business') loadBusiness().catch(() => {});
     if (tab === 'realtime') loadRealtime().catch(() => {});
+    if (tab === 'overview') loadHealth().catch(() => {});
     if (tab === 'geo') { loadGeoControl().catch(() => {}); loadGeoAttempts().catch(() => {}); }
   });
 }
@@ -104,19 +106,20 @@ async function loadStats() {
   stamp();
   const ov = d.overview || {};
 
-  // Overview KPIs
+  // Overview KPIs — numeric ones animate up; formatted ones set directly.
   const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
-  set('kpi-visitors', nf(ov.visitors));
-  set('kpi-pageviews', nf(ov.pageviews));
-  set('kpi-sessions', nf(ov.sessions));
-  set('kpi-conversions', nf(ov.conversions));
+  const setNum = (id, v) => countUp($(id), v);
+  setNum('kpi-visitors', ov.visitors);
+  setNum('kpi-pageviews', ov.pageviews);
+  setNum('kpi-sessions', ov.sessions);
+  setNum('kpi-conversions', ov.conversions);
   set('kpi-engage', fmtDur(ov.avgEngagementSec));
   set('kpi-bounce', `${ov.bounceRate || 0}%`);
-  set('kpi-new', nf(ov.newVisitors));
-  set('kpi-ret', nf(ov.returningVisitors));
+  setNum('kpi-new', ov.newVisitors);
+  setNum('kpi-ret', ov.returningVisitors);
   const bots = d.bots || {};
-  set('kpi-bots', nf(bots.bots));
-  set('kpi-humans', nf(bots.humans));
+  setNum('kpi-bots', bots.bots);
+  setNum('kpi-humans', bots.humans);
   const dl = ov.deltas || {};
   setDelta('d-visitors', dl.visitors);
   setDelta('d-pageviews', dl.pageviews);
@@ -139,19 +142,22 @@ async function loadStats() {
   barList($('db-campaigns'), (src.campaigns || []).map((c) => ({ label: c.campaign, value: c.sessions, sub: [c.source, c.medium].filter(Boolean).join(' · ') })), { accent: '#f59e0b', empty: 'No UTM campaigns yet.' });
   barList($('db-youtube'), (src.youtube || []).map((y) => ({ label: y.video, value: y.sessions })), { accent: '#fb7185', empty: 'No YouTube referrals yet.' });
 
-  // Visitors breakdowns
+  // Visitors breakdowns — now with brand-tinted OS/browser glyphs + SVG flags.
   const vis = d.visitors || {};
-  barList($('db-devices'), (vis.devices || []).map((x) => ({ label: x.key, value: x.value })));
-  barList($('db-os'), (vis.os || []).map((x) => ({ label: x.key, value: x.value })), { accent: '#22d3ee' });
-  barList($('db-browsers'), (vis.browsers || []).map((x) => ({ label: x.key, value: x.value })), { accent: '#a78bfa' });
-  barList($('db-countries'), (vis.countries || []).map((x) => ({ label: `${x.flag} ${x.name}`, value: x.value })), { accent: '#38bdf8' });
-  barList($('db-cities'), (vis.cities || []).map((x) => ({ label: `${x.city}${x.country ? ' · ' + x.country : ''}`, value: x.value })), { accent: '#fbbf24' });
+  barList($('db-devices'), (vis.devices || []).map((x) => ({ label: x.key, value: x.value, icon: deviceIcon(x.key) })));
+  barList($('db-os'), (vis.os || []).map((x) => ({ label: x.key, value: x.value, icon: osIcon(x.key) })), { accent: '#22d3ee' });
+  barList($('db-browsers'), (vis.browsers || []).map((x) => ({ label: x.key, value: x.value, icon: browserIcon(x.key) })), { accent: '#a78bfa' });
+  barList($('db-countries'), (vis.countries || []).map((x) => ({ label: x.name, value: x.value, icon: flagIcon(x.code) })), { accent: '#38bdf8' });
+  barList($('db-cities'), (vis.cities || []).map((x) => ({ label: x.city, value: x.value, sub: x.country || '', icon: flagFor(x.country) })), { accent: '#fbbf24' });
   drawDonut($('db-vpn'), $('db-vpn-legend'), (vis.vpnRatio || []).map((v) => ({ label: v.name, value: v.value })), 'VISITORS');
   barList($('db-vpnisps'), (vis.vpnIsps || []).map((v) => ({ label: v.label, value: v.value })), { accent: '#fb7185', empty: 'No VPN/proxy ISPs detected.' });
+  // New: device-mix donut + visitors-by-hour columns (hours derived from the visitor list).
+  drawDonut($('db-devmix'), $('db-devmix-legend'), (vis.devices || []).map((x) => ({ label: x.key, value: x.value })), 'DEVICES');
 
   // Visitors list + Behavior
   lastVisitorList = d.visitorList || [];
   renderVisitorTable(lastVisitorList);
+  drawHourHistogram(lastVisitorList);
   const beh = d.behavior || {};
   renderPagesTable(beh.topPages || []);
   barList($('db-entry'), (beh.entry || []).map((p) => ({ label: p.path, value: p.n })), { empty: 'No entry pages yet.' });
@@ -179,13 +185,26 @@ function renderVisitorTable(rows) {
   el.innerHTML = head + rows.map((v) => `
     <div class="dbt-r dbt-click" data-vid="${esc(v.visitorId)}" tabindex="0" role="button" style="grid-template-columns:72px 1.4fr 1.3fr 70px 90px 1.1fr 120px">
       <span class="muted" title="${new Date(v.ts).toLocaleString()}">${fmtAgo(v.ts)}</span>
-      <span>${v.flag || ''} ${esc(locLabel(v))}${v.isMe ? ' <span class="me-tag">you</span>' : ''}</span>
+      <span class="cell-flag">${flagFor(v.country, v.countryName)} ${esc(locLabel(v))}${v.isMe ? ' <span class="me-tag">you</span>' : ''}</span>
       <span class="mono">${esc(v.path)}</span>
       <span>${fmtDur(v.onPageSec)}</span>
-      <span>${esc(v.device)}</span>
-      <span class="muted">${esc([v.os, v.browser].filter(Boolean).join(' · ') || '—')}</span>
+      <span class="cell-ico">${deviceIcon(v.device)} ${esc(v.device || '—')}</span>
+      <span class="muted cell-ico">${v.os ? osIcon(v.os) : ''}${v.browser ? browserIcon(v.browser) : ''} ${esc([v.os, v.browser].filter(Boolean).join(' · ') || '—')}</span>
       <span class="mono muted">${esc(v.ip || '—')}</span>
     </div>`).join('');
+}
+
+// Visitors-by-hour (UTC) histogram, derived from the visitor list timestamps so
+// it works without any extra payload from the sidecar.
+function drawHourHistogram(rows) {
+  const svg = $('db-hours');
+  if (!svg) return;
+  const hours = Array.from({ length: 24 }, (_, h) => ({ label: String(h).padStart(2, '0'), value: 0 }));
+  for (const v of rows || []) {
+    const hh = new Date(v.ts).getUTCHours();
+    if (!Number.isNaN(hh)) hours[hh].value++;
+  }
+  drawColumns(svg, hours, { accent: '#a78bfa', labelEvery: 3, empty: 'awaiting visitor timestamps' });
 }
 function renderPagesTable(rows) {
   const el = $('db-pages');
@@ -357,25 +376,65 @@ function wireMapView() {
 }
 
 // ========== REAL-TIME ==========
+// Sourced from THIS site's native presence engine (/api/admin/analytics/realtime),
+// so it works even when the GigaBrain sidecar is down/unconfigured.
 async function loadRealtime() {
-  const d = await gb('realtime');
+  let d;
+  try { d = await api('/api/admin/analytics/realtime'); } catch { d = null; }
   if (!d) return;
   const badge = $('rt-active');
-  if (badge) badge.innerHTML = `${nf(d.active)} <span class="deck-dot"></span>live`;
+  const active = Number(d.active || 0);
+  if (badge) badge.innerHTML = `${nf(active)} <span class="deck-dot"></span>live`;
   const el = $('rt-list');
   const rows = d.visitors || [];
   const head = `<div class="dbt-h" style="grid-template-columns:72px 1.4fr 1.3fr 70px 1fr 90px"><span>When</span><span>Location</span><span>Page</span><span>On&nbsp;page</span><span>Channel</span><span>Device</span></div>`;
   if (!el) return;
-  if (!rows.length) { el.innerHTML = head + '<div class="dbt-r"><span class="muted" style="grid-column:1/-1">No active visitors right now.</span></div>'; return; }
+  if (!rows.length) { el.innerHTML = head + '<div class="dbt-r"><span class="muted" style="grid-column:1/-1">No active visitors in the last few minutes.</span></div>'; return; }
   el.innerHTML = head + rows.map((v) => `
     <div class="dbt-r" style="grid-template-columns:72px 1.4fr 1.3fr 70px 1fr 90px">
       <span class="muted">${fmtAgo(v.ts)}</span>
-      <span>${v.flag || ''} ${esc([v.city, v.countryName].filter(Boolean).join(', ') || 'Unknown')}${v.isMe ? ' <span class="me-tag">you</span>' : ''}</span>
+      <span class="cell-flag">${flagFor(v.country, v.countryName)} ${esc([v.city, v.countryName].filter(Boolean).join(', ') || 'Unknown')}${v.isMe ? ' <span class="me-tag">you</span>' : ''}</span>
       <span class="mono">${esc(v.path)}</span>
       <span>${fmtDur(v.onPageSec)}</span>
-      <span class="muted">${esc(v.channel)}${v.keyword ? ' · ' + esc(v.keyword) : ''}</span>
-      <span>${esc(v.device)}</span>
+      <span class="muted">${esc(v.channel || 'direct')}${v.keyword ? ' · ' + esc(v.keyword) : ''}</span>
+      <span class="cell-ico">${deviceIcon(v.device)} ${esc(v.device || '—')}</span>
     </div>`).join('');
+}
+
+// ========== ANALYTICS HEALTH (native, sidecar-independent) ==========
+async function loadHealth() {
+  const el = $('health-grid');
+  if (!el) return;
+  let d;
+  try { d = await api('/api/admin/analytics/health'); } catch { el.innerHTML = '<p class="muted">Health check unavailable.</p>'; return; }
+  const t = d.tracking || {};
+  const dot = (ok, warn) => `<span class="hdot ${ok ? 'ok' : warn ? 'warn' : 'bad'}"></span>`;
+  const ageTxt = (ms) => (ms == null ? 'never' : fmtAgo(ms));
+  const fresh = d.lastEventAt != null && (Date.now() - d.lastEventAt) < 6 * 3600 * 1000;
+  const tiles = [
+    { k: 'Live visitors now', v: nf(d.activeNow || 0), ok: (d.activeNow || 0) > 0, warn: true, sub: 'native presence' },
+    { k: 'Last tracked event', v: ageTxt(d.lastEventAt), ok: fresh, warn: d.lastEventAt != null, sub: 'page-visit beacon' },
+    { k: 'Counted (24h)', v: nf(t.counted || 0), ok: (t.counted || 0) > 0, warn: true, sub: `${nf(t.pageviews || 0)} pageviews` },
+    { k: 'Bot-filtered (24h)', v: nf(t.bots || 0), ok: true, warn: false, sub: 'excluded from stats' },
+    { k: 'Rate-limited (24h)', v: nf(t.rateLimited || 0), ok: (t.rateLimited || 0) === 0, warn: true, sub: 'dropped as 204' },
+    { k: 'Rollups fresh', v: d.rollupsFresh ? 'yes' : 'stale', ok: !!d.rollupsFresh, warn: false, sub: ageTxt(d.rollupUpdatedAt) },
+    { k: 'Client tracker', v: d.trackerInjected ? 'injected' : 'missing', ok: !!d.trackerInjected, warn: false, sub: 'visit-tracker.js' },
+    { k: 'GigaBrain sidecar', v: d.sidecar === 'ok' ? 'connected' : d.sidecar === 'unconfigured' ? 'off' : 'unreachable', ok: d.sidecar === 'ok', warn: d.sidecar === 'unconfigured', sub: 'secondary source' },
+  ];
+  el.innerHTML = tiles.map((x) => `
+    <div class="htile">
+      <div class="hk">${dot(x.ok, x.warn)} ${esc(x.k)}</div>
+      <div class="hv">${esc(x.v)}</div>
+      <div class="hs">${esc(x.sub)}</div>
+    </div>`).join('');
+  const verdict = $('health-verdict');
+  if (verdict) {
+    const trackingUp = fresh && (t.counted || 0) > 0;
+    verdict.className = 'health-verdict ' + (trackingUp ? 'ok' : 'bad');
+    verdict.textContent = trackingUp
+      ? 'Tracking is live — events are flowing and rollups are fresh. Any drop reflects real traffic, not a tracking outage.'
+      : 'No recent tracked events. Traffic may be genuinely low, or the tracker/rollups need attention — check the tiles above.';
+  }
 }
 
 // ========== BUSINESS (David Bond TV's own data) ==========
@@ -507,14 +566,14 @@ function wireGeo() {
 async function loadGeoAttempts() {
   const d = await gb(`geo?range=${encodeURIComponent(currentRange)}`);
   if (!d) return;
-  barList($('geo-summary'), (d.summary || []).map((s) => ({ label: `${s.flag} ${s.name}`, value: s.attempts, sub: s.lastTs ? `last ${fmtAgo(s.lastTs)}` : '' })), { accent: '#fb7185', empty: 'No blocked attempts recorded.' });
+  barList($('geo-summary'), (d.summary || []).map((s) => ({ label: s.name, value: s.attempts, icon: flagFor(s.code || s.cc || s.country, s.name), sub: s.lastTs ? `last ${fmtAgo(s.lastTs)}` : '' })), { accent: '#fb7185', empty: 'No blocked attempts recorded.' });
   const log = d.log || [];
   const el = $('geo-log');
   const head = `<div class="dbt-h" style="grid-template-columns:72px 80px 1.2fr 1fr"><span>When</span><span>Country</span><span>Path</span><span>Reason</span></div>`;
   el.innerHTML = head + (log.length ? log.slice(0, 50).map((r) => `
     <div class="dbt-r" style="grid-template-columns:72px 80px 1.2fr 1fr">
       <span class="muted">${fmtAgo(r.ts)}</span>
-      <span>${r.flag || ''} ${esc(r.country || '—')}</span>
+      <span class="cell-flag">${flagFor(r.country)} ${esc(r.country || '—')}</span>
       <span class="mono">${esc(r.path)}</span>
       <span class="muted">${esc(r.reason || '—')}</span>
     </div>`).join('') : '<div class="dbt-r"><span class="muted" style="grid-column:1/-1">No blocked requests.</span></div>');
@@ -528,6 +587,8 @@ async function main() {
   wireMapView();
   wireGeo();
   wireVisitorClicks();
+  const hr = $('health-refresh');
+  if (hr) hr.addEventListener('click', () => loadHealth().catch(() => {}));
 
   // Periodic refresh for whichever live views are open.
   setInterval(() => { loadStats().catch(() => {}); }, 15000);
@@ -535,8 +596,13 @@ async function main() {
     const rt = document.querySelector('.deck-panel-tab[data-panel="realtime"]');
     if (rt && rt.classList.contains('on')) loadRealtime().catch(() => {});
   }, 10000);
+  // Health tiles refresh while the Overview tab is showing.
+  setInterval(() => {
+    const ov = document.querySelector('.deck-panel-tab[data-panel="overview"]');
+    if (ov && ov.classList.contains('on')) loadHealth().catch(() => {});
+  }, 20000);
 
-  // Initial load: stats (Overview default) + business (cheap, no sidecar) + DBTV geo control.
-  try { await Promise.all([loadStats(), loadBusiness(), loadGeoControl()]); } catch { /* a 401 mid-flight reloads into the gate */ }
+  // Initial load: stats + native health (both use this site's own data) + business + geo control.
+  try { await Promise.all([loadStats(), loadHealth(), loadBusiness(), loadGeoControl()]); } catch { /* a 401 mid-flight reloads into the gate */ }
 }
 main();

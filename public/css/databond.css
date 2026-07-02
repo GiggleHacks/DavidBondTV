@@ -22,10 +22,70 @@
 .deck .db-notice code { background: var(--d-panel2); border: 1px solid var(--d-edge); border-radius: 5px; padding: 1px 6px; font-size: 12px; }
 
 /* ---------- donut svgs ---------- */
-.deck #db-channels, .deck #db-newret, .deck #db-vpn { width: 100%; max-height: 156px; display: block; }
+.deck #db-channels, .deck #db-newret, .deck #db-vpn, .deck #db-devmix { width: 100%; max-height: 156px; display: block; }
+.deck #db-hours { width: 100%; height: 150px; display: block; }
 
 /* ---------- bar-list sublabel (campaigns: source · medium) ---------- */
 .deck .dbars .bl-sub { color: var(--d-dim); font-size: 10.5px; margin-left: 6px; }
+
+/* ---------- inline vendor glyphs (OS / browser / device) + flags ---------- */
+.dvi { flex: 0 0 auto; }
+.deck .bl-ico { display: inline-flex; align-items: center; margin-right: 7px; vertical-align: -0.14em; }
+.deck .bl-ico .flag { width: 1.3em; height: 1em; }
+.deck .dbars .lab { display: flex; align-items: center; }
+.deck .dbars .bl-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deck .cell-flag, .deck .cell-ico { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.deck .cell-flag > *, .deck .cell-ico > * { flex: 0 0 auto; }
+.deck .cell-flag .flag { width: 1.3em; height: 1em; }
+
+/* share % chip under each bar value */
+.deck .dbars .n { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+.deck .dbars .bl-pct { color: var(--d-dim); font-size: 9.5px; font-weight: 400; }
+
+/* animated, brand-tinted bar fills (grow-in, staggered by --i) */
+.deck .dbars .track { position: relative; }
+.deck .dbars .fill {
+  transform-origin: left center;
+  animation: dbfill .6s cubic-bezier(.2, .7, .2, 1) both;
+  animation-delay: calc(var(--i, 0) * 32ms);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--d-accent) 35%, transparent);
+}
+.deck .dbars .fill.acc {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 42%, #0b0e13), var(--acc));
+  box-shadow: 0 0 7px color-mix(in srgb, var(--acc) 45%, transparent);
+}
+@keyframes dbfill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .deck .dbars .fill { animation: none; } }
+
+/* KPI cards: subtle hover lift */
+.deck .dpanel.kpi { transition: transform .15s ease, box-shadow .15s ease; }
+.deck .dpanel.kpi:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0, 0, 0, .32); }
+
+/* pulsing live dot on the real-time badge */
+.deck .rt-badge .deck-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #34d399; display: inline-block;
+  box-shadow: 0 0 7px #34d399; animation: rtpulse 1.4s infinite;
+}
+@keyframes rtpulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.7); } }
+
+/* ---------- analytics-health card ---------- */
+.deck .health-verdict {
+  font-size: 12.5px; line-height: 1.5; padding: 9px 13px; border-radius: 10px;
+  margin: 4px 0 14px; border: 1px solid var(--d-edge); color: var(--d-dim);
+}
+.deck .health-verdict.ok { color: #34d399; background: color-mix(in srgb, #34d399 10%, var(--d-panel)); border-color: color-mix(in srgb, #34d399 35%, var(--d-edge)); }
+.deck .health-verdict.bad { color: var(--d-amber); background: color-mix(in srgb, var(--d-amber) 10%, var(--d-panel)); border-color: color-mix(in srgb, var(--d-amber) 35%, var(--d-edge)); }
+.deck .health-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.deck .htile { background: var(--d-panel2); border: 1px solid var(--d-edge); border-radius: 10px; padding: 10px 12px; }
+.deck .htile .hk { font-size: 10.5px; letter-spacing: .3px; color: var(--d-dim); display: flex; align-items: center; gap: 6px; text-transform: uppercase; }
+.deck .htile .hv { font-size: 19px; font-weight: 800; color: var(--d-text); margin: 5px 0 2px; font-family: var(--pixel, inherit); }
+.deck .htile .hs { font-size: 10.5px; color: var(--d-dim); }
+.deck .hdot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+.deck .hdot.ok { background: #34d399; box-shadow: 0 0 6px #34d399; }
+.deck .hdot.warn { background: var(--d-amber); box-shadow: 0 0 6px var(--d-amber); }
+.deck .hdot.bad { background: var(--d-rose); box-shadow: 0 0 6px var(--d-rose); animation: hpulse 1.2s infinite; }
+@keyframes hpulse { 50% { opacity: .35; } }
+@media (max-width: 900px) { .deck .health-grid { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---------- generic data table (visitors, pages, realtime, geo log) ---------- */
 .deck .db-table { font-size: 12px; max-height: 460px; overflow-y: auto; }

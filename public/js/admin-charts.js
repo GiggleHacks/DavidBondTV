@@ -117,18 +117,75 @@ export function drawDonut(svg, legendEl, slices, centerLabel = '') {
   }
 }
 
-// Horizontal bar list (reuses .dbars markup). `items` = [{ label, value, sub? }].
-// `opts.accent` overrides the fill; `opts.fmt` formats the value column.
+// Horizontal bar list (reuses .dbars markup). `items` = [{ label, value, sub?, icon? }].
+// `icon` is trusted inline markup (an SVG glyph/flag) rendered before the label;
+// the text label itself is always escaped. `opts.accent` tints the fill,
+// `opts.fmt` formats the value column. Bars grow in with a staggered animation
+// and show each row's share of the total for extra density.
 export function barList(el, items, opts = {}) {
   if (!el) return;
   const list = Array.isArray(items) ? items.filter((i) => Number(i.value) > 0) : [];
   if (!list.length) { el.innerHTML = `<p class="muted">${esc(opts.empty || 'No data yet.')}</p>`; return; }
   const max = Math.max(1, ...list.map((i) => Number(i.value) || 0));
+  const total = list.reduce((a, i) => a + (Number(i.value) || 0), 0) || 1;
   const fmt = opts.fmt || nf;
-  el.innerHTML = list.map((i) => {
+  const showShare = opts.share !== false;
+  el.innerHTML = list.map((i, idx) => {
     const pct = Math.max(3, Math.round((Number(i.value) || 0) / max * 100));
+    const share = Math.round((Number(i.value) || 0) / total * 100);
     const sub = i.sub ? `<span class="bl-sub">${esc(i.sub)}</span>` : '';
-    const style = `width:${pct}%${opts.accent ? `;background:${opts.accent}` : ''}`;
-    return `<div class="b"><div><div class="lab">${esc(i.label)}${sub}</div><div class="track"><div class="fill" style="${style}"></div></div></div><div class="n">${esc(fmt(i.value))}</div></div>`;
+    const ic = i.icon ? `<span class="bl-ico">${i.icon}</span>` : '';
+    const style = `width:${pct}%${opts.accent ? `;--acc:${opts.accent}` : ''}`;
+    const shareTag = showShare ? `<span class="bl-pct">${share}%</span>` : '';
+    return `<div class="b" style="--i:${idx}"><div><div class="lab">${ic}<span class="bl-txt">${esc(i.label)}</span>${sub}</div>`
+      + `<div class="track"><div class="fill${opts.accent ? ' acc' : ''}" style="${style}"></div></div></div>`
+      + `<div class="n">${esc(fmt(i.value))}${shareTag}</div></div>`;
   }).join('');
+}
+
+// Vertical column chart for distributions (visitors-by-hour, by-weekday).
+// `values` = [{ label, value }]. Bars grow in; the peak column is highlighted.
+export function drawColumns(svg, values, opts = {}) {
+  if (!svg) return;
+  const data = Array.isArray(values) ? values : [];
+  const W = 640, H = 150, padB = 20, padT = 8;
+  if (!data.length || !data.some((d) => (d.value || 0) > 0)) {
+    svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" fill="#64748b" font-size="12" text-anchor="middle" font-family="monospace">${esc(opts.empty || 'no data yet')}</text>`;
+    return;
+  }
+  const max = Math.max(1, ...data.map((d) => d.value || 0));
+  const bw = (W) / data.length;
+  const accent = opts.accent || '#38bdf8';
+  const peak = data.reduce((m, d, i) => (d.value > data[m].value ? i : m), 0);
+  let out = '';
+  data.forEach((d, i) => {
+    const h = Math.round(((d.value || 0) / max) * (H - padB - padT));
+    const x = i * bw;
+    const fill = i === peak ? '#fbbf24' : accent;
+    out += `<rect x="${(x + bw * 0.18).toFixed(1)}" y="${H - padB}" width="${(bw * 0.64).toFixed(1)}" height="0" rx="1.5" fill="${fill}" opacity="0.9">`
+      + `<title>${esc(d.label)}: ${nf(d.value)}</title>`
+      + `<animate attributeName="height" from="0" to="${h}" dur="0.5s" begin="${(i * 0.012).toFixed(2)}s" fill="freeze"/>`
+      + `<animate attributeName="y" from="${H - padB}" to="${H - padB - h}" dur="0.5s" begin="${(i * 0.012).toFixed(2)}s" fill="freeze"/></rect>`;
+    if (opts.labelEvery && i % opts.labelEvery === 0) {
+      out += `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 6}" fill="#64748b" font-size="9" text-anchor="middle" font-family="monospace">${esc(d.label)}</text>`;
+    }
+  });
+  svg.innerHTML = out;
+}
+
+// Animated KPI count-up. Eases a numeric element from 0 → value once per render.
+export function countUp(el, value, fmt = nf) {
+  if (!el) return;
+  const to = Number(value) || 0;
+  const dur = 650, t0 = performance.now();
+  const from = Number(String(el.dataset.v || 0)) || 0;
+  el.dataset.v = String(to);
+  if (to === from) { el.textContent = fmt(to); return; }
+  const ease = (p) => 1 - Math.pow(1 - p, 3);
+  function frame(now) {
+    const p = Math.min(1, (now - t0) / dur);
+    el.textContent = fmt(Math.round(from + (to - from) * ease(p)));
+    if (p < 1) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
 }

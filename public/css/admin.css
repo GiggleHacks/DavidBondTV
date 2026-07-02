@@ -220,14 +220,27 @@ a.tr:hover .name { color: var(--accent); }
 .country-menu .none { padding: 10px; color: var(--text-dim); font-size: 13px; }
 
 /* Users table */
-.user-insight-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 0 0 14px; }
+.user-insight-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; margin: 0 0 14px; }
 .user-insight-strip > div {
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 13px 14px;
   border-left: 4px solid var(--section-accent, var(--accent));
 }
+.user-insight-strip > div.hot { border-left-color: #38bdf8; }
 .user-insight-strip b { display: block; font-size: 22px; line-height: 1; }
 .user-insight-strip span { color: var(--text-dim); font-size: 12px; }
-.user-row { display: grid; grid-template-columns: 38px minmax(0,1fr) 120px 130px auto; gap: 12px; align-items: center; padding: 11px 6px; border-top: 1px solid var(--border); font-size: 13px; cursor: pointer; border-radius: 10px; transition: background .12s; }
+/* Email-capture funnel (captured → verified → members). */
+.email-funnel { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 16px; }
+.email-funnel .ef { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; position: relative; overflow: hidden; }
+.email-funnel .ef b { display: block; font-size: 20px; line-height: 1.1; }
+.email-funnel .ef span { color: var(--text-dim); font-size: 12px; }
+.email-funnel .ef .efbar { height: 6px; border-radius: 4px; margin-top: 9px; background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.email-funnel .ef .efbar > i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #38bdf8, #34d399); transition: width .6s cubic-bezier(.2,.7,.2,1); }
+.email-funnel .ef small { color: var(--text-dim); font-size: 11px; }
+.user-sort { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-size: 13px; }
+.usignup { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
+.badge.lead { background: color-mix(in srgb, #38bdf8 20%, transparent); color: #7dd3fc; }
+.badge.pending { background: color-mix(in srgb, #f59e0b 18%, transparent); color: #fcd34d; }
+.user-row { display: grid; grid-template-columns: 38px minmax(0,1fr) 96px 120px 116px auto; gap: 12px; align-items: center; padding: 11px 6px; border-top: 1px solid var(--border); font-size: 13px; cursor: pointer; border-radius: 10px; transition: background .12s; }
 .user-row:first-child { border-top: none; }
 .user-row:hover { background: color-mix(in srgb, var(--section-accent, var(--accent)) 9%, transparent); }
 .user-row-head { color: var(--text-dim); font-weight: 600; }

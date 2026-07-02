@@ -1,6 +1,8 @@
 // Country centroids [lat, lng] for the analytics bubble map, plus a flag-emoji
 // helper. Covers the most common viewer countries; any country code with data
 // but no centroid here is still shown in the ranked list beside the map.
+import { COUNTRIES } from './countries.js';
+
 export const CENTROIDS = {
   US: [38, -97], CA: [56, -106], MX: [23, -102], GT: [15, -90], CU: [22, -79], CR: [10, -84],
   BR: [-10, -55], AR: [-34, -64], CO: [4, -73], CL: [-30, -71], PE: [-10, -76], VE: [8, -66],
@@ -37,6 +39,43 @@ export function flagIcon(cc) {
   const code = cc.toLowerCase();
   return `<span class="flag"><img loading="lazy" src="/vendor/flags/4x3/${code}.svg" alt="" `
     + `onerror="this.parentNode.classList.add('flag-unknown');this.remove()"></span>`;
+}
+
+// Reverse lookup: display-name (lowercased) → ISO-2 code, so rows that arrive
+// with only a country *name* (e.g. from the sidecar) can still resolve to a
+// self-hosted SVG flag instead of an unrenderable emoji.
+const NAME_TO_CODE = {};
+for (const c of COUNTRIES) NAME_TO_CODE[c.name.toLowerCase()] = c.code;
+// Common informal aliases the ISO list doesn't carry verbatim.
+const ALIAS = {
+  usa: 'US', 'u.s.': 'US', 'u.s.a.': 'US', 'united states of america': 'US', america: 'US',
+  uk: 'GB', 'u.k.': 'GB', britain: 'GB', 'great britain': 'GB', england: 'GB',
+  china: 'CN', 'mainland china': 'CN', russia: 'RU', 'russian federation': 'RU',
+  'south korea': 'KR', 'republic of korea': 'KR', 'north korea': 'KP',
+  vietnam: 'VN', laos: 'LA', syria: 'SY', iran: 'IR', 'czech republic': 'CZ',
+  turkey: 'TR', 'the netherlands': 'NL', uae: 'AE', 'hong kong': 'HK', taiwan: 'TW',
+  moldova: 'MD', bolivia: 'BO', tanzania: 'TZ', venezuela: 'VE', macau: 'MO',
+};
+
+/**
+ * Resolve any country hint — an ISO-2 code OR a display name — to an ISO-2 code.
+ * Returns '' when nothing matches (callers get the neutral flag placeholder).
+ */
+export function resolveCc(input) {
+  if (typeof input !== 'string') return '';
+  const s = input.trim();
+  if (/^[A-Za-z]{2}$/.test(s)) return s.toUpperCase();
+  const key = s.toLowerCase();
+  return NAME_TO_CODE[key] || ALIAS[key] || '';
+}
+
+/**
+ * Best-effort SVG flag for a visitor-ish record: prefers an explicit code
+ * field, falls back to the country name. Always returns flag markup (the
+ * unknown-flag placeholder when unresolved) — never a raw emoji.
+ */
+export function flagFor(codeOrName, name) {
+  return flagIcon(resolveCc(codeOrName) || resolveCc(name));
 }
 
 /** Equirectangular projection into a 0..360 × 0..180 viewBox. */
