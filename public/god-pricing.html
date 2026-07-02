@@ -146,6 +146,40 @@
       </section>
 
       <section class="card">
+        <div class="card-head">
+          <h2>Free preview gate</h2>
+          <span class="muted">Anonymous visitors get this many free videos before they must create an account</span>
+        </div>
+        <div class="pr-editor">
+          <div class="pr-grid">
+            <div class="pr-field">
+              <label>Free videos before signup is required</label>
+              <input id="fv-limit" type="number" min="0" max="20" step="1" placeholder="2" />
+              <p class="pr-hint">Distinct videos per browser. Set to 0 to turn the gate off entirely.</p>
+            </div>
+          </div>
+          <div class="pr-field">
+            <label>Headline <span class="pr-counter" id="cnt-fv-headline"></span></label>
+            <input id="fv-headline" type="text" maxlength="120" placeholder="Create a free account to keep watching" />
+          </div>
+          <div class="pr-field">
+            <label>Body copy <span class="pr-counter" id="cnt-fv-body"></span></label>
+            <textarea id="fv-body" maxlength="400" placeholder="Create a free account to continue watching and receive updates from David Bond TV."></textarea>
+          </div>
+          <div class="pr-field">
+            <label>Button label <span class="pr-counter" id="cnt-fv-cta"></span></label>
+            <input id="fv-cta" type="text" maxlength="40" placeholder="Create free account" />
+          </div>
+          <div class="pr-actions">
+            <button class="btn" id="fv-save-btn">Publish gate</button>
+            <button class="btn ghost" id="fv-reset-btn" type="button">Reset to default</button>
+            <span id="fv-msg" class="muted"></span>
+          </div>
+          <p class="pr-flow-note" id="fv-flow-note"></p>
+        </div>
+      </section>
+
+      <section class="card">
         <div class="card-head"><h2>Course &amp; product prices</h2><a class="back" href="/gigglehacksclicking85hgfd7845789drghudr789rdhkjrtbi8r5eg9875g789-products.html">Manage products →</a></div>
         <div class="pr-prodlist" id="prod-list"><p class="muted">Loading…</p></div>
       </section>

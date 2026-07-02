@@ -19,6 +19,14 @@ const DEFAULT_OFFER = {
   ctaLabel: 'Unlock Now',
 };
 
+// Mirrors lib/pricing.js DEFAULT_FREE_VIEWS — placeholders + "reset to default".
+const DEFAULT_FREE_VIEWS = {
+  limit: 2,
+  headline: 'Create a free account to keep watching',
+  body: 'Create a free account to continue watching and receive updates from David Bond TV.',
+  ctaLabel: 'Create free account',
+};
+
 const fmt = (cents, cur) => {
   try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: (cur || currency).toUpperCase(), minimumFractionDigits: cents % 100 === 0 ? 0 : 2 }).format(cents / 100); }
   catch { return `$${(cents / 100).toFixed(2)}`; }
@@ -108,6 +116,50 @@ function fillOffer(offer) {
   refreshOffer();
 }
 
+// --- Free preview gate (anonymous free-view limit) ---------------------------
+
+const FV_FIELDS = [
+  { id: 'fv-headline', key: 'headline', cnt: 'cnt-fv-headline', max: 120 },
+  { id: 'fv-body', key: 'body', cnt: 'cnt-fv-body', max: 400 },
+  { id: 'fv-cta', key: 'ctaLabel', cnt: 'cnt-fv-cta', max: 40 },
+];
+
+function refreshFreeViews() {
+  for (const f of FV_FIELDS) $(f.cnt).textContent = `${$(f.id).value.length}/${f.max}`;
+  const limit = parseInt($('fv-limit').value, 10);
+  const n = Number.isInteger(limit) && limit >= 0 ? limit : DEFAULT_FREE_VIEWS.limit;
+  $('fv-flow-note').innerHTML = n === 0
+    ? 'Gate is <b>off</b> — anonymous visitors can watch without an account.'
+    : `Anonymous visitors can start <b>${n}</b> distinct video${n === 1 ? '' : 's'}; the next one shows this screen until they create an account and verify their email. Rewatching one of their free videos stays allowed.`;
+}
+
+function fillFreeViews(fv) {
+  const f = fv || {};
+  $('fv-limit').value = Number.isInteger(f.limit) ? f.limit : '';
+  $('fv-headline').value = f.headline || '';
+  $('fv-body').value = f.body || '';
+  $('fv-cta').value = f.ctaLabel || '';
+  refreshFreeViews();
+}
+
+async function saveFreeViews() {
+  const msg = $('fv-msg');
+  msg.textContent = 'Publishing…';
+  const limit = parseInt($('fv-limit').value, 10);
+  const body = { freeViews: { limit: Number.isInteger(limit) ? limit : DEFAULT_FREE_VIEWS.limit } };
+  for (const f of FV_FIELDS) body.freeViews[f.key] = $(f.id).value.trim();
+  const res = await fetch('/api/admin/pricing', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) {
+    if (data.config && data.config.freeViews) fillFreeViews(data.config.freeViews);
+    msg.textContent = 'Published — live on the watch page.';
+    setTimeout(() => { msg.textContent = ''; }, 2500);
+  } else msg.textContent = data.error || 'Could not publish.';
+}
+
 async function loadConfig() {
   let cfg = null;
   try { cfg = (await (await fetch('/api/admin/pricing')).json()).config; } catch { /* defaults */ }
@@ -120,6 +172,7 @@ async function loadConfig() {
   $('f-year-enabled').checked = !!cfg.yearly.enabled;
   $('f-currency').value = (cfg.currency || 'usd').toUpperCase();
   fillOffer(cfg.offer);
+  fillFreeViews(cfg.freeViews);
   refreshPreview();
 }
 
@@ -160,6 +213,10 @@ async function init() {
   OFFER_FIELDS.forEach((f) => $(f.id).addEventListener('input', refreshOffer));
   $('offer-save-btn').addEventListener('click', saveOffer);
   $('offer-reset-btn').addEventListener('click', () => { fillOffer(DEFAULT_OFFER); });
+  // Free preview gate editor.
+  ['fv-limit', ...FV_FIELDS.map((f) => f.id)].forEach((id) => $(id).addEventListener('input', refreshFreeViews));
+  $('fv-save-btn').addEventListener('click', saveFreeViews);
+  $('fv-reset-btn').addEventListener('click', () => { fillFreeViews(DEFAULT_FREE_VIEWS); });
   await Promise.all([loadConfig(), loadProducts()]);
 }
 

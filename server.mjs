@@ -13,6 +13,7 @@ import { getCounts, getUserVote, setVote } from './lib/reactions-store.js';
 import { adminConfigured, verifyBearerSecret } from './lib/admin-auth.js';
 import { createAdminAccount } from './lib/admin-account.js';
 import { serializeCookie, parseCookies } from './lib/cookies.js';
+import { readFreeViews, evaluateFreeView } from './lib/free-views.js';
 import { hashPassword, verifyPassword } from './lib/password.js';
 import { createGeoip } from './lib/geoip.js';
 import { createAccounts } from './lib/accounts.js';
@@ -536,6 +537,17 @@ function canAccessVideo(ctx, vid) {
   const dripBlocked = !videoPublic(vid) && !ctx.isAdmin;
   const premiumBlocked = videoVisibility(vid) === 'premium' && !ctx.isMember;
   return !(!ctx.isAdmin && (dripBlocked || (courseGated ? !ownsCourse : premiumBlocked)));
+}
+
+// Does the anonymous free-view quota apply to this viewer? Verified accounts,
+// members, product owners and admins watch without limits; bots are ignored
+// (crawlers shouldn't be cookie-bombed or blocked from previews). Everyone else
+// — anonymous or signed-in-but-unverified — is limited to freeViews.limit
+// distinct videos per browser (lib/free-views.js).
+function freeViewGateApplies(ctx) {
+  if (ctx.isBot || ctx.isAdmin || ctx.isMember) return false;
+  if (ctx.user && (ctx.user.verified || ctx.ownedProductIds.length > 0)) return false;
+  return true;
 }
 
 function escapeHtml(str) {
@@ -2057,7 +2069,30 @@ async function handleApi(req, res, ctx) {
         };
       });
       // `hiddenUnverified` kept for backward-compat with older clients.
-      sendJson(res, 200, { users, filter, verifiedCount, unverifiedCount, hiddenUnverified: unverifiedCount });
+      const emailsCaptured = all.filter((u) => u.email).length;
+      sendJson(res, 200, { users, filter, verifiedCount, unverifiedCount, emailsCaptured, hiddenUnverified: unverifiedCount });
+      return true;
+    }
+
+    // GET /api/admin/users/export.csv — the captured-email list, every account
+    // with an email regardless of the list filter. Must match before the
+    // getById lookup below ("export.csv" is not a user id).
+    if (req.method === 'GET' && userId === 'export.csv') {
+      const csvEscape = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+      const rows = accounts.store.listAll()
+        .filter((u) => u.email)
+        .map((u) => [
+          u.email, u.username || '', u.verified ? 'yes' : 'no',
+          u.createdAt ? new Date(u.createdAt).toISOString() : '',
+          hasActiveMembership(u) ? 'yes' : 'no',
+        ].map(csvEscape).join(','));
+      const csv = ['email,username,verified,createdAt,subscribed', ...rows].join('\n');
+      res.writeHead(200, {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="davidbondtv-emails.csv"',
+        'Cache-Control': 'no-store',
+      });
+      res.end(csv);
       return true;
     }
 
@@ -2898,6 +2933,19 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(403, withSecurityHeaders());
         return res.end('Forbidden');
       }
+      // Free-view backstop: a gated viewer whose quota is spent can't pull
+      // renditions of a video outside their free set by URL either. Block-only —
+      // quota is never consumed here (playback below is the consumption point).
+      if (freeViewGateApplies(ctx)) {
+        const limit = pricing.getConfig().freeViews.limit;
+        if (limit > 0) {
+          const seen = readFreeViews(req, AUTH_SECRET);
+          if (!seen.includes(vid) && seen.length >= limit) {
+            res.writeHead(403, withSecurityHeaders());
+            return res.end('Forbidden');
+          }
+        }
+      }
     }
 
     if (pathname.startsWith('/api/videos/') && pathname.endsWith('/playback')) {
@@ -2911,6 +2959,34 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(403, withSecurityHeaders());
         return res.end('Forbidden');
       }
+      // Free-view gate — AFTER canAccessVideo so premium/course gates keep
+      // precedence and a blocked premium attempt never burns a free view.
+      // Starting a new distinct video consumes quota via the re-issued cookie.
+      const extraHeaders = {};
+      if (freeViewGateApplies(ctx)) {
+        const limit = pricing.getConfig().freeViews.limit;
+        if (limit > 0) {
+          const fv = evaluateFreeView({
+            req, videoId: vid, limit, secret: AUTH_SECRET,
+            secure: COOKIE_SECURE, domain: COOKIE_DOMAIN,
+          });
+          if (!fv.allowed) {
+            // JSON body (vs the plain-text premium 403) so the player can route
+            // to the signup/verify gate instead of the membership offer.
+            const body = JSON.stringify({
+              error: 'Forbidden',
+              reason: ctx.user ? 'verify_required' : 'signup_required',
+            });
+            res.writeHead(403, withSecurityHeaders({
+              'Content-Type': 'application/json; charset=utf-8',
+              'Content-Length': Buffer.byteLength(body),
+              'Cache-Control': 'no-store',
+            }));
+            return res.end(body);
+          }
+          if (fv.setCookie) extraHeaders['Set-Cookie'] = fv.setCookie;
+        }
+      }
       const vstats = analytics.getVideoStats(vid);
       const json = JSON.stringify({
         video: sanitizePlaybackVideo(entry),
@@ -2920,6 +2996,7 @@ const server = http.createServer(async (req, res) => {
         'Content-Type': 'application/json; charset=utf-8',
         'Content-Length': Buffer.byteLength(json),
         'Cache-Control': 'no-store',
+        ...extraHeaders,
       }));
       return res.end(json);
     }

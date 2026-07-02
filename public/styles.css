@@ -1149,6 +1149,15 @@ html.privacy-blur .bell-premium-locked .bell-thumb { filter: blur(12px) brightne
 .pg-alt { display: inline-block; margin-top: 14px; font-size: 13px; color: rgba(255,255,255,.7); text-decoration: none; }
 .pg-alt:hover { color: #fff; text-decoration: underline; }
 
+/* Free-view signup gate — the verify-email variant's inline code entry */
+.signup-gate .sg-code {
+  display: block; margin: 18px auto 0; width: 180px; padding: 12px 14px;
+  background: rgba(255,255,255,.08); color: #fff; border: 1px solid rgba(255,255,255,.25);
+  border-radius: 10px; font-size: 22px; text-align: center; letter-spacing: 8px; font-weight: 700;
+}
+.signup-gate .sg-code:focus { outline: none; border-color: #f4a300; }
+.signup-gate .sg-msg { margin-top: 12px; font-size: 13px; }
+
 /* ============================================================
    Courses / one-time products — per-product branded surfaces
    (gate on the watch page, modal on the grid, banner above the

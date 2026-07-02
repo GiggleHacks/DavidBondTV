@@ -261,6 +261,8 @@ async function loadList() {
   hiddenUnverified = d.unverifiedCount || 0;
   const vn = $('tab-verified-n'); if (vn) vn.textContent = `· ${d.verifiedCount || 0}`;
   const un = $('tab-unverified-n'); if (un) un.textContent = `· ${d.unverifiedCount || 0}`;
+  // Server-computed across ALL accounts, independent of the active filter tab.
+  const em = $('ui-emails'); if (em) em.textContent = (d.emailsCaptured || 0).toLocaleString();
   renderList($('search').value);
 }
 

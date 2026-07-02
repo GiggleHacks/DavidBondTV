@@ -101,4 +101,28 @@ describe('pricing store', () => {
     const r = pricing.update({ offer: { headline: 'x'.repeat(500) } });
     expect(r.config.offer.headline.length).toBe(120);
   });
+
+  it('exposes freeViews defaults (2 distinct videos) via publicConfig', () => {
+    const c = pricing.getConfig();
+    expect(c.freeViews.limit).toBe(2);
+    expect(c.freeViews.body).toContain('free account');
+    expect(pricing.publicConfig().freeViews).toMatchObject({ limit: 2, ctaLabel: c.freeViews.ctaLabel });
+  });
+
+  it('updates freeViews field-by-field, allows 0 (disabled), rejects bad limits', () => {
+    let r = pricing.update({ freeViews: { limit: 5, headline: '  Keep watching  ' } });
+    expect(r.ok).toBe(true);
+    expect(r.config.freeViews.limit).toBe(5);
+    expect(r.config.freeViews.headline).toBe('Keep watching'); // trimmed
+    expect(r.config.freeViews.body).toBe(pricing.getConfig().freeViews.body); // untouched field preserved
+    r = pricing.update({ freeViews: { limit: 0 } });
+    expect(r.ok).toBe(true);
+    expect(r.config.freeViews.limit).toBe(0); // 0 = gate off, must survive normalize
+    expect(pricing.update({ freeViews: { limit: -1 } }).ok).toBe(false);
+    expect(pricing.update({ freeViews: { limit: 2.5 } }).ok).toBe(false);
+    expect(pricing.update({ freeViews: { limit: 999 } }).ok).toBe(false);
+    // A blank text field reverts to the default copy.
+    r = pricing.update({ freeViews: { ctaLabel: '   ' } });
+    expect(r.config.freeViews.ctaLabel).toBe('Create free account');
+  });
 });

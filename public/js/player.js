@@ -14,7 +14,7 @@ import { initWatchTracker } from './watch-tracker.js';
 import { attachWatchProgress } from './watch-progress.js';
 import { canUserWatchPremium, isAdminUser, canWatchVideo } from './viewer-access.js';
 import { goToCourse, fmtMoney } from './course-buy.js';
-import { getOfferCopy } from './offer-copy.js';
+import { getOfferCopy, getFreeViewsCopy } from './offer-copy.js';
 import { ADMIN_PATHS } from './admin-paths.js';
 import { toggleFullscreen } from './fullscreen.js';
 import { trackEvent } from './analytics-client.js';
@@ -193,6 +193,97 @@ function showCourseGate(container, entry, product) {
   });
 }
 
+/** Replace the player surface with the free-view "create a free account" gate.
+ *  Shown when the server 403s playback with reason signup_required (anonymous
+ *  visitor out of free views) or verify_required (signed in, email not yet
+ *  verified). Copy is admin-editable from /god-pricing (getFreeViewsCopy). */
+function showSignupGate(container, entry, reason) {
+  const spinner = document.getElementById('spinner');
+  const bigPlay = document.getElementById('big-play');
+  if (spinner) spinner.hidden = true;
+  if (bigPlay) bigPlay.style.display = 'none';
+  const gate = document.createElement('div');
+  gate.className = 'premium-gate signup-gate';
+  if (entry.thumb) gate.style.backgroundImage = `url("${entry.thumb}")`;
+  const videoUrl = location.pathname + location.search;
+  trackEvent('signup_gate_shown', { metadata: { videoId: entry.id, reason } });
+
+  if (reason === 'verify_required') {
+    // Signed in but unverified: verify right here — the code inputs hit the same
+    // endpoints the signup page uses, so no navigation is needed.
+    gate.innerHTML = `
+      <div class="pg-inner">
+        <span class="pg-badge">Free account</span>
+        <div class="pg-lock">${PREMIUM_LOCK('sg')}</div>
+        <h2 class="pg-headline">Verify your email to keep watching</h2>
+        <p class="pg-body sg-verify-body">Enter the 6-digit code we emailed you to continue watching.</p>
+        <input class="sg-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" aria-label="Verification code" />
+        <button class="pg-sub gold-cta">Verify email</button>
+        <a class="pg-alt" href="#">Didn't receive it? Resend the code</a>
+        <p class="sg-msg" hidden></p>
+      </div>`;
+    container.appendChild(gate);
+    const codeEl = gate.querySelector('.sg-code');
+    const msgEl = gate.querySelector('.sg-msg');
+    const setMsg = (t, ok) => { msgEl.hidden = !t; msgEl.textContent = t || ''; msgEl.style.color = ok ? '#7ee08a' : '#ffb4b4'; };
+    getMe().then((me) => {
+      if (me && me.email) gate.querySelector('.sg-verify-body').textContent = `Enter the 6-digit code we sent to ${me.email} to continue watching.`;
+    });
+    gate.querySelector('.pg-sub').addEventListener('click', async () => {
+      const code = codeEl.value.trim();
+      if (code.length !== 6) { setMsg('Enter the 6-digit code.'); return; }
+      const me = await getMe();
+      const res = await fetch('/api/auth/verify-code', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: me && me.email, code }),
+      });
+      if (res.ok) { setMsg('Verified — starting your video…', true); location.reload(); }
+      else {
+        const d = await res.json().catch(() => ({}));
+        setMsg(d.error || 'That code did not work.');
+      }
+    });
+    codeEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') gate.querySelector('.pg-sub').click(); });
+    gate.querySelector('.pg-alt').addEventListener('click', async (e) => {
+      e.preventDefault();
+      const me = await getMe();
+      const res = await fetch('/api/auth/resend-code', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: me && me.email }),
+      });
+      if (res.ok) setMsg('A new code is on its way.', true);
+      else setMsg('Could not resend the code. Try again in a minute.');
+    });
+    return;
+  }
+
+  // Anonymous visitor out of free views: pitch the free account.
+  gate.innerHTML = `
+    <div class="pg-inner">
+      <span class="pg-badge">Free account</span>
+      <div class="pg-lock">${PREMIUM_LOCK('sg')}</div>
+      <h2 class="pg-headline"></h2>
+      <p class="pg-body"></p>
+      <button class="pg-sub gold-cta"></button>
+      <a class="pg-alt" href="#">Already have an account? Sign in</a>
+    </div>`;
+  container.appendChild(gate);
+  getFreeViewsCopy().then((c) => {
+    gate.querySelector('.pg-headline').textContent = c.headline;
+    gate.querySelector('.pg-body').textContent = c.body;
+    gate.querySelector('.pg-sub').textContent = c.ctaLabel;
+  });
+  gate.querySelector('.pg-sub').addEventListener('click', () => {
+    trackEvent('signup_gate_cta', { metadata: { videoId: entry.id } });
+    try { localStorage.setItem('dbtv_after_auth', videoUrl); } catch { /* ignore */ }
+    location.href = `/signup.html?next=${encodeURIComponent(videoUrl)}`;
+  });
+  gate.querySelector('.pg-alt').addEventListener('click', (e) => {
+    e.preventDefault();
+    location.href = `/login.html?next=${encodeURIComponent(videoUrl)}`;
+  });
+}
+
 /** Look up a video's manifest entry by id. */
 async function loadEntry(id) {
   try {
@@ -207,15 +298,20 @@ async function loadEntry(id) {
 async function loadPlayback(id) {
   try {
     const res = await fetch(`/api/videos/${encodeURIComponent(id)}/playback`);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // A free-view 403 carries a JSON { reason }; other failures (premium 403,
+      // 404, 5xx) have none and fall through to the generic error path.
+      const err = await res.json().catch(() => null);
+      return { video: null, reason: (err && err.reason) || null };
+    }
     const data = await res.json();
     const video = data.video || null;
     // Carry the public view count alongside the playback payload so the meta row
     // can show it without a second request.
     if (video) video.views = typeof data.views === 'number' ? data.views : 0;
-    return video;
+    return { video, reason: null };
   } catch {
-    return null;
+    return { video: null, reason: null };
   }
 }
 
@@ -332,8 +428,15 @@ async function init() {
     return;
   }
 
-  const playback = await loadPlayback(entry.id);
+  const { video: playback, reason: gateReason } = await loadPlayback(entry.id);
   if (!playback) {
+    if (gateReason === 'signup_required' || gateReason === 'verify_required') {
+      // Out of free views: show the create-account / verify gate instead of the
+      // stream. Like the premium gate, skip comments/reactions — engagement
+      // belongs to viewers who can actually watch.
+      showSignupGate(container, entry, gateReason);
+      return;
+    }
     showError('This video is currently unavailable.');
     initReactions(commentVideo);
     initComments(commentVideo);
