@@ -129,7 +129,6 @@ async function startWhopCheckout(btn) {
     location.href = `/signup.html?next=${encodeURIComponent(here)}`;
     return;
   }
-  if (r.status === 403) { location.href = `/profile-setup.html`; return; }
   if (r.status === 409) {
     setMsg('You already have an active membership.', 'ok');
     btn.disabled = false;

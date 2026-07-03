@@ -237,6 +237,14 @@ describe('crypto checkout', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('allows checkout for a fresh account with no completed profile (regression: removed 403 gate)', async () => {
+    const { cp } = makeWithWatcher({ id: 'u1', products: [] }); // no profileComplete
+    const res = fakeRes();
+    await cp._test.checkout(jsonReq({ kind: 'membership', membershipPlan: '3mo', coin: 'ETH' }), res);
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).orderId).toBeTruthy();
+  });
+
   it('config reports enabled coins', async () => {
     const { cp } = makeWithWatcher({ id: 'u1', profileComplete: true, products: [] });
     const res = fakeRes();

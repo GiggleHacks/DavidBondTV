@@ -22,6 +22,7 @@ import { createTenor, isTenorGifUrl } from './lib/tenor.js';
 import { createCommentGuard, DEFAULT_BANNED } from './lib/comment-guard.js';
 import { createCommentFilterStore } from './lib/comment-filter.js';
 import { adminUser } from './lib/users-store.js';
+import { generateUsername } from './lib/usernames.js';
 import { createPaymentsStore } from './lib/payments-store.js';
 import { createCryptoOrdersStore } from './lib/crypto-orders-store.js';
 import { createCryptoPayments } from './lib/crypto-payments.js';
@@ -378,6 +379,26 @@ async function seedAdminUser() {
       profileComplete: true, avatar: 'default:david-bond',
     });
   }
+}
+
+/**
+ * One-time backfill: accounts created before v1.55.0 could exist without a
+ * username (profile setup used to be a separate, skippable step). Give them
+ * the same auto-generated username new signups get so no display code has to
+ * tolerate username:null. Idempotent — no-op once every user has one.
+ */
+async function backfillUsernames() {
+  let filled = 0;
+  for (const u of accounts.store.listAll()) {
+    if (u.username) {
+      if (!u.profileComplete) await accounts.store.updateUser(u.id, { profileComplete: true });
+      continue;
+    }
+    const username = generateUsername(u.email, (c) => accounts.store.isUsernameTaken(c));
+    await accounts.store.updateUser(u.id, { username, profileComplete: true });
+    filled += 1;
+  }
+  if (filled) console.log(`[users] backfilled auto-usernames for ${filled} account(s)`);
 }
 
 // Paths a geo-blocked visitor may still load: the under-construction shell
@@ -882,7 +903,10 @@ async function handleApi(req, res, ctx) {
         .map((c) => {
           const { analytics: _analytics, visitorId: _visitorId, moderation: _moderation, ...publicComment } = c;
           if (!publicComment.username) return publicComment;
-          const u = accounts.store.getByUsername(publicComment.username);
+          // Join on userId (stable across renames) — a username lookup could
+          // badge the wrong person once the old name is re-claimed.
+          const u = (c.userId && accounts.store.getById(c.userId))
+            || accounts.store.getByUsername(publicComment.username);
           const admin = !!(u && Array.isArray(u.roles) && u.roles.includes('admin'));
           const member = !!(u && hasActiveMembership(u));
           return { ...publicComment, admin, member };
@@ -958,7 +982,7 @@ async function handleApi(req, res, ctx) {
       }
 
       let stored;
-      if (user && user.profileComplete) {
+      if (user && user.username) {
         // Logged-in: post as the profile identity, no math challenge needed.
         const validation = validateComment({ name: user.username, anonymous: false, text, hasGif: !!gifUrl });
         if (!validation.ok) {
@@ -1621,7 +1645,10 @@ async function handleApi(req, res, ctx) {
     const utcDay = (ms) => new Date(ms).toISOString().slice(0, 10);
     const rangeParam = (url.searchParams.get('range') || '30d').toLowerCase();
     const titles = manifestTitleMap();
-    const verifiedUsers = accounts.store.listAll().filter((u) => u.verified).length;
+    // "Users" = verified OR paying — a customer who bought before verifying
+    // their email must still count (verification is deferred since v1.55.0).
+    const verifiedUsers = accounts.store.listAll()
+      .filter((u) => u.verified || hasActiveMembership(u) || (u.products || []).length > 0).length;
     const countries = analytics.getCountryStats(); // all-time (no per-day country rollup yet)
 
     // 24h → hourly buckets from raw events. Raw has no viewId, so a "view" here is
@@ -2003,7 +2030,8 @@ async function handleApi(req, res, ctx) {
         const vc = vmeta.get(vid) || { id: vid, title: vid, thumb: null };
         videosWithComments.push({ id: vid, title: vc.title, count: list.length });
         for (const c of list) {
-          const u = c.username ? accounts.store.getByUsername(c.username) : null;
+          const u = (c.userId && accounts.store.getById(c.userId))
+            || (c.username ? accounts.store.getByUsername(c.username) : null);
           const isMember = !!(u && hasActiveMembership(u));
           const isAdmin = !!(u && Array.isArray(u.roles) && u.roles.includes('admin'));
           summary.total += 1;
@@ -2154,11 +2182,15 @@ async function handleApi(req, res, ctx) {
       const optInCount = all.filter((u) => u.email && !hasActiveMembership(u)).length;
       const watchMinutes = all.reduce((sum, u) => sum + minutesOf(u), 0);
 
+      // The default "verified" bucket also includes paying customers who haven't
+      // verified yet (deferred verification, v1.55.0) so members are never
+      // hidden; unverified non-payers stay out of the default email list.
+      const trusted = (u) => u.verified || hasActiveMembership(u) || (u.products || []).length > 0;
       const filter = url.searchParams.get('filter') || 'verified';
       const picked = filter === 'all' ? all
-        : filter === 'unverified' ? all.filter((u) => !u.verified)
+        : filter === 'unverified' ? all.filter((u) => !trusted(u))
           : filter === 'optins' ? all.filter((u) => u.email && !hasActiveMembership(u))
-            : all.filter((u) => u.verified);
+            : all.filter(trusted);
       const users = picked.map((u) => {
         const s = ustats[u.id] || {};
         const subscribed = hasActiveMembership(u);
@@ -3036,6 +3068,12 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(404, withSecurityHeaders());
       return res.end('Not found');
     }
+    // Profile setup was removed in v1.55.0 (usernames are auto-generated at
+    // signup); old bookmarks and email links land on account settings instead.
+    if (pathname === '/profile-setup.html' || pathname === '/profile-setup') {
+      res.writeHead(302, withSecurityHeaders({ Location: '/account.html' }));
+      return res.end();
+    }
     if (!isGeoCarveOut(pathname)) {
       const decision = geoGate.evaluate(ctx);
       if (decision.blocked) {
@@ -3260,6 +3298,7 @@ server.listen(PORT, async () => {
     console.log('└─────────────────────────────────────────────────────────────┘\n');
   }
   await seedAdminUser(); // ensure davidbond exists as a user with the admin role
+  await backfillUsernames(); // pre-v1.55 accounts may predate auto-usernames
   console.log(`▶  David Bond TV running at http://localhost:${PORT}`);
   console.log(`   admin uploads: ${adminConfigured(adminAccount) ? 'enabled' : 'DISABLED'} · ffmpeg: ${hasFfmpeg() ? 'ok' : 'MISSING'} · cloudflare: ${TRUST_CLOUDFLARE ? 'trusted' : 'off'}`);
   // Surface the effective HTTP timeouts. A slow upload that runs longer than

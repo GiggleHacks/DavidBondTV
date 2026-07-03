@@ -138,7 +138,6 @@ export async function startCryptoCheckout(opts, mount, onExpire = null) {
   trackEvent('checkout_started', { provider: 'crypto', productId: opts.productId || '', metadata: { kind: opts.kind || '' } });
   const r = await postJSON('/api/pay/crypto/checkout', opts);
   if (r.status === 401) { location.href = `/signup.html?next=${encodeURIComponent(location.pathname + location.search)}`; return; }
-  if (r.status === 403) { location.href = '/profile-setup.html'; return; }
   if (!r.ok || !r.data || !r.data.orderId) {
     trackEvent('checkout_error', { provider: 'crypto', productId: opts.productId || '', metadata: { kind: opts.kind || '', status: r.status } });
     mount.textContent = '';

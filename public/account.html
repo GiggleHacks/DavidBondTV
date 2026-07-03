@@ -25,8 +25,8 @@
       <form id="form" novalidate>
         <div class="acc-field">
           <label for="username">Username</label>
-          <input class="acc-input" id="username" type="text" maxlength="20" autocomplete="off" readonly disabled />
-          <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">Your username is permanent and can’t be changed.</p>
+          <input class="acc-input" id="username" type="text" maxlength="20" autocomplete="off" placeholder="3-20 letters, numbers or _" />
+          <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">3-20 letters, numbers or underscores. Changing it renames you everywhere going forward; old comments keep the name they were posted under.</p>
         </div>
 
         <div class="acc-field">
@@ -165,14 +165,16 @@
       e.preventDefault();
       $('submit').disabled = true;
       setMsg('');
-      // Username is fixed after creation — never sent. Only About + link (+ avatar).
       const body = {
+        username: $('username').value.trim(),
         about: $('about').value,
         link: $('link').value.trim(),
       };
       if (selected !== undefined) body.avatar = selected;
       const r = await postJSON('/api/profile/update', body);
       if (r.ok && r.data.ok) {
+        me = r.data.user || me;
+        $('username').value = me.username || '';
         setMsg('Saved!', 'ok');
       } else {
         setMsg(r.data.error || 'Could not save.', 'error');
@@ -389,8 +391,6 @@
     (async function start() {
       me = await fetchMe();
       if (!me) { window.location.href = '/login.html'; return; }
-      // Profile setup is optional — the account page is reachable even if it was
-      // skipped, and doubles as the place to set a username/avatar later.
       $('email-line').textContent = me.email || 'Social account';
       $('username').value = me.username || '';
       $('about').value = me.about || '';

@@ -23,6 +23,24 @@ describe('users-store', () => {
     expect(store.getByEmail('person@example.com').id).toBe(r.user.id);
   });
 
+  it('auto-generates an email-derived username at creation, indexed immediately', async () => {
+    const store = createUsersStore(file);
+    const r = await store.createUser({ email: 'Jane.Doe@Example.com', passwordHash: 'h' });
+    expect(r.user.username).toBe('JaneDoe');
+    expect(r.user.profileComplete).toBe(true);
+    expect(store.isUsernameTaken('janedoe')).toBe(true);
+    expect(store.getByUsername('JANEDOE').id).toBe(r.user.id);
+  });
+
+  it('gives same-local-part emails distinct usernames', async () => {
+    const store = createUsersStore(file);
+    const a = (await store.createUser({ email: 'jane@one.com', passwordHash: 'h' })).user;
+    const b = (await store.createUser({ email: 'jane@two.com', passwordHash: 'h' })).user;
+    expect(a.username).toBe('jane');
+    expect(b.username).toMatch(/^jane\d{2}$/);
+    expect(a.username).not.toBe(b.username);
+  });
+
   it('addProductEntitlement appends once and dedups by session id and product id', async () => {
     const store = createUsersStore(file);
     const { user } = await store.createUser({ email: 'buyer@x.com', passwordHash: 'h' });

@@ -50,12 +50,6 @@ function loggedIn(user) {
   menu.className = 'aw-menu';
   menu.hidden = true;
 
-  if (!user.username) {
-    const setup = document.createElement('a');
-    setup.href = '/profile-setup.html';
-    setup.textContent = 'Finish your profile';
-    menu.append(setup);
-  }
   const account = document.createElement('a');
   account.href = '/account.html';
   account.textContent = 'Account settings';
@@ -98,8 +92,67 @@ function loggedIn(user) {
   mount.append(wrap);
 }
 
+// Gentle post-signup nudge: verification no longer blocks login or checkout,
+// so this slim banner (plus the player's free-view gate) is where it happens.
+const VERIFY_DISMISS_KEY = 'dbtv_verify_dismissed';
+
+function verifyBanner(user) {
+  if (user.verified) return;
+  try { if (sessionStorage.getItem(VERIFY_DISMISS_KEY)) return; } catch { /* ignore */ }
+
+  const bar = document.createElement('div');
+  bar.className = 'verify-banner';
+  const text = document.createElement('span');
+  text.className = 'vb-text';
+  text.textContent = `Verify your email — enter the code we sent to ${user.email}`;
+  const input = document.createElement('input');
+  input.className = 'vb-input';
+  input.type = 'text';
+  input.inputMode = 'numeric';
+  input.maxLength = 6;
+  input.autocomplete = 'one-time-code';
+  input.placeholder = '6-digit code';
+  const verify = document.createElement('button');
+  verify.type = 'button';
+  verify.className = 'vb-btn primary';
+  verify.textContent = 'Verify';
+  const resend = document.createElement('button');
+  resend.type = 'button';
+  resend.className = 'vb-btn';
+  resend.textContent = 'Resend';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'vb-close';
+  close.setAttribute('aria-label', 'Dismiss');
+  close.textContent = '×';
+
+  verify.addEventListener('click', async () => {
+    const code = input.value.replace(/\D/g, '');
+    if (code.length !== 6) { text.textContent = 'Enter the 6-digit code from your email.'; return; }
+    verify.disabled = true;
+    const r = await postJSON('/api/auth/verify-code', { email: user.email, code });
+    if (r.ok && r.data.ok) { window.location.reload(); return; }
+    text.textContent = (r.data && r.data.error) || 'That code did not work — try again.';
+    verify.disabled = false;
+  });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') verify.click(); });
+  resend.addEventListener('click', async () => {
+    resend.disabled = true;
+    const r = await postJSON('/api/auth/resend-code', { email: user.email });
+    text.textContent = r.ok ? `A new code is on its way to ${user.email}.` : 'Could not resend — try again shortly.';
+    resend.disabled = false;
+  });
+  close.addEventListener('click', () => {
+    try { sessionStorage.setItem(VERIFY_DISMISS_KEY, '1'); } catch { /* ignore */ }
+    bar.remove();
+  });
+
+  bar.append(text, input, verify, resend, close);
+  document.body.prepend(bar);
+}
+
 (async function init() {
   if (!mount) return;
   const user = await fetchMe();
-  if (user) loggedIn(user); else loggedOut();
+  if (user) { loggedIn(user); verifyBanner(user); } else loggedOut();
 }());

@@ -34,6 +34,31 @@
 .aw-menu hr { border: none; border-top: 1px solid var(--border); margin: 6px 4px; }
 .aw-section { padding: 4px 12px; font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--text-dim); }
 
+/* ---------- Email verification banner (unverified accounts) ---------- */
+.verify-banner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 44px 8px 16px; position: relative;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  border-bottom: 1px solid var(--border);
+  color: var(--text); font-size: 13.5px;
+}
+.verify-banner .vb-text { flex: 1 1 240px; min-width: 0; }
+.verify-banner .vb-input {
+  width: 110px; padding: 6px 10px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  font: inherit; letter-spacing: 2px;
+}
+.verify-banner .vb-btn {
+  padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
+}
+.verify-banner .vb-btn.primary { background: var(--accent); color: var(--accent-contrast); border-color: transparent; }
+.verify-banner .vb-close {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: var(--text-dim); font-size: 20px; cursor: pointer;
+  padding: 4px 8px; line-height: 1;
+}
+
 /* ---------- Auth / profile pages ---------- */
 .acc-page { width: min(460px, 100%); margin: 48px auto; padding: 0 20px 80px; }
 .acc-page.wide { width: min(680px, 100%); }

@@ -257,6 +257,15 @@ describe('whop checkout', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('allows checkout for a fresh account with no completed profile (regression: removed 403 gate)', async () => {
+    const user = { id: 'u1', email: 'a@b.c' }; // no profileComplete, no username
+    const { wp } = make({ user });
+    const res = fakeRes();
+    await wp._test.checkout(jsonReq({}), res);
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).url).toBeTruthy();
+  });
+
   it('409s when already an active member', async () => {
     const user = { id: 'u1', email: 'a@b.c', profileComplete: true, membership: { provider: 'whop', status: 'active', currentPeriodEnd: Date.now() + 1_000_000 } };
     const { wp } = make({ user });

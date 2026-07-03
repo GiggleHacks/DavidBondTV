@@ -102,7 +102,7 @@ const PREMIUM_LOCK = (sfx) => `<svg viewBox="0 0 48 48" fill="none" aria-hidden=
  * Route a viewer who wants to unlock premium content. Logged-in → straight to the
  * membership offer; logged-out → sign up first, then land back on the offer (which
  * carries `next` back to the original video). Stashes the post-auth destination so
- * the email-verify / profile-setup onboarding chain returns here too.
+ * an OAuth signup round-trip returns here too.
  */
 async function goToUnlock(videoUrl) {
   const membershipUrl = `/membership.html?next=${encodeURIComponent(videoUrl)}`;

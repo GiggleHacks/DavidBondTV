@@ -151,7 +151,7 @@ export function initComments(videoId) {
   function buildReplyBox(rootId, mentionName, onPosted) {
     const box = document.createElement('div');
     box.className = 'comment-reply-box';
-    const authed = me && me.profileComplete;
+    const authed = me && me.username;
 
     const ta = document.createElement('textarea');
     ta.className = 'cf-text'; ta.rows = 2; ta.maxLength = 1000;
@@ -494,7 +494,7 @@ export function initComments(videoId) {
     if (cooling) return;
     const text = textInput.value.trim();
     if (!text && !pendingGif) { setMsg('Please write a comment or pick a GIF.', 'error'); return; }
-    const authed = me && me.profileComplete;
+    const authed = me && me.username;
     if (!authed && !answerInput.value.trim()) {
       setMsg('Please answer the verification question.', 'error');
       return;
@@ -532,7 +532,7 @@ export function initComments(videoId) {
     } catch {
       setMsg('Network error — please try again.', 'error');
     } finally {
-      if (!(me && me.profileComplete)) {
+      if (!(me && me.username)) {
         answerInput.value = '';
         await loadChallenge(); // single-use token — refresh after every attempt
       }
@@ -543,7 +543,7 @@ export function initComments(videoId) {
   // Render the form for the current auth state, then load the thread.
   (async function start() {
     me = await fetchMe();
-    if (me && me.profileComplete) {
+    if (me && me.username) {
       // Logged in: drop the name field + math check; show identity.
       if (nameRow) nameRow.remove();
       if (challengeEl) challengeEl.remove();
