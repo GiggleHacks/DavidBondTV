@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { contentType, parseRange, sendJson, readBody, readRawBody, clientIp, withSecurityHeaders } from './lib/http-util.js';
 import { createChallenge, verifyChallenge } from './lib/challenge.js';
 import { createRateLimiter } from './lib/rate-limit.js';
-import { validateComment, addComment, listComments, deleteComment, readAllComments, threadComments } from './lib/comments-store.js';
+import { validateComment, addComment, listComments, deleteComment, readAllComments, threadComments, sweepShadowHide } from './lib/comments-store.js';
+import * as commentsSettings from './lib/comments-settings.js';
 import { getCounts, getUserVote, setVote } from './lib/reactions-store.js';
 import { adminConfigured, verifyBearerSecret } from './lib/admin-auth.js';
 import { createAdminAccount } from './lib/admin-account.js';
@@ -151,6 +152,10 @@ const limiter = createRateLimiter(60_000, 3); // up to 3 comments/min per IP
 const commentGuard = createCommentGuard({ banned: DEFAULT_BANNED });
 const COMMENT_FILTER_FILE = path.join(__dirname, 'data', 'comment-blocklist.json');
 const commentFilters = createCommentFilterStore(COMMENT_FILTER_FILE);
+// Retroactively shadow-hide already-stored comments that match the (current)
+// filter phrases. Runs at boot and whenever a phrase is added/edited, so a new
+// phrase silences existing spam too — not just future posts.
+const sweepFilteredComments = () => sweepShadowHide(COMMENTS_FILE, (t) => commentFilters.match(t));
 // Max accepted upload size. Configurable so the grey-cloud upload host can take
 // large masters; default 25 GB. (Cloudflare still caps the main host at ~100 MB,
 // so large uploads go via the DNS-only upload subdomain — see deploy docs.)
@@ -914,7 +919,7 @@ async function handleApi(req, res, ctx) {
       // Group into single-level threads: roots newest-first, each with its replies
       // (oldest-first) + replyCount. `total` counts roots AND replies for the header.
       const comments = threadComments(flat);
-      sendJson(res, 200, { comments, total: flat.length });
+      sendJson(res, 200, { comments, total: flat.length, anonymousEnabled: commentsSettings.getConfig().anonymousEnabled });
     } catch {
       sendJson(res, 500, { error: 'Server error' });
     }
@@ -989,7 +994,8 @@ async function handleApi(req, res, ctx) {
           sendJson(res, 400, { error: validation.error });
           return true;
         }
-        const filterMatch = commentFilters.match(validation.value.text);
+        // Match against name+text so a doxx in the display name is caught too.
+        const filterMatch = commentFilters.match(`${user.username} ${validation.value.text}`);
         stored = await addComment(COMMENTS_FILE, video || 'bikinis', {
           name: user.username,
           text: validation.value.text,
@@ -1015,6 +1021,12 @@ async function handleApi(req, res, ctx) {
           },
         });
       } else {
+        // Anonymous posting is an owner opt-in (off by default) — enforce here
+        // so a stale tab still showing the form gets a clear error.
+        if (!commentsSettings.getConfig().anonymousEnabled) {
+          sendJson(res, 401, { error: 'Please sign in to comment.', code: 'auth_required' });
+          return true;
+        }
         // Anonymous: require the math challenge; give a varied generic avatar.
         if (!verifyChallenge(SECRET, token, answer)) {
           sendJson(res, 400, { error: 'Incorrect answer to the verification question.' });
@@ -1025,7 +1037,8 @@ async function handleApi(req, res, ctx) {
           sendJson(res, 400, { error: validation.error });
           return true;
         }
-        const filterMatch = commentFilters.match(validation.value.text);
+        // Match against name+text so a doxx in the display name is caught too.
+        const filterMatch = commentFilters.match(`${validation.value.name} ${validation.value.text}`);
         stored = await addComment(COMMENTS_FILE, video || 'bikinis', {
           name: validation.value.name,
           text: validation.value.text,
@@ -2095,7 +2108,9 @@ async function handleApi(req, res, ctx) {
         const raw = await readBody(req, 8192);
         let body; try { body = JSON.parse(raw); } catch { body = null; }
         const result = commentFilters.add(body && body.phrase);
-        sendJson(res, result.ok ? 200 : 400, result);
+        // A new phrase also silences matching comments that are ALREADY stored.
+        const swept = result.ok ? (await sweepFilteredComments()).hidden : 0;
+        sendJson(res, result.ok ? 200 : 400, { ...result, swept });
       } catch { sendJson(res, 500, { error: 'Server error' }); }
       return true;
     }
@@ -2104,13 +2119,32 @@ async function handleApi(req, res, ctx) {
         const raw = await readBody(req, 8192);
         let body; try { body = JSON.parse(raw); } catch { body = null; }
         const result = commentFilters.update(id, body || {});
-        sendJson(res, result.ok ? 200 : 404, result);
+        const swept = result.ok ? (await sweepFilteredComments()).hidden : 0;
+        sendJson(res, result.ok ? 200 : 404, { ...result, swept });
       } catch { sendJson(res, 500, { error: 'Server error' }); }
       return true;
     }
     if (req.method === 'DELETE' && id) {
       const result = commentFilters.remove(id);
       sendJson(res, result.ok ? 200 : 404, result);
+      return true;
+    }
+  }
+
+  // GET/POST /api/admin/comments-settings — the anonymous-comments kill switch.
+  if (url.pathname === '/api/admin/comments-settings') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    if (req.method === 'GET') {
+      sendJson(res, 200, { config: commentsSettings.getConfig() });
+      return true;
+    }
+    if (req.method === 'POST') {
+      try {
+        const raw = await readBody(req, 8192);
+        let body; try { body = JSON.parse(raw); } catch { body = null; }
+        const result = commentsSettings.update(body || {});
+        sendJson(res, 200, result);
+      } catch { sendJson(res, 500, { error: 'Server error' }); }
       return true;
     }
   }
@@ -3313,6 +3347,10 @@ server.listen(PORT, async () => {
   // notification hook existed, so viewers finally get notified.
   try { const n = await backfillNotifications(); if (n) console.log(`   notifications: ensured feed entries for ${n} published video(s)`); }
   catch (e) { console.error('   notifications backfill failed:', e.message); }
+  // Shadow-hide any stored comments that match the word filters — idempotent,
+  // and how newly shipped seed phrases retroactively clean up existing spam.
+  try { const r = await sweepFilteredComments(); if (r.hidden) console.log(`   comments: shadow-hid ${r.hidden} existing comment(s) matching word filters`); }
+  catch (e) { console.error('   comment filter sweep failed:', e.message); }
   // Announce deploys (version/commit changed → owner bell + Telegram summary) vs
   // plain reboots (bell only). Best-effort; never blocks readiness.
   try {

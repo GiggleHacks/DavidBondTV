@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
-import { validateComment, addComment, listComments, threadComments, deleteComment } from '../lib/comments-store.js';
+import { validateComment, addComment, listComments, threadComments, deleteComment, sweepShadowHide } from '../lib/comments-store.js';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -173,6 +173,54 @@ describe('addComment + listComments (persistence)', () => {
       filterId: 'filter_1',
       ts: 1234,
     });
+  });
+});
+
+describe('sweepShadowHide (retroactive word filter)', () => {
+  const FILTER = { id: 'filter_x', phrase: 'bad phrase' };
+  const matcher = (t) => (/bad[\W_]+phrase/i.test(t) ? FILTER : null);
+
+  it('shadow-hides matching comments by text and by name, returns counts', async () => {
+    const FILE = path.join(TMP_DIR, 'sweep.json');
+    await addComment(FILE, 'v1', { name: 'Alice', text: 'totally fine', ts: 1 });
+    const byText = await addComment(FILE, 'v1', { name: 'Bob', text: 'this is a BAD. PHRASE. here', ts: 2 });
+    const byName = await addComment(FILE, 'v2', { name: 'bad phrase guy', text: 'hello', ts: 3 });
+
+    const r = await sweepShadowHide(FILE, matcher);
+    expect(r.hidden).toBe(2);
+    expect(r.affected).toEqual(expect.arrayContaining([
+      { video: 'v1', id: byText.id },
+      { video: 'v2', id: byName.id },
+    ]));
+
+    const v1 = listComments(FILE, 'v1');
+    expect(v1.find((c) => c.id === byText.id).moderation).toMatchObject({
+      shadow: true, reason: 'word_filter', phrase: 'bad phrase', filterId: 'filter_x',
+    });
+    expect(v1.find((c) => c.name === 'Alice').moderation).toBeUndefined();
+  });
+
+  it('skips comments already shadow-hidden and never unhides', async () => {
+    const FILE = path.join(TMP_DIR, 'sweep-skip.json');
+    await addComment(FILE, 'v', {
+      name: 'X', text: 'bad phrase', ts: 1,
+      moderation: { shadow: true, reason: 'geo_block', ts: 5 },
+    });
+    await addComment(FILE, 'v', { name: 'Y', text: 'clean', ts: 2 });
+
+    const r = await sweepShadowHide(FILE, matcher);
+    expect(r.hidden).toBe(0);
+    // The pre-existing geo_block moderation is untouched.
+    expect(listComments(FILE, 'v').find((c) => c.name === 'X').moderation).toMatchObject({ reason: 'geo_block' });
+  });
+
+  it('does not rewrite the file when nothing matches', async () => {
+    const FILE = path.join(TMP_DIR, 'sweep-noop.json');
+    await addComment(FILE, 'v', { name: 'Z', text: 'clean', ts: 1 });
+    const before = fs.statSync(FILE).mtimeMs;
+    const r = await sweepShadowHide(FILE, () => null);
+    expect(r).toEqual({ hidden: 0, affected: [] });
+    expect(fs.statSync(FILE).mtimeMs).toBe(before);
   });
 });
 

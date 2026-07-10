@@ -323,10 +323,12 @@ async function loadFilters() {
       const enabled = row.querySelector('.filter-enabled').checked;
       const r = await api(`/api/admin/comment-filters/${encodeURIComponent(f.id)}`, { method: 'POST', body: JSON.stringify({ phrase, enabled }) });
       if (!r.ok) alert(r.error || 'Could not save filter.');
+      else reportSwept(r.swept);
       await loadFilters();
     });
     row.querySelector('.filter-enabled').addEventListener('change', async (e) => {
-      await api(`/api/admin/comment-filters/${encodeURIComponent(f.id)}`, { method: 'POST', body: JSON.stringify({ enabled: e.target.checked }) });
+      const r = await api(`/api/admin/comment-filters/${encodeURIComponent(f.id)}`, { method: 'POST', body: JSON.stringify({ enabled: e.target.checked }) });
+      reportSwept(r.swept);
       await loadFilters();
     });
     row.querySelector('.del').addEventListener('click', async () => {
@@ -336,6 +338,14 @@ async function loadFilters() {
     });
     box.appendChild(row);
   }
+}
+
+// A phrase change retroactively shadow-hides matching stored comments — tell the
+// admin how many were caught and refresh the inbox so the badges update.
+function reportSwept(n) {
+  if (!n) return;
+  alert(`Shadow-hid ${n} existing comment${n === 1 ? '' : 's'} matching the filters.`);
+  load();
 }
 
 function wireFilters() {
@@ -348,8 +358,31 @@ function wireFilters() {
     if (!phrase) return;
     const r = await api('/api/admin/comment-filters', { method: 'POST', body: JSON.stringify({ phrase }) });
     if (!r.ok) alert(r.error || 'Could not add filter.');
-    else input.value = '';
+    else { input.value = ''; reportSwept(r.swept); }
     await loadFilters();
+  });
+}
+
+// "Allow anonymous comments" kill switch (off by default server-side).
+async function loadSettings() {
+  const toggle = $('anon-comments-toggle');
+  const status = $('anon-comments-status');
+  if (!toggle) return;
+  const d = await api('/api/admin/comments-settings');
+  toggle.checked = !!(d.config && d.config.anonymousEnabled);
+  toggle.disabled = false;
+  toggle.addEventListener('change', async () => {
+    toggle.disabled = true;
+    status.textContent = 'Saving…';
+    const r = await api('/api/admin/comments-settings', { method: 'POST', body: JSON.stringify({ anonymousEnabled: toggle.checked }) });
+    if (r.ok) {
+      status.textContent = toggle.checked ? 'Saved — visitors can post anonymously.' : 'Saved — visitors must sign in to comment.';
+    } else {
+      toggle.checked = !toggle.checked; // revert
+      status.textContent = '';
+      alert(r.error || 'Could not save the setting.');
+    }
+    toggle.disabled = false;
   });
 }
 
@@ -363,6 +396,6 @@ async function main() {
     $('search').value = ''; $('video').value = ''; $('author').value = 'all'; $('sort').value = 'new'; load();
   });
   wireFilters();
-  try { await Promise.all([load(), loadFilters()]); } catch { /* 401 reloads into the gate */ }
+  try { await Promise.all([load(), loadFilters(), loadSettings()]); } catch { /* 401 reloads into the gate */ }
 }
 main();

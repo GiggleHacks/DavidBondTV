@@ -61,6 +61,7 @@ export function initComments(videoId) {
 
   let token = null;
   let me = null;
+  let anonAllowed = false; // owner toggle, learned from GET /api/comments
   let cooling = false; // true while a rate-limit countdown is running
   let pendingGif = null; // { url, preview } chosen from the GIF picker, or null
 
@@ -148,10 +149,33 @@ export function initComments(videoId) {
   // to; `mentionName` pre-fills an @mention when replying to another reply. Anon
   // viewers get their own name field + a freshly fetched math challenge. On a
   // successful post `onPosted(comment)` runs so the caller can nest the new reply.
+  // Build a "sign in to comment" prompt (used when anonymous posting is off).
+  function signInHint(suffix) {
+    const hint = document.createElement('p');
+    hint.className = 'cf-hint';
+    const a = document.createElement('a');
+    a.href = '/login.html';
+    a.textContent = 'Sign in';
+    hint.append(a, document.createTextNode(suffix));
+    return hint;
+  }
+
   function buildReplyBox(rootId, mentionName, onPosted) {
     const box = document.createElement('div');
     box.className = 'comment-reply-box';
     const authed = me && me.username;
+
+    if (!authed && !anonAllowed) {
+      // Anonymous replies are off: offer the sign-in path instead of a composer.
+      const actions = document.createElement('div');
+      actions.className = 'crb-actions';
+      const cancel = document.createElement('button');
+      cancel.type = 'button'; cancel.className = 'crb-cancel'; cancel.textContent = 'Cancel';
+      cancel.addEventListener('click', () => box.remove());
+      actions.append(cancel);
+      box.append(signInHint(' to reply — it takes 10 seconds.'), actions);
+      return box;
+    }
 
     const ta = document.createElement('textarea');
     ta.className = 'cf-text'; ta.rows = 2; ta.maxLength = 1000;
@@ -394,6 +418,7 @@ export function initComments(videoId) {
       const ctx = analyticsContext();
       const res = await fetch(`/api/comments?video=${encodeURIComponent(VIDEO)}&visitorId=${encodeURIComponent(ctx.visitorId || '')}`);
       const data = await res.json();
+      if (typeof data.anonymousEnabled === 'boolean') anonAllowed = data.anonymousEnabled;
       const comments = data.comments || [];
       if (comments.length === 0) renderEmpty();
       else listEl.replaceChildren(...comments.map((c) => makeCommentEl(c)));
@@ -540,9 +565,11 @@ export function initComments(videoId) {
     }
   });
 
-  // Render the form for the current auth state, then load the thread.
+  // Load the thread first (it carries the anonymous-comments flag), then render
+  // the form for the current auth state.
   (async function start() {
     me = await fetchMe();
+    await loadComments();
     if (me && me.username) {
       // Logged in: drop the name field + math check; show identity.
       if (nameRow) nameRow.remove();
@@ -556,18 +583,15 @@ export function initComments(videoId) {
       span.textContent = `Commenting as ${me.username}`;
       asEl.append(img, span);
       form.prepend(asEl);
-    } else {
-      // Logged out: keep name + anon + math check, add a sign-in nudge.
-      const hint = document.createElement('p');
-      hint.className = 'cf-hint';
-      const a = document.createElement('a');
-      a.href = '/login.html';
-      a.textContent = 'Sign in';
-      hint.append(a, document.createTextNode(' to comment as yourself, or post below.'));
-      form.prepend(hint);
+      setupGifPicker();
+    } else if (anonAllowed) {
+      // Logged out, anon posting allowed: keep name + anon + math check.
+      form.prepend(signInHint(' to comment as yourself, or post below.'));
       await loadChallenge();
+      setupGifPicker();
+    } else {
+      // Logged out, anon posting off: replace the composer with a sign-in gate.
+      form.replaceChildren(signInHint(' to join the conversation — it takes 10 seconds.'));
     }
-    setupGifPicker();
-    await loadComments();
   }());
 }
