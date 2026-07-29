@@ -271,9 +271,12 @@ const whopPayments = createWhopPayments({
   companyId: process.env.WHOP_COMPANY_ID || null,
   // Fallback price (USD dollars) for the Card headline if the live plan lookup fails.
   priceUsd: process.env.WHOP_PRICE_USD ? Number(process.env.WHOP_PRICE_USD) : null,
+  // Lets one-time products (courses) sell on the card rail via their own plan ids.
+  products,
   telegramNotifier,
 });
 console.log(`[whop] card rail: ${whopPayments.configured ? 'ENABLED' : 'disabled (no WHOP_API_KEY/WHOP_PLAN_ID)'}`);
+console.log(`[whop] product card rail: ${whopPayments.productsEnabled ? 'ENABLED' : 'disabled (no WHOP_API_KEY)'}`);
 
 // --- Private Telegram group access gate ---
 // Paid users get a one-time, single-use invite to a private Telegram group; the
@@ -1993,6 +1996,39 @@ async function handleApi(req, res, ctx) {
     return true;
   }
 
+  // GET /api/admin/payments/attention → payments that moved money but did NOT
+  // unlock access, plus crypto orders still in flight. These used to be console
+  // errors only, so a paid buyer with no access left no trace anyone would see.
+  if (req.method === 'GET' && url.pathname === '/api/admin/payments/attention') {
+    if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+    const names = userNameMap();
+    const unresolved = paymentsStore.listUnresolvedPayments({ openOnly: url.searchParams.get('all') !== '1' })
+      .map((r) => ({ ...r, username: r.userId ? (names.get(r.userId) || null) : null }));
+    const openOrders = cryptoOrdersStore.listByStatus('waiting', 'detected', 'confirmed', 'underpaid')
+      .map((o) => ({
+        id: o.id, status: o.status, kind: o.kind, productId: o.productId,
+        userId: o.userId, username: names.get(o.userId) || null,
+        coin: o.coin, amount: o.amount, received: o.received ?? null,
+        expectedFiat: o.expectedFiat, createdAt: o.createdAt, expiresAt: o.expiresAt,
+        grantedAt: o.grantedAt ?? null,
+      }))
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    sendJson(res, 200, { unresolved, openOrders, generatedAt: Date.now() });
+    return true;
+  }
+
+  // POST /api/admin/payments/attention/<id>/resolve → mark one handled (after the
+  // admin has granted access or refunded via the existing Users tools).
+  {
+    const m = url.pathname.match(/^\/api\/admin\/payments\/attention\/([A-Za-z0-9_]+)\/resolve$/);
+    if (req.method === 'POST' && m) {
+      if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
+      const ok = await paymentsStore.resolveUnresolvedPayment(m[1]);
+      sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'Not found or already resolved.' });
+      return true;
+    }
+  }
+
   // GET /api/admin/logs → searchable historical activity logs.
   if (req.method === 'GET' && url.pathname === '/api/admin/logs') {
     if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
@@ -2836,7 +2872,27 @@ async function handleApi(req, res, ctx) {
   // prices live per-product; see /api/admin/products.)
   if (url.pathname === '/api/admin/pricing') {
     if (!isAdminReq(req)) { sendJson(res, 401, { error: 'Unauthorized' }); return true; }
-    if (req.method === 'GET') { sendJson(res, 200, { config: pricing.getConfig() }); return true; }
+    if (req.method === 'GET') {
+      // Also report what the rails ACTUALLY charge. The editable monthly/yearly
+      // amounts here drive neither rail — the card price lives on the WHOP plan and
+      // the crypto prices in data/crypto-config.json — so showing only the editable
+      // fields invites tuning a number no buyer ever sees.
+      const cryptoPlans = cryptoConfig.membership && cryptoConfig.membership.plans
+        ? Object.entries(cryptoConfig.membership.plans).map(([key, v]) => ({ key, ...v }))
+        : [];
+      let card = null;
+      try { card = await whopPayments.livePlanInfo(); } catch { /* rail down → null */ }
+      sendJson(res, 200, {
+        config: pricing.getConfig(),
+        charged: {
+          card: card ? { ...card, source: 'WHOP plan (edit in the WHOP dashboard)' } : null,
+          cardEnabled: whopPayments.configured,
+          crypto: { plans: cryptoPlans, source: 'data/crypto-config.json' },
+          cryptoEnabled: cryptoPayments.enabledCoins.length > 0,
+        },
+      });
+      return true;
+    }
     if (req.method === 'POST') {
       try {
         const raw = await readBody(req, 8192);
@@ -3377,6 +3433,21 @@ setInterval(() => {
 // unref() so it never holds the process open.
 if (telegramAccess.configured) {
   setInterval(() => { telegramAccess.sweep().catch(() => {}); }, 60_000).unref();
+}
+
+// Crypto order reconciliation: the watcher holds its watch list in memory and stops
+// retrying callbacks after a few minutes, so a watcher restart used to orphan an
+// order permanently. This re-registers live orders, expires dead ones, and escalates
+// any that took money without granting access. Runs every 2 min; unref()'d.
+if (cryptoPayments.enabledCoins.length) {
+  setInterval(() => { cryptoPayments.sweepOrders().catch(() => {}); }, 2 * 60_000).unref();
+}
+
+// Silent-lapse guard: WHOP access is granted in 33-day chunks and extended by
+// renewal webhooks, so if those stop arriving every member quietly loses access
+// with nothing logged. Warn a few days ahead, hourly. unref()'d.
+if (whopPayments.configured) {
+  setInterval(() => { whopPayments.sweepExpiringMemberships().catch(() => {}); }, 60 * 60_000).unref();
 }
 
 // Reclaim disk from chunked uploads that stalled and were never finished:

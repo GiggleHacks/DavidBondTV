@@ -34,7 +34,7 @@ function renderList() {
       ${logo ? `<img class="pr-logo" src="${esc(logo)}" alt="" />` : '<div class="pr-logo"></div>'}
       <div class="pr-main">
         <div class="pr-name">${esc(p.name)} <span class="pr-tag ${p.published ? 'live' : 'draft'}">${p.published ? 'Published' : 'Draft'}</span></div>
-        <div class="pr-sub">${esc(p.type)} · ${fmt(p.price, p.currency)} · ${p.videoIds.length} video${p.videoIds.length === 1 ? '' : 's'} · /course.html?slug=${esc(p.slug)}</div>
+        <div class="pr-sub">${esc(p.type)} · ${fmt(p.price, p.currency)} · ${p.videoIds.length} video${p.videoIds.length === 1 ? '' : 's'} · card ${p.whopPlanId ? 'on' : 'off'} · /course.html?slug=${esc(p.slug)}</div>
       </div>
       <button class="btn sm" data-edit="${esc(p.id)}">Edit</button>`;
     row.querySelector('[data-edit]').addEventListener('click', () => openEditor(p.id));
@@ -76,6 +76,7 @@ function openEditor(id) {
   $('f-slug').value = p ? p.slug : '';
   $('f-type').value = p ? p.type : 'course';
   $('f-price').value = p ? (p.price / 100).toFixed(2).replace(/\.00$/, '') : '';
+  $('f-whop-plan').value = (p && p.whopPlanId) ? p.whopPlanId : '';
   $('f-description').value = p ? p.description : '';
   const br = (p && p.branding) || { primary: '#7c3aed', accent: '#22d3ee', logo: null, bgImage: null };
   $('f-primary').value = br.primary || '#7c3aed'; $('f-primary-hex').value = br.primary || '#7c3aed';
@@ -113,6 +114,7 @@ function gatherBase() {
     description: $('f-description').value.trim(),
     price,
     currency: 'usd',
+    whopPlanId: $('f-whop-plan').value.trim(),
     branding: { primary: $('f-primary-hex').value.trim(), accent: $('f-accent-hex').value.trim() },
     sales: { headline: $('f-headline').value.trim(), body: $('f-body').value.trim(), bullets, ctaLabel: $('f-cta').value.trim() },
   };

@@ -160,9 +160,55 @@ async function saveFreeViews() {
   } else msg.textContent = data.error || 'Could not publish.';
 }
 
+/**
+ * Show what the rails REALLY charge. The fields on this page don't set the price
+ * on either rail — the card price is on the WHOP plan, crypto's is in
+ * data/crypto-config.json — so without this the panel invites tuning a phantom.
+ */
+function fillCharged(charged) {
+  const box = $('charged-readout');
+  if (!box) return;
+  if (!charged) { box.hidden = true; return; }
+  const money = (n) => (typeof n === 'number' ? `$${n.toFixed(2).replace(/\.00$/, '')}` : '—');
+  const rows = [];
+  if (!charged.cardEnabled) {
+    rows.push(['Card (WHOP)', 'rail disabled — no WHOP_API_KEY / WHOP_PLAN_ID', '']);
+  } else if (charged.card) {
+    const c = charged.card;
+    const first = money(c.price);
+    const recurring = money(c.renewalPrice);
+    rows.push([
+      'Card (WHOP)',
+      first === recurring ? `${recurring} / ${c.interval || 'month'}` : `${first} first charge, then ${recurring} / ${c.interval || 'month'}`,
+      c.source || '',
+    ]);
+  } else {
+    rows.push(['Card (WHOP)', 'plan lookup failed — check WHOP_API_KEY / WHOP_PLAN_ID', '']);
+  }
+  if (!charged.cryptoEnabled) {
+    rows.push(['Crypto (ETH)', 'rail disabled — no coin address configured', '']);
+  } else {
+    const plans = (charged.crypto && charged.crypto.plans) || [];
+    rows.push([
+      'Crypto (ETH)',
+      plans.length ? plans.map((p) => `${p.label || `${p.months}mo`} ${money(p.priceUsd)}`).join(' · ') : 'no plans configured',
+      (charged.crypto && charged.crypto.source) || '',
+    ]);
+  }
+  box.hidden = false;
+  box.innerHTML = `<h4>What buyers are actually charged</h4><dl>${rows.map(([k, v, src]) => `
+    <dt>${esc(k)}</dt><dd>${esc(v)}${src ? ` <span class="src">— ${esc(src)}</span>` : ''}</dd>`).join('')}</dl>`;
+}
+
 async function loadConfig() {
   let cfg = null;
-  try { cfg = (await (await fetch('/api/admin/pricing')).json()).config; } catch { /* defaults */ }
+  let charged = null;
+  try {
+    const data = await (await fetch('/api/admin/pricing')).json();
+    cfg = data.config;
+    charged = data.charged || null;
+  } catch { /* defaults */ }
+  fillCharged(charged);
   if (!cfg) return;
   currency = cfg.currency || 'usd';
   $('f-monthly').value = toDollars(cfg.monthly.amount);

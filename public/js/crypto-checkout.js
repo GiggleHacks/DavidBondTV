@@ -137,7 +137,17 @@ export async function startCryptoCheckout(opts, mount, onExpire = null) {
 
   trackEvent('checkout_started', { provider: 'crypto', productId: opts.productId || '', metadata: { kind: opts.kind || '' } });
   const r = await postJSON('/api/pay/crypto/checkout', opts);
-  if (r.status === 401) { location.href = `/signup.html?next=${encodeURIComponent(location.pathname + location.search)}`; return; }
+  if (r.status === 401) {
+    // Anonymous: sign up first, then resume this rail on return (&start=eth) instead
+    // of landing back on the offer. Emit the error so the bounce stays measurable.
+    trackEvent('checkout_error', { provider: 'crypto', productId: opts.productId || '', metadata: { kind: opts.kind || '', status: 401 } });
+    const p = new URLSearchParams(location.search);
+    p.set('start', 'eth');
+    const here = `${location.pathname}?${p}`;
+    try { localStorage.setItem('dbtv_after_auth', here); } catch { /* ignore */ }
+    location.href = `/signup.html?next=${encodeURIComponent(here)}`;
+    return;
+  }
   if (!r.ok || !r.data || !r.data.orderId) {
     trackEvent('checkout_error', { provider: 'crypto', productId: opts.productId || '', metadata: { kind: opts.kind || '', status: r.status } });
     mount.textContent = '';

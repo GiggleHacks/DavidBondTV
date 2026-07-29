@@ -3,7 +3,7 @@
 // success_url / cancel_url target: on ?status=success the webhook may lag, so we
 // poll /api/auth/me until the entitlement lands, then send the buyer to `next`
 // (the video they wanted) or into the course view.
-import { fetchMe } from '/js/account.js';
+import { fetchMe, postJSON } from '/js/account.js';
 import { pollOwnership, fmtMoney } from '/js/course-buy.js';
 import { startCryptoCheckout, resumeCryptoCheckout, cryptoCoinOptions } from '/js/crypto-checkout.js';
 import { initTheme } from '/js/theme.js';
@@ -69,9 +69,9 @@ async function setupCrypto(product) {
   const sel = $('crypto-coin');
   const btn = $('crypto-btn');
   const mount = $('crypto-mount');
-  if (!box || !sel || !btn || !mount) return;
+  if (!box || !sel || !btn || !mount) return false;
   const coins = await cryptoCoinOptions();
-  if (!coins.length) return;
+  if (!coins.length) return false;
   sel.innerHTML = coins.map((c) => `<option value="${c}">${c}</option>`).join('');
   box.hidden = false;
   btn.addEventListener('click', () => {
@@ -96,6 +96,45 @@ async function setupCrypto(product) {
     }
     if (active) { sel.hidden = true; btn.hidden = true; resumeCryptoCheckout(active, mount); }
   } catch { /* no resume — show the normal pay button */ }
+  return true;
+}
+
+/**
+ * Card checkout for this course. Mirrors membership.js's whop flow, including the
+ * resume marker so an anonymous buyer who gets bounced to signup comes back INTO
+ * checkout instead of onto the sales page again.
+ */
+async function startCardCheckout(btn, product) {
+  btn.disabled = true;
+  trackEvent('buy_click', { provider: 'whop', productId: product.id, metadata: { kind: 'product', slug: product.slug } });
+  trackEvent('checkout_started', { provider: 'whop', productId: product.id, metadata: { kind: 'product', slug: product.slug } });
+  const r = await postJSON('/api/pay/whop/product/checkout', { productId: product.id });
+  if (r.ok && r.data && r.data.url) {
+    trackEvent('checkout_redirect', { provider: 'whop', productId: product.id, metadata: { kind: 'product' } });
+    location.href = r.data.url;
+    return;
+  }
+  if (r.status === 401) {
+    trackEvent('checkout_error', { provider: 'whop', productId: product.id, metadata: { kind: 'product', status: 401 } });
+    const p = new URLSearchParams(location.search);
+    p.set('start', 'card');
+    const here = `${location.pathname}?${p}`;
+    try { localStorage.setItem('dbtv_after_auth', here); } catch { /* ignore */ }
+    location.href = `/signup.html?next=${encodeURIComponent(here)}`;
+    return;
+  }
+  if (r.status === 409) { location.reload(); return; }   // already owns it
+  trackEvent('checkout_error', { provider: 'whop', productId: product.id, metadata: { kind: 'product', status: r.status } });
+  banner((r.data && r.data.error) || 'Could not start checkout. Please try again.', 'warn');
+  btn.disabled = false;
+}
+
+/** Is the WHOP product rail live server-side? */
+async function whopProductsEnabled() {
+  try {
+    const c = await (await fetch('/api/pay/whop/config')).json();
+    return !!(c && c.productsEnabled);
+  } catch { return false; }
 }
 
 // Load the course trailer (a free, published video) into the hero player. Pulls
@@ -138,10 +177,30 @@ async function render() {
   $('content').hidden = false;
   document.title = `${product.name} — David Bond TV`;
 
-  // Card rail removed — products are purchased with crypto (ETH) via the box below.
+  // Two rails now: card (WHOP, when this product has a plan id configured) and ETH.
+  // Whatever happens, the page must never show a price with nothing to click — that
+  // was the old behaviour whenever crypto was off, and it looked like a broken page.
   const buy = $('buy-btn');
-  if (buy) buy.hidden = true;
-  setupCrypto(product);
+  const cardOk = !!product.cardEnabled && await whopProductsEnabled();
+  if (buy) {
+    buy.hidden = !cardOk;
+    if (cardOk) {
+      buy.textContent = (product.sales && product.sales.ctaLabel) || `Purchase ${fmtMoney(product.price, product.currency)}`;
+      buy.addEventListener('click', () => startCardCheckout(buy, product));
+    }
+  }
+  const cryptoOk = await setupCrypto(product);
+  if (!cardOk && !cryptoOk) {
+    banner('Checkout is temporarily unavailable for this course — please check back shortly.', 'warn');
+    // Hide the price AND its "one-time purchase" note: quoting a price with no way
+    // to pay reads as a broken page.
+    for (const el of [$('cl-price'), document.querySelector('.cl-price-note')]) {
+      if (el) el.hidden = true;
+    }
+  } else if (params.get('start') === 'card' && cardOk && buy) {
+    // Resuming after the signup detour.
+    buy.click();
+  }
 
   if (status === 'cancel') banner('Checkout canceled — no charge was made.', 'warn');
 
@@ -151,7 +210,12 @@ async function render() {
 
   if (status === 'success' && !owns(me)) {
     banner('Payment received — unlocking your course…', 'ok');
-    me = await pollOwnership(product.id);
+    // Synchronous grant first (same pattern as membership.js): don't make a paying
+    // buyer depend on the webhook arriving before they look at the page.
+    try { await postJSON('/api/pay/whop/product/reconcile', { productId: product.id }); } catch { /* poll below */ }
+    me = await fetchMe();
+    if (!owns(me)) me = await pollOwnership(product.id);
+    if (owns(me)) trackEvent('payment_granted', { provider: 'whop', productId: product.id, metadata: { kind: 'product' } });
   }
 
   if (owns(me) || isAdmin) {

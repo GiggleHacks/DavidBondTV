@@ -7,6 +7,10 @@
   const footer = document.createElement('footer');
   footer.className = 'site-footer';
   footer.innerHTML = `
+    <nav class="site-footer-links" aria-label="Site">
+      <a href="/membership.html">Membership</a>
+      <a href="/products">Products</a>
+    </nav>
     <nav class="site-footer-links" aria-label="Legal">
       <a href="/terms">Terms</a>
       <a href="/privacy">Privacy</a>

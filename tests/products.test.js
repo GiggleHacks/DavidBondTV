@@ -107,3 +107,48 @@ describe('products store', () => {
     expect(view.branding).toBeTruthy();
   });
 });
+
+// Per-product WHOP plan id: what turns the card rail on for a one-time course.
+// Absent = crypto-only, which is how every product behaved before this existed.
+describe('products — whopPlanId (card rail per product)', () => {
+  it('defaults to null so an existing catalog needs no migration', () => {
+    const dp = products.list()[0];
+    expect(dp.whopPlanId).toBeNull();
+    expect(products.publicView(dp).cardEnabled).toBe(false);
+  });
+
+  it('accepts a plan id and exposes only a boolean publicly', () => {
+    const dp = products.list()[0];
+    const r = products.update(dp.id, { whopPlanId: 'plan_LCecn0REAGAri' });
+    expect(r.ok).toBe(true);
+    expect(r.product.whopPlanId).toBe('plan_LCecn0REAGAri');
+    const pub = products.publicView(r.product);
+    expect(pub.cardEnabled).toBe(true);
+    // The plan id itself must not leak to the client — checkout resolves it server-side.
+    expect(pub.whopPlanId).toBeUndefined();
+  });
+
+  it('trims whitespace and rejects an id with unsafe characters', () => {
+    const dp = products.list()[0];
+    expect(products.update(dp.id, { whopPlanId: '  plan_abc123  ' }).product.whopPlanId).toBe('plan_abc123');
+    const bad = products.update(dp.id, { whopPlanId: 'plan_abc/../x' });
+    expect(bad.ok).toBe(false);
+    expect(bad.error).toMatch(/plan id/i);
+    // The rejected write left the previous value intact.
+    expect(products.getById(dp.id).whopPlanId).toBe('plan_abc123');
+  });
+
+  it('blank clears it back to crypto-only', () => {
+    const dp = products.list()[0];
+    products.update(dp.id, { whopPlanId: 'plan_abc123' });
+    const r = products.update(dp.id, { whopPlanId: '' });
+    expect(r.ok).toBe(true);
+    expect(r.product.whopPlanId).toBeNull();
+  });
+
+  it('survives a reload', () => {
+    const dp = products.list()[0];
+    products.update(dp.id, { whopPlanId: 'plan_persist' });
+    expect(products.getById(dp.id).whopPlanId).toBe('plan_persist');
+  });
+});

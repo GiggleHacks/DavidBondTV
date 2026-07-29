@@ -1,6 +1,11 @@
-// Renders the header auth controls: "Sign in / Sign up" when logged out, or an
-// avatar + dropdown menu (Profile, Account, Logout) when logged in.
+// Renders the header auth controls: "Sign in / Join" when logged out, or an
+// avatar + dropdown menu (Account, Become a member, Logout) when logged in.
+//
+// The Join entry point matters: the membership offer used to be reachable only
+// from a locked video card, the player gate, or /account, so the site had no
+// front door to the thing it sells.
 import { fetchMe, postJSON } from './account.js';
+import { deriveBillingView } from './billing-view.js';
 import { ADMIN_PATHS } from './admin-paths.js';
 
 const mount = document.getElementById('auth-widget');
@@ -12,10 +17,16 @@ function loggedOut() {
   signin.href = '/login.html';
   signin.textContent = 'Sign in';
   const signup = document.createElement('a');
-  signup.className = 'aw-link primary';
+  signup.className = 'aw-link';
   signup.href = '/signup.html';
   signup.textContent = 'Sign up';
-  mount.append(signin, signup);
+  // Kept alongside Join: the free account is what captures the email address, and
+  // the free-view gate funnels into it — don't trade that away for the paid CTA.
+  const join = document.createElement('a');
+  join.className = 'aw-link primary';
+  join.href = '/membership.html';
+  join.textContent = 'Join';
+  mount.append(signin, signup, join);
 }
 
 function loggedIn(user) {
@@ -54,6 +65,16 @@ function loggedIn(user) {
   account.href = '/account.html';
   account.textContent = 'Account settings';
   menu.append(account);
+
+  // Signed in but not yet paying → surface the offer here too; members get the
+  // manage link instead. Admins already have full access, so they get neither.
+  const view = deriveBillingView(user);
+  if (view.kind !== 'admin-access') {
+    const membership = document.createElement('a');
+    membership.href = '/membership.html';
+    membership.textContent = view.action === 'join' ? 'Become a member' : 'Manage membership';
+    menu.append(membership);
+  }
 
   // Admin section: dashboard + management links, replacing the old top-nav button.
   if (Array.isArray(user.roles) && user.roles.includes('admin')) {

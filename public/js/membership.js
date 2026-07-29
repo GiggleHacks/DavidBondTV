@@ -25,6 +25,9 @@ const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const rawNext = params.get('next');
 const next = (rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')) ? rawNext : '';
+// ?start=whop|eth means "the buyer already chose this rail, resume it on load" —
+// set when an anonymous click was bounced to signup (see resumeUrl / resumeIntent).
+const startIntent = params.get('start');
 // Card rail availability (server may hard-disable it, e.g. Stripe suspended). When
 // false the Card option is hidden and Ethereum becomes the sole payment method.
 let cardEnabled = true;
@@ -48,6 +51,17 @@ function showBanner(text, kind) {
   b.hidden = false;
   b.textContent = text;
   b.className = `sub-banner ${kind || ''}`.trim();
+}
+
+/**
+ * This page's URL carrying a resume marker for `rail`, so that after the signup
+ * round-trip we drop the buyer back into the checkout they already chose instead
+ * of the sales offer they'd have to re-navigate.
+ */
+function resumeUrl(rail) {
+  const p = new URLSearchParams(location.search);
+  p.set('start', rail);
+  return `${location.pathname}?${p}`;
 }
 
 function fmtDate(ms) {
@@ -123,13 +137,18 @@ async function startWhopCheckout(btn) {
     location.href = r.data.url; return;
   }
   if (r.status === 401) {
-    // Not signed in → sign up/in first, then return to this offer (with next intact).
-    const here = location.pathname + location.search;
+    // Not signed in → sign up/in first, then come back and RESUME the checkout.
+    // The resume marker is the whole point: without it the buyer lands back on the
+    // offer and has to find the button again, which measured 0% conversion across
+    // 41 anonymous attempts. Signup logs them in, so the retry clears this 401.
+    trackEvent('checkout_error', { provider: 'whop', metadata: { kind: 'membership', status: 401 } });
+    const here = resumeUrl('whop');
     try { localStorage.setItem('dbtv_after_auth', here); } catch { /* ignore */ }
     location.href = `/signup.html?next=${encodeURIComponent(here)}`;
     return;
   }
   if (r.status === 409) {
+    trackEvent('checkout_error', { provider: 'whop', metadata: { kind: 'membership', status: 409 } });
     setMsg('You already have an active membership.', 'ok');
     btn.disabled = false;
     return;
@@ -243,6 +262,32 @@ async function applyConfig() {
     );
   }
   setYearly(null, null);
+}
+
+/**
+ * Re-enter the rail the buyer picked before the signup detour. Called once the
+ * plans are on screen and the payment methods are wired. The marker is stripped
+ * from the URL first so a failed resume can't bounce signup → offer → signup.
+ */
+function resumeIntent() {
+  if (!startIntent) return;
+  try {
+    const p = new URLSearchParams(location.search);
+    p.delete('start');
+    const qs = p.toString();
+    history.replaceState(null, '', `${location.pathname}${qs ? `?${qs}` : ''}`);
+  } catch { /* non-fatal: the guard below still runs once per load */ }
+
+  if (startIntent === 'whop') {
+    if (cardEnabled) startWhopCheckout($('pay-card'));
+    return;
+  }
+  if (startIntent === 'eth') {
+    // The tile's own handler selects the method and opens the plan chooser; it is
+    // only unhidden by setupPaymentMethods() when ETH is actually available.
+    const tile = $('method-eth');
+    if (tile && !tile.hidden) tile.click();
+  }
 }
 
 async function recheck(btn) {
@@ -440,6 +485,9 @@ async function render() {
     await reconcileWhop();
     me = await fetchMe();
     if (!isActive(me)) me = await pollUntilActive(4);
+    // Only the crypto poller used to emit this, so every card sale was invisible in
+    // the funnel panel (checkoutToGrant read ~0% while the rail was working fine).
+    if (isActive(me)) trackEvent('payment_granted', { provider: 'whop', metadata: { kind: 'membership' } });
   }
 
   const hasAccess = hasAccessFor(me);
@@ -463,7 +511,8 @@ async function render() {
     return;
   }
   showPlans();
-  setupPaymentMethods();
+  await setupPaymentMethods();
+  resumeIntent();
 }
 
 render();

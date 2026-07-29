@@ -30,6 +30,7 @@ function fakeOrders() {
     get: (id) => (orders[id] ? { ...orders[id] } : null),
     update: async (id, p) => { if (orders[id]) Object.assign(orders[id], p); return orders[id]; },
     listOpen: () => Object.values(orders).filter((o) => o.status === 'waiting'),
+    listByStatus: (...st) => { const want = new Set(st.flat()); return Object.values(orders).filter((o) => want.has(o.status)).map((o) => ({ ...o })); },
     findActiveByUser: (userId, nowTs = Date.now()) => {
       const inFlight = (o) => o.status === 'detected' || o.status === 'confirmed'
         || (o.status === 'waiting' && (!o.expiresAt || nowTs <= o.expiresAt));
@@ -66,17 +67,21 @@ function fakeRes() {
 function make(overrides = {}) {
   const store = overrides.store || fakeStore({ u1: { id: 'u1', email: 'a@b.c', username: 'amy', products: [] } });
   const orders = overrides.orders || fakeOrders();
-  const tg = []; const mails = [];
+  const tg = []; const mails = []; const unresolved = [];
   const cp = createCryptoPayments({
     store, ordersStore: orders, currentUser: () => null,
     baseUrl: 'http://localhost', webhookSecret: SECRET,
+    watcherUrl: overrides.watcherUrl || null,
+    watcherToken: 'wt',
+    fetchImpl: overrides.fetchImpl,
+    cryptoConfig: overrides.cryptoConfig,
     products: { getById: (id) => ({ id, name: 'Course', slug: 'course' }) },
     pricing: { getConfig: () => ({ currency: 'usd', monthly: { amount: 1700 }, yearly: { enabled: true, amount: 12000 } }) },
-    paymentsStore: { addTxn: async () => {} },
+    paymentsStore: { addTxn: async () => {}, addUnresolvedPayment: async (r) => { unresolved.push(r); return r; } },
     telegramNotifier: { notify: (t, p) => tg.push({ t, p }) },
-    mailer: { sendProductGrantedEmail: async () => mails.push('product'), sendMembershipGrantedEmail: async () => mails.push('membership'), sendCryptoPaymentDetectedEmail: async () => mails.push('detected'), mailerConfigured: () => true },
+    mailer: { sendProductGrantedEmail: async () => mails.push('product'), sendMembershipGrantedEmail: async () => mails.push('membership'), sendCryptoPaymentDetectedEmail: async () => mails.push('detected'), sendCryptoUnderpaidEmail: async (to, d) => mails.push({ kind: 'underpaid', ...d }), mailerConfigured: () => true },
   });
-  return { cp, store, orders, tg, mails };
+  return { cp, store, orders, tg, mails, unresolved };
 }
 
 describe('crypto webhook', () => {
@@ -113,15 +118,36 @@ describe('crypto webhook', () => {
   });
 
   it('marks an order underpaid and alerts the owner without granting', async () => {
-    const { cp, store, orders, tg, mails } = make();
+    const { cp, store, orders, tg, mails, unresolved } = make();
     await orders.create({ id: 'u3', userId: 'u1', kind: 'product', productId: 'p1', coin: 'ETH', amount: '0.05', status: 'waiting', confirmations: 6 });
     const res = fakeRes();
     await cp._test.webhook(webhookReq({ orderId: 'u3', coin: 'ETH', outcome: 'underpaid', amount: '0.05', confirmations: 6 }), res);
     expect(res.statusCode).toBe(200);
     expect(orders._orders.u3.status).toBe('underpaid');
     expect(store._users.u1.products).toHaveLength(0);   // NOT granted
-    expect(mails).toEqual([]);                            // no grant email
+    expect(mails.some((m) => m && m.kind === 'product')).toBe(false); // no grant email
     expect(tg.filter((x) => x.t === 'crypto_underpaid')).toHaveLength(1);
+    // The buyer used to get total silence here while only David was pinged.
+    const buyer = mails.find((m) => m && m.kind === 'underpaid');
+    expect(buyer).toMatchObject({ coin: 'ETH', expected: '0.05' });
+    expect(tg.filter((x) => x.t === 'payment_needs_attention')).toHaveLength(1);
+    expect(unresolved.map((u) => u.kind)).toEqual(['crypto.underpaid']);
+  });
+
+  it('does not record the EXPECTED amount as `received` (watcher echoes what we asked for)', async () => {
+    const { cp, orders } = make();
+    await orders.create({ id: 'u4', userId: 'u1', kind: 'product', productId: 'p1', coin: 'ETH', amount: '0.05', status: 'waiting', confirmations: 6 });
+    await cp._test.webhook(webhookReq({ orderId: 'u4', coin: 'ETH', outcome: 'underpaid', amount: '0.05' }), fakeRes());
+    // amount=0.05 is what we QUOTED; storing it as `received` would claim the buyer
+    // paid in full while the order says underpaid.
+    expect(orders._orders.u4.received).toBeNull();
+  });
+
+  it('records `received` when the watcher actually reports it', async () => {
+    const { cp, orders } = make();
+    await orders.create({ id: 'u5', userId: 'u1', kind: 'product', productId: 'p1', coin: 'ETH', amount: '0.05', status: 'waiting', confirmations: 6 });
+    await cp._test.webhook(webhookReq({ orderId: 'u5', coin: 'ETH', outcome: 'underpaid', amount: '0.05', received: '0.031' }), fakeRes());
+    expect(orders._orders.u5.received).toBe('0.031');
   });
 
   it('grants fixed-term membership on a confirmed callback', async () => {
@@ -291,5 +317,68 @@ describe('crypto open-order (resume)', () => {
     expect(JSON.parse(res.body).order).toMatchObject({
       orderId: 'op1', coin: 'ETH', amount: '0.0834', address: '0xabc', status: 'waiting', kind: 'membership',
     });
+  });
+});
+
+// The watcher holds its watch list in MEMORY, drops watches past expiresAt, and
+// stops retrying callbacks after a few minutes — so a restart orphans an order and
+// nothing ever revisits it. That is why real orders pile up at 'waiting' forever.
+describe('crypto order sweep (reconciliation)', () => {
+  const CFG = {
+    enabledCoins: ['ETH'],
+    coins: { ETH: { address: '0xabc', confirmations: 1 } },
+    orderTtlMs: 1200000, jitterMax: 200,
+    membership: { plans: { '3mo': { months: 3, priceUsd: 59.07, label: '3 months' } } },
+    productDiscountPercent: 0,
+  };
+
+  it('expires a waiting order past its window', async () => {
+    const { cp, orders } = make({ cryptoConfig: CFG });
+    await orders.create({ id: 's1', userId: 'u1', kind: 'membership', coin: 'ETH', amount: '0.03', status: 'waiting', expiresAt: Date.now() - 1000 });
+    const out = await cp._test.sweepOrders();
+    expect(orders._orders.s1.status).toBe('expired');
+    expect(out.expired).toBe(1);
+  });
+
+  it('re-registers a still-live waiting order so a restarted watcher resumes it', async () => {
+    const calls = [];
+    const fetchImpl = async (url, opts) => { calls.push({ url: String(url), body: JSON.parse(opts.body || '{}') }); return { ok: true, json: async () => ({ ok: true }) }; };
+    const { cp, orders } = make({ cryptoConfig: CFG, watcherUrl: 'http://watcher', fetchImpl });
+    await orders.create({ id: 's2', userId: 'u1', kind: 'membership', coin: 'ETH', amount: '0.03', status: 'waiting', expiresAt: Date.now() + 600000 });
+    const out = await cp._test.sweepOrders();
+    expect(out.reregistered).toBe(1);
+    expect(orders._orders.s2.status).toBe('waiting');   // untouched
+    expect(calls[0].url).toContain('/watch');
+    expect(calls[0].body).toMatchObject({ orderId: 's2', coin: 'ETH', address: '0xabc', expectedAmount: '0.03' });
+  });
+
+  it('escalates a confirmed order that never granted — money in, no access', async () => {
+    const { cp, orders, tg, unresolved } = make({ cryptoConfig: CFG });
+    await orders.create({ id: 's3', userId: 'u1', kind: 'membership', coin: 'ETH', amount: '0.03', expectedFiat: 59.07, status: 'confirmed', confirmedAt: Date.now() - 60 * 60_000 });
+    const out = await cp._test.sweepOrders();
+    expect(out.escalated).toBe(1);
+    expect(unresolved.map((u) => u.kind)).toEqual(['crypto.grant.stuck']);
+    expect(tg.filter((x) => x.t === 'payment_needs_attention')).toHaveLength(1);
+
+    // Once-only: a second sweep must not re-alert.
+    const again = await cp._test.sweepOrders();
+    expect(again.escalated).toBe(0);
+    expect(tg.filter((x) => x.t === 'payment_needs_attention')).toHaveLength(1);
+  });
+
+  it('leaves a recently-confirmed order alone (grace period)', async () => {
+    const { cp, orders, tg } = make({ cryptoConfig: CFG });
+    await orders.create({ id: 's4', userId: 'u1', kind: 'membership', coin: 'ETH', amount: '0.03', status: 'confirmed', confirmedAt: Date.now() - 1000 });
+    const out = await cp._test.sweepOrders();
+    expect(out.escalated).toBe(0);
+    expect(tg).toHaveLength(0);
+  });
+
+  it('never escalates an order that did grant', async () => {
+    const { cp, orders, tg } = make({ cryptoConfig: CFG });
+    await orders.create({ id: 's5', userId: 'u1', kind: 'membership', coin: 'ETH', amount: '0.03', status: 'confirmed', confirmedAt: Date.now() - 60 * 60_000, grantedAt: Date.now() - 59 * 60_000 });
+    const out = await cp._test.sweepOrders();
+    expect(out.escalated).toBe(0);
+    expect(tg).toHaveLength(0);
   });
 });

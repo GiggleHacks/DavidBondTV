@@ -108,8 +108,11 @@ async function goToUnlock(videoUrl) {
   const membershipUrl = `/membership.html?next=${encodeURIComponent(videoUrl)}`;
   const me = await getMe();
   if (me) { location.href = membershipUrl; return; }
-  try { localStorage.setItem('dbtv_after_auth', membershipUrl); } catch { /* ignore */ }
-  location.href = `/signup.html?next=${encodeURIComponent(membershipUrl)}`;
+  // Anonymous: sign up first, then resume the card checkout on arrival (&start=whop)
+  // rather than dropping them on the offer to hunt for the button again.
+  const resumeAfterSignup = `${membershipUrl}&start=whop`;
+  try { localStorage.setItem('dbtv_after_auth', resumeAfterSignup); } catch { /* ignore */ }
+  location.href = `/signup.html?next=${encodeURIComponent(resumeAfterSignup)}`;
 }
 
 /** Replace the player surface with a premium teaser + unlock prompt. */
